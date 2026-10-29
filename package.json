@@ -1,0 +1,17 @@
+{
+  "name": "kora-erp",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Kora ERP — ERP SaaS multi-entreprises (SYSCOHADA, Côte d'Ivoire)",
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev:api": "npm run start:dev -w apps/api",
+    "dev:web": "npm run dev -w apps/web",
+    "db:migrate": "npm run db:migrate -w apps/api",
+    "db:seed": "npm run db:seed -w apps/api",
+    "test": "npm test -w apps/api",
+    "lint": "npm run lint -w apps/api",
+    "build": "npm run build -w apps/api && npm run build -w apps/web"
+  },
+  "engines": { "node": ">=20" }
+}

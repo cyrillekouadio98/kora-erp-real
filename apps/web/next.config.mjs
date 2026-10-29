@@ -1,0 +1,19 @@
+/** L'interface appelle l'API via /api/* (même origine : cookies de session httpOnly, pas de CORS). */
+const apiUrl = process.env.API_URL ?? 'http://localhost:3001';
+
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  reactStrictMode: true,
+  poweredByHeader: false,
+  async rewrites() {
+    return [{ source: '/api/:path*', destination: `${apiUrl}/:path*` }];
+  },
+  async headers() {
+    return [{ source: '/:path*', headers: [
+      { key: 'X-Frame-Options', value: 'DENY' },
+      { key: 'X-Content-Type-Options', value: 'nosniff' },
+      { key: 'Referrer-Policy', value: 'same-origin' },
+    ] }];
+  },
+};
+export default nextConfig;

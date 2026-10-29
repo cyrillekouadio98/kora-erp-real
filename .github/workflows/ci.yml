@@ -1,0 +1,33 @@
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: postgres, POSTGRES_PASSWORD: postgres }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-retries 20
+    env:
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - name: Rôles et bases de données
+        run: |
+          psql -h localhost -U postgres -f infra/db/init.sql
+          psql -h localhost -U postgres -c "CREATE DATABASE kora_test OWNER kora_owner"
+          psql -h localhost -U postgres -d kora_test -c "REVOKE ALL ON SCHEMA public FROM PUBLIC; ALTER SCHEMA public OWNER TO kora_owner;"
+      - run: npm ci
+      - name: Vérification des types
+        run: npm run lint -w apps/api && npm run lint -w apps/web
+      - name: Tests (dont isolation multi-entreprises)
+        run: npm test
+      - name: Construction
+        run: npm run build
