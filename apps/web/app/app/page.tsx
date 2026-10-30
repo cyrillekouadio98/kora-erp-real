@@ -12,11 +12,13 @@ export default function Dashboard() {
   const { me, ctx, can, refresh } = useSession();
   const [sub, setSub] = useState<any>(null);
   const [sales, setSales] = useState<any>(null);
+  const [purchases, setPurchases] = useState<any>(null);
   const [name, setName] = useState('');
   const { busy, error, run } = useAction();
   useEffect(() => {
     if (ctx && can('billing.read')) api('/company/subscription').then(setSub, () => {});
     if (ctx && can('sales.read') && ctx.entitlements.modules.includes('sales')) api('/company/sales/summary').then(setSales, () => {});
+    if (ctx && can('purchases.read') && ctx.entitlements.modules.includes('purchases')) api('/company/purchases/summary').then(setPurchases, () => {});
   }, [ctx]); // eslint-disable-line
 
   if (!ctx) {
@@ -46,6 +48,15 @@ export default function Dashboard() {
           <div className="card kpi"><div className="l">Devis en cours</div><div className="v">{sales.openQuotes}</div><div className="small muted"><Link href="/app/ventes/devis">voir les devis</Link></div></div>
         </div>
       )}
+      {purchases && (
+        <div className="kpis">
+          <div className="card kpi"><div className="l">Achats du mois</div><div className="v">{money(purchases.purchasesMonthHt)}</div><div className="small muted">hors taxes, factures fournisseurs</div></div>
+          <div className="card kpi"><div className="l">Payé aux fournisseurs ce mois</div><div className="v">{money(purchases.paidMonth)}</div></div>
+          <div className="card kpi"><div className="l">À payer aux fournisseurs</div><div className="v">{money(purchases.payable)}</div>
+            <div className="small">{purchases.overdueCount ? <Link href="/app/achats/echeancier" style={{ color: 'var(--crit)' }}>{purchases.overdueCount} facture(s) en retard · {money(purchases.overdueAmount)}</Link> : <Link href="/app/achats/echeancier">voir l'échéancier</Link>}</div></div>
+          <div className="card kpi"><div className="l">Commandes en cours</div><div className="v">{purchases.openOrders}</div><div className="small muted"><Link href="/app/achats/commandes">voir les commandes</Link></div></div>
+        </div>
+      )}
       {sub && (
         <div className="kpis">
           <div className="card kpi"><div className="l">Formule</div><div className="v">{sub.plan.name}</div><div className="small muted">{money(sub.billingCycle === 'yearly' ? sub.plan.priceYearly : sub.plan.priceMonthly)} / {sub.billingCycle === 'yearly' ? 'an' : 'mois'}</div></div>
@@ -58,7 +69,7 @@ export default function Dashboard() {
         <div className="row">
           {Object.entries(MODULE_LABELS).map(([k, l]) => <Pill key={k} tone={ctx.entitlements.modules.includes(k) ? 'ok' : 'mute'}>{l}{ctx.entitlements.modules.includes(k) ? '' : ' · non inclus'}</Pill>)}
         </div>
-        <p className="small muted" style={{ marginBottom: 0 }}>Disponibles : clients et fournisseurs, articles, devis, factures, avoirs, encaissements et relances. Les achats, la caisse, la banque, la comptabilité et la paie arrivent avec les prochains lots.</p>
+        <p className="small muted" style={{ marginBottom: 0 }}>Disponibles : clients et fournisseurs, articles, ventes (devis, factures, avoirs, encaissements, relances) et achats (bons de commande, factures et règlements fournisseurs, échéancier). La caisse, la banque, la comptabilité et la paie arrivent avec les prochains lots.</p>
       </div>
       <div className="card">
         <header><h2>Pour bien démarrer</h2></header>

@@ -114,6 +114,17 @@ export interface SalesReminderTable {
   created_by: string | null; created_at: Generated<Date>;
 }
 
+export type PurchaseDocType = 'order' | 'invoice';
+export type PurchaseDocStatus = 'draft' | 'sent' | 'cancelled' | 'invoiced' | 'to_pay' | 'partially_paid' | 'paid';
+export interface PurchaseDocumentTable {
+  company_id: string; id: Generated<string>; type: PurchaseDocType; status: Generated<PurchaseDocStatus>; number: string | null; contact_id: string;
+  supplier: JsonDefault<Record<string, unknown>>; supplier_ref: string | null; issue_date: DateCol; due_date: DateNullable; expected_date: DateNullable;
+  currency: Generated<string>; notes: string | null; total_ht: NumDefault; total_vat: NumDefault; total_ttc: NumDefault; paid_amount: NumDefault;
+  source_order_id: string | null; validated_at: TsNullable; validated_by: string | null; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export type PurchaseDocumentLineTable = SalesDocumentLineTable;
+export type PurchasePaymentTable = SalesPaymentTable;
+
 export interface DB {
   user_account: UserAccountTable; platform_role_assignment: PlatformRoleAssignmentTable; user_session: UserSessionTable;
   company: CompanyTable; company_membership: CompanyMembershipTable; role: RoleTable; membership_role: MembershipRoleTable;
@@ -122,4 +133,5 @@ export interface DB {
   payment_webhook_event: PaymentWebhookEventTable; notification: NotificationTable; support_access_grant: SupportAccessGrantTable;
   audit_log: AuditLogTable; numbering_sequence: NumberingSequenceTable; outbox_event: OutboxEventTable; contact: ContactTable;
   product: ProductTable; sales_document: SalesDocumentTable; sales_document_line: SalesDocumentLineTable; sales_payment: SalesPaymentTable; sales_reminder: SalesReminderTable;
+  purchase_document: PurchaseDocumentTable; purchase_document_line: PurchaseDocumentLineTable; purchase_payment: PurchasePaymentTable;
 }

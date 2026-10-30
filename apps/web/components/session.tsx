@@ -20,15 +20,19 @@ export interface CompanyContext {
 const Ctx = createContext<{ me: Me; ctx: CompanyContext | null; can: (p: string) => boolean; refresh: () => Promise<void> } | null>(null);
 export const useSession = () => useContext(Ctx)!;
 
-const NAV: { href: string; label: string; perm?: string; group: string }[] = [
+/** module : entrée masquée si le module n'est pas inclus dans la formule. */
+const NAV: { href: string; label: string; perm?: string; module?: string; group: string }[] = [
   { href: '/app', label: 'Tableau de bord', group: 'Entreprise' },
   { href: '/app/entreprise', label: 'Fiche entreprise', group: 'Entreprise' },
   { href: '/app/ventes/devis', label: 'Devis', perm: 'sales.read', group: 'Ventes' },
   { href: '/app/ventes/factures', label: 'Factures', perm: 'sales.read', group: 'Ventes' },
   { href: '/app/ventes/avoirs', label: 'Avoirs', perm: 'sales.read', group: 'Ventes' },
   { href: '/app/ventes/relances', label: 'Relances clients', perm: 'sales.read', group: 'Ventes' },
-  { href: '/app/contacts', label: 'Clients et fournisseurs', perm: 'contacts.read', group: 'Ventes' },
-  { href: '/app/articles', label: 'Articles', perm: 'products.read', group: 'Ventes' },
+  { href: '/app/achats/commandes', label: 'Bons de commande', perm: 'purchases.read', module: 'purchases', group: 'Achats' },
+  { href: '/app/achats/factures', label: 'Factures fournisseurs', perm: 'purchases.read', module: 'purchases', group: 'Achats' },
+  { href: '/app/achats/echeancier', label: 'Échéancier', perm: 'purchases.read', module: 'purchases', group: 'Achats' },
+  { href: '/app/contacts', label: 'Clients et fournisseurs', perm: 'contacts.read', group: 'Référentiels' },
+  { href: '/app/articles', label: 'Articles', perm: 'products.read', group: 'Référentiels' },
   { href: '/app/utilisateurs', label: 'Utilisateurs', perm: 'users.read', group: 'Administration' },
   { href: '/app/roles', label: 'Rôles et permissions', perm: 'users.read', group: 'Administration' },
   { href: '/app/abonnement', label: 'Abonnement', perm: 'billing.read', group: 'Administration' },
@@ -74,7 +78,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </label>
           )}
           <nav className="nav" aria-label="Navigation principale">
-            {NAV.filter((n) => !n.perm || can(n.perm)).map((n) => {
+            {NAV.filter((n) => (!n.perm || can(n.perm)) && (!n.module || ctx?.entitlements.modules.includes(n.module))).map((n) => {
               const head = n.group !== group ? <small key={`g-${n.group}`}>{(group = n.group)}</small> : null;
               return [head, <Link key={n.href} href={n.href} className={path === n.href || (n.href !== '/app' && path.startsWith(n.href)) ? 'active' : ''}>{n.label}</Link>];
             })}

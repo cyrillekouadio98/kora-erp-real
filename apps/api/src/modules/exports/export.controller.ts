@@ -45,6 +45,9 @@ export class ExportController {
         sales_document_lines: await trx.selectFrom('sales_document_line').selectAll().orderBy('document_id').orderBy('position').execute(),
         sales_payments: await trx.selectFrom('sales_payment').selectAll().orderBy('paid_on').execute(),
         sales_reminders: await trx.selectFrom('sales_reminder').selectAll().orderBy('created_at').execute(),
+        purchase_documents: await trx.selectFrom('purchase_document').selectAll().orderBy('created_at').execute(),
+        purchase_document_lines: await trx.selectFrom('purchase_document_line').selectAll().orderBy('document_id').orderBy('position').execute(),
+        purchase_payments: await trx.selectFrom('purchase_payment').selectAll().orderBy('paid_on').execute(),
         audit_log: await trx.selectFrom('audit_log').selectAll().orderBy('id').execute(),
       };
       await this.audit.tenant(trx, t.ctx, { action: 'data.exported', data: { tables: Object.keys(out) } });
@@ -57,7 +60,7 @@ export class ExportController {
     zip.pipe(res);
     zip.append(JSON.stringify(data, null, 2), { name: 'donnees-completes.json' });
     for (const [name, rows] of Object.entries(data)) zip.append(toCsv(rows as Record<string, unknown>[]), { name: `csv/${name}.csv` });
-    zip.append(`Export Kora ERP du ${stamp}\nEntreprise : ${t.companyId}\nFichiers CSV séparés par des points-virgules, encodés en UTF-8.\nLes autres modules métier (achats, comptabilité, paie) seront ajoutés à cet export au fil des phases.\n`, { name: 'LISEZ-MOI.txt' });
+    zip.append(`Export Kora ERP du ${stamp}\nEntreprise : ${t.companyId}\nFichiers CSV séparés par des points-virgules, encodés en UTF-8.\nLes autres modules métier (caisse, banque, comptabilité, paie) seront ajoutés à cet export au fil des phases.\n`, { name: 'LISEZ-MOI.txt' });
     await zip.finalize();
   }
 }

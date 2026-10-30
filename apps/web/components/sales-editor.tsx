@@ -2,8 +2,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { DOC_LABEL, DocType, money, VAT_RATES } from '@/lib/format';
-import { Alert, useAction } from '@/components/ui';
+import { DOC_LABEL, money, PURCHASE_LABEL, VAT_RATES } from '@/lib/format';
+import { Alert, Field, useAction } from '@/components/ui';
 
 interface Line { productId: string | null; description: string; quantity: number | string; unit: string | null; unitPrice: number | string; discountPct: number | string; vatRate: number }
 const EMPTY_LINE: Line = { productId: null, description: '', quantity: 1, unit: null, unitPrice: 0, discountPct: 0, vatRate: 18 };
@@ -16,29 +16,48 @@ function lineTotals(l: Line) {
   return { ht, vat: Math.round((ht * l.vatRate) / 100) };
 }
 
-/** Saisie d'un brouillon de devis ou de facture (création ou modification). */
-export function SalesEditor({ type, doc, onSaved, onDirtyChange }: { type: DocType; doc?: any; onSaved: (doc: any) => void; onDirtyChange?: (dirty: boolean) => void }) {
+/** Ce qui distingue la saisie d'un document de vente de celle d'un document d'achat. */
+const SCOPES = {
+  sales: {
+    base: '/company/sales/documents', party: 'client', excludeKind: 'supplier', labels: DOC_LABEL as Record<string, string>,
+    price: (p: any) => p.salePrice, newTitle: (t: string) => (t === 'invoice' ? 'Nouvelle facture' : 'Nouveau devis'),
+  },
+  purchases: {
+    base: '/company/purchases/documents', party: 'fournisseur', excludeKind: 'customer', labels: PURCHASE_LABEL as Record<string, string>,
+    price: (p: any) => p.purchasePrice ?? 0, newTitle: (t: string) => (t === 'invoice' ? 'Nouvelle facture fournisseur' : 'Nouveau bon de commande'),
+  },
+};
+const today = () => new Date().toISOString().slice(0, 10);
+
+/** Saisie d'un brouillon (devis, facture, avoir, bon de commande, facture fournisseur), en création ou modification. */
+export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales' }: { type: string; doc?: any; onSaved: (doc: any) => void; onDirtyChange?: (dirty: boolean) => void; scope?: keyof typeof SCOPES }) {
+  const cfg = SCOPES[scope];
   const isCredit = type === 'credit_note';
+  const isPurchaseInvoice = scope === 'purchases' && type === 'invoice';
+  // Date limite propre au document : échéance (facture), validité (devis), livraison prévue (commande)
+  const limitKey = type === 'invoice' ? 'dueDate' : type === 'quote' ? 'validUntil' : type === 'order' ? 'expectedDate' : null;
   const [contacts, setContacts] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [contactId, setContactId] = useState<string>(doc?.contact?.id ?? '');
   const [notes, setNotes] = useState<string>(doc?.notes ?? '');
-  const [limitDate, setLimitDate] = useState<string>((type === 'invoice' ? doc?.dueDate : doc?.validUntil) ?? '');
+  const [limitDate, setLimitDate] = useState<string>((limitKey && doc?.[limitKey]) ?? '');
+  const [supplierRef, setSupplierRef] = useState<string>(doc?.supplierRef ?? '');
+  const [issueDate, setIssueDate] = useState<string>(doc?.issueDate ?? today());
   const [lines, setLines] = useState<Line[]>(doc?.lines?.length ? doc.lines.map(toLine) : [{ ...EMPTY_LINE }]);
   const [dirty, setDirty] = useState(false);
   const { busy, error, run } = useAction();
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty]); // eslint-disable-line
 
   useEffect(() => {
-    api('/company/contacts').then((c) => setContacts(c.filter((x: any) => x.kind !== 'supplier')), () => {});
+    api('/company/contacts').then((c) => setContacts(c.filter((x: any) => x.kind !== cfg.excludeKind)), () => {});
     api('/company/products').then(setProducts, () => {});
-  }, []);
+  }, [cfg.excludeKind]);
 
   const editLines = (next: Line[]) => { setDirty(true); setLines(next); };
   const setLine = (i: number, patch: Partial<Line>) => editLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const pickProduct = (i: number, id: string) => {
     const p = products.find((x) => x.id === id);
-    setLine(i, p ? { productId: p.id, description: p.name, unit: p.unit, unitPrice: p.salePrice, vatRate: p.vatRate } : { productId: null });
+    setLine(i, p ? { productId: p.id, description: p.name, unit: p.unit, unitPrice: cfg.price(p), vatRate: p.vatRate } : { productId: null });
   };
   const totals = lines.map(lineTotals);
   const ht = totals.reduce((s, t) => s + t.ht, 0);
@@ -48,27 +67,35 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange }: { type: DocTy
     const body: any = {
       contactId, notes: notes || null,
       lines: lines.map(toLine).map((l) => ({ ...l, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), discountPct: Number(l.discountPct || 0), unit: l.unit || null })),
-      ...(isCredit ? {} : { [type === 'invoice' ? 'dueDate' : 'validUntil']: limitDate || null }),
+      ...(limitKey ? { [limitKey]: limitDate || null } : {}),
+      ...(isPurchaseInvoice ? { supplierRef: supplierRef || null, issueDate } : {}),
     };
-    const saved = doc ? await api(`/company/sales/documents/${doc.id}`, { method: 'PATCH', body }) : await api('/company/sales/documents', { body: { ...body, type } });
+    const saved = doc ? await api(`${cfg.base}/${doc.id}`, { method: 'PATCH', body }) : await api(cfg.base, { body: { ...body, type } });
     setDirty(false);
     onSaved(saved);
   });
 
+  const limitLabel = {
+    dueDate: `Échéance (vide : selon le délai de paiement du ${cfg.party})`, validUntil: 'Valable jusqu’au (vide : 30 jours)', expectedDate: 'Livraison prévue le (facultatif)',
+  }[limitKey ?? 'dueDate'];
+  const Party = cfg.party[0].toUpperCase() + cfg.party.slice(1);
+
   return (
     <form className="card form" onChange={() => setDirty(true)} onSubmit={(e) => { e.preventDefault(); save(); }}>
-      <header><h2>{doc ? `${DOC_LABEL[type]} — brouillon` : type === 'invoice' ? 'Nouvelle facture' : 'Nouveau devis'}</h2>
-        <span className="small muted">{isCredit ? 'Réduisez les quantités ou les prix pour un avoir partiel.' : 'Le numéro définitif est attribué à la validation.'}</span></header>
+      <header><h2>{doc ? `${cfg.labels[type]} — brouillon` : cfg.newTitle(type)}</h2>
+        <span className="small muted">{isCredit ? 'Réduisez les quantités ou les prix pour un avoir partiel.' : isPurchaseInvoice ? 'Recopiez la facture reçue du fournisseur.' : 'Le numéro définitif est attribué à la validation.'}</span></header>
       <Alert>{error}</Alert>
       <div className="grid2">
-        <label className="field">Client
+        <label className="field">{Party}
           <select className="input" required disabled={isCredit} value={contactId} onChange={(e) => setContactId(e.target.value)}>
-            <option value="">— Choisir un client —</option>
+            <option value="">— Choisir un {cfg.party} —</option>
             {contacts.map((c) => <option key={c.id} value={c.id}>{c.code} · {c.name}</option>)}
           </select>
-          {!contacts.length && <span className="small muted" style={{ fontWeight: 400 }}>Aucun client : <Link href="/app/contacts">créez-en un d'abord</Link>.</span>}
+          {!contacts.length && <span className="small muted" style={{ fontWeight: 400 }}>Aucun {cfg.party} : <Link href="/app/contacts">créez-en un d'abord</Link>.</span>}
         </label>
-        {!isCredit && <label className="field">{type === 'invoice' ? 'Échéance (vide : selon le délai de paiement du client)' : 'Valable jusqu’au (vide : 30 jours)'}
+        {isPurchaseInvoice && <Field label="N° de la facture du fournisseur (obligatoire pour valider)" value={supplierRef} onChange={(e) => setSupplierRef(e.target.value)} placeholder="Ex. FV-2026/118" />}
+        {isPurchaseInvoice && <Field label="Date de la facture du fournisseur" type="date" required max={today()} value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />}
+        {limitKey && <label className="field">{limitLabel}
           <input className="input" type="date" value={limitDate} onChange={(e) => setLimitDate(e.target.value)} />
         </label>}
       </div>
@@ -96,7 +123,7 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange }: { type: DocTy
         <button type="button" className="btn" onClick={() => editLines([...lines, { ...EMPTY_LINE }])}>+ Ajouter une ligne</button>
         <dl className="totals"><dt>Total HT</dt><dd>{money(ht)}</dd><dt>TVA</dt><dd>{money(vat)}</dd><dt className="grand">Total TTC</dt><dd className="grand">{money(ht + vat)}</dd></dl>
       </div>
-      <label className="field">Conditions, mentions (facultatif)<textarea className="input" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
+      <label className="field">{scope === 'purchases' ? 'Notes internes, conditions (facultatif)' : 'Conditions, mentions (facultatif)'}<textarea className="input" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
       <div className="row"><button className="btn primary" disabled={busy || !contactId}>{busy ? 'Enregistrement…' : 'Enregistrer le brouillon'}</button></div>
     </form>
   );

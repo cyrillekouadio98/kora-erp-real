@@ -9,11 +9,11 @@ import { toCsv } from '../exports/export.controller';
 import { VAT_RATES } from './products.controller';
 import { SalesService } from './sales.service';
 
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'Date attendue au format AAAA-MM-JJ' });
+export const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'Date attendue au format AAAA-MM-JJ' });
 const type = z.enum(['quote', 'invoice'], { message: 'Type de document : devis ou facture' });
 const anyType = z.enum(['quote', 'invoice', 'credit_note'], { message: 'Type de document : devis, facture ou avoir' });
 
-const LineSchema = z.object({
+export const LineSchema = z.object({
   productId: z.string().uuid({ message: 'Article invalide' }).nullable().optional(),
   description: z.string().trim().min(1, { message: 'Chaque ligne doit avoir une désignation' }).max(500),
   quantity: z.coerce.number().positive({ message: 'La quantité doit être positive' }).max(1e9).transform((v) => Math.round(v * 1000) / 1000),

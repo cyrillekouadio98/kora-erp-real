@@ -28,6 +28,11 @@ export const ACTION_LABELS: Record<string, string> = {
   'invoice.payment_recorded': 'Encaissement enregistré', 'invoice.exported': 'Factures exportées', 'invoice.reminder_recorded': 'Relance client enregistrée',
   'credit_note.created': 'Avoir créé', 'credit_note.updated': 'Avoir modifié', 'credit_note.deleted': 'Brouillon d’avoir supprimé', 'credit_note.validated': 'Avoir émis',
   'credit_note.exported': 'Avoirs exportés',
+  'purchase_order.created': 'Bon de commande créé', 'purchase_order.updated': 'Bon de commande modifié', 'purchase_order.deleted': 'Brouillon de bon de commande supprimé',
+  'purchase_order.validated': 'Bon de commande envoyé', 'purchase_order.cancelled': 'Bon de commande annulé', 'purchase_order.invoiced': 'Bon de commande facturé',
+  'purchase_order.exported': 'Bons de commande exportés', 'purchase_invoice.created': 'Facture fournisseur saisie', 'purchase_invoice.updated': 'Facture fournisseur modifiée',
+  'purchase_invoice.deleted': 'Brouillon de facture fournisseur supprimé', 'purchase_invoice.validated': 'Facture fournisseur validée',
+  'purchase_invoice.payment_recorded': 'Règlement fournisseur enregistré', 'purchase_invoice.exported': 'Factures fournisseurs exportées',
 };
 
 export const DOC_STATUS: Record<string, [string, 'ok' | 'warn' | 'crit' | 'mute']> = {
@@ -42,3 +47,9 @@ export const PAYMENT_METHODS: Record<string, string> = { cash: 'Espèces', mobil
 export const DOC_LABEL = { quote: 'Devis', invoice: 'Facture', credit_note: 'Avoir' } as const;
 export type DocType = keyof typeof DOC_LABEL;
 export const VAT_RATES = [18, 9, 0];
+
+export const PURCHASE_LABEL = { order: 'Bon de commande', invoice: 'Facture fournisseur' } as const;
+export const PURCHASE_STATUS: Record<string, [string, 'ok' | 'warn' | 'crit' | 'mute']> = {
+  draft: ['Brouillon', 'mute'], sent: ['Envoyé', 'warn'], cancelled: ['Annulé', 'mute'], invoiced: ['Facturé', 'ok'],
+  to_pay: ['À payer', 'warn'], partially_paid: ['Payée en partie', 'warn'], paid: ['Payée', 'ok'],
+};
