@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import { money, VAT_RATES } from '@/lib/format';
 import { useSession } from '@/components/session';
@@ -44,7 +45,7 @@ export default function ProductsPage() {
         </label>
       </div>
       <div className="table-wrap"><table>
-        <thead><tr><th>Code</th><th>Désignation</th><th>Type</th><th className="n">Prix de vente HT</th><th className="n">TVA</th><th className="n">Prix TTC</th><th></th></tr></thead>
+        <thead><tr><th>Code</th><th>Désignation</th><th>Type</th><th className="n">Prix de vente HT</th><th className="n">TVA</th><th className="n">Prix TTC</th><th className="n">Stock</th><th></th></tr></thead>
         <tbody>
           {rows?.map((p) => (
             <tr key={p.id} style={p.archivedAt ? { opacity: .6 } : undefined}>
@@ -54,13 +55,14 @@ export default function ProductsPage() {
               <td className="n" style={{ whiteSpace: 'nowrap' }}>{money(p.salePrice)}</td>
               <td className="n">{p.vatRate} %</td>
               <td className="n" style={{ whiteSpace: 'nowrap' }}>{money(p.salePrice * (1 + p.vatRate / 100))}</td>
+              <td className="n" style={{ whiteSpace: 'nowrap' }}>{p.trackStock ? <Link href="/app/stocks">{p.stockQty.toLocaleString('fr-FR')} {p.unit}</Link> : <span className="muted">—</span>}</td>
               <td className="n"><div className="row" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                 {writable && can('products.update') && !p.archivedAt && <button className="btn sm" onClick={() => setEdit({ ...Object.fromEntries(FIELDS.map((k) => [k, p[k] ?? EMPTY[k]])), id: p.id })}>Modifier</button>}
                 {writable && can('products.cancel') && <button className={`btn sm${p.archivedAt ? '' : ' danger'}`} disabled={busy} onClick={() => toggleArchive(p)}>{p.archivedAt ? 'Restaurer' : 'Archiver'}</button>}
               </div></td>
             </tr>
           ))}
-          {rows && !rows.length && <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 28 }}>
+          {rows && !rows.length && <tr><td colSpan={8} className="muted" style={{ textAlign: 'center', padding: 28 }}>
             {q || archived !== 'false' ? 'Aucun article ne correspond à ces critères.' : 'Aucun article pour l’instant. Créez vos produits et services pour les retrouver dans vos devis et factures.'}
           </td></tr>}
         </tbody>

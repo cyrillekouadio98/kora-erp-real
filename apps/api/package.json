@@ -55,6 +55,7 @@
     "setupFiles": [
       "<rootDir>/test/setup-env.ts"
     ],
-    "testTimeout": 30000
+    "testTimeout": 30000,
+    "forceExit": true
   }
 }

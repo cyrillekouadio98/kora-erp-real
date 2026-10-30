@@ -88,6 +88,8 @@ export interface ProductTable {
   company_id: string; id: Generated<string>; code: string; kind: Generated<'good' | 'service'>; name: string; description: string | null;
   unit: Generated<string>; sale_price: ColumnType<string, number | string | undefined, number | string>; purchase_price: ColumnType<string | null, number | string | null | undefined, number | string | null>;
   vat_rate: ColumnType<string, number | string | undefined, number | string>; archived_at: TsNullable; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
+  track_stock: Generated<boolean>; min_stock: ColumnType<string | null, number | string | null | undefined, number | string | null>;
+  stock_qty: NumDefault; stock_value: NumDefault; avg_cost: NumDefault;
 }
 export type SalesDocType = 'quote' | 'invoice' | 'credit_note';
 export type SalesDocStatus = 'draft' | 'sent' | 'accepted' | 'refused' | 'invoiced' | 'issued' | 'partially_paid' | 'paid' | 'credited';
@@ -95,7 +97,7 @@ type NumDefault = ColumnType<string, number | string | undefined, number | strin
 export interface SalesDocumentTable {
   company_id: string; id: Generated<string>; type: SalesDocType; status: Generated<SalesDocStatus>; number: string | null; contact_id: string;
   customer: JsonDefault<Record<string, unknown>>; issue_date: DateCol; due_date: DateNullable; valid_until: DateNullable; currency: Generated<string>; notes: string | null;
-  total_ht: NumDefault; total_vat: NumDefault; total_ttc: NumDefault; paid_amount: NumDefault; credited_amount: NumDefault; refunded_amount: NumDefault; source_quote_id: string | null; source_invoice_id: string | null;
+  total_ht: NumDefault; total_vat: NumDefault; total_ttc: NumDefault; paid_amount: NumDefault; credited_amount: NumDefault; refunded_amount: NumDefault; restock: Generated<boolean>; source_quote_id: string | null; source_invoice_id: string | null;
   validated_at: TsNullable; validated_by: string | null; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 export interface SalesDocumentLineTable {
@@ -139,7 +141,7 @@ export interface TreasuryMovementTable {
 
 export interface LedgerAccountTable { company_id: string; code: string; name: string; is_system: Generated<boolean>; archived_at: TsNullable; created_at: Generated<Date>; }
 export interface JournalTable { company_id: string; code: string; name: string; }
-export type EntrySource = 'manual' | 'sales_document' | 'purchase_document' | 'treasury_movement' | 'treasury_opening' | 'reversal';
+export type EntrySource = 'manual' | 'sales_document' | 'purchase_document' | 'treasury_movement' | 'treasury_opening' | 'stock_opening' | 'stock_variation' | 'reversal';
 export interface JournalEntryTable {
   company_id: string; id: Generated<string>; journal_code: string; number: string | null; date: string; label: string; reference: string | null;
   status: Generated<'draft' | 'posted'>; source_type: EntrySource; source_id: string | null; reversal_of: string | null; reversed_by: string | null;
@@ -147,6 +149,12 @@ export interface JournalEntryTable {
 }
 export interface JournalLineTable {
   company_id: string; id: Generated<string>; entry_id: string; position: number; account_code: string; contact_id: string | null; label: string; debit: NumDefault; credit: NumDefault;
+}
+
+export type StockReason = 'opening' | 'purchase' | 'sale' | 'sale_return' | 'adjustment';
+export interface StockMovementTable {
+  company_id: string; id: Generated<string>; product_id: string; date: DateCol; direction: 'in' | 'out'; quantity: Num; value: Num;
+  qty_after: Num; value_after: Num; reason: StockReason; source_id: string | null; label: string; created_by: string | null; created_at: Generated<Date>;
 }
 
 export interface DB {
@@ -160,4 +168,5 @@ export interface DB {
   purchase_document: PurchaseDocumentTable; purchase_document_line: PurchaseDocumentLineTable; purchase_payment: PurchasePaymentTable;
   treasury_account: TreasuryAccountTable; treasury_movement: TreasuryMovementTable;
   ledger_account: LedgerAccountTable; journal: JournalTable; journal_entry: JournalEntryTable; journal_line: JournalLineTable;
+  stock_movement: StockMovementTable;
 }

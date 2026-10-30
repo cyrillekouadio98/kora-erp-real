@@ -26,10 +26,11 @@ const ProductSchema = z.object({
 }).strict();
 
 const COLUMNS = { kind: 'kind', name: 'name', code: 'code', description: 'description', unit: 'unit', salePrice: 'sale_price', purchasePrice: 'purchase_price', vatRate: 'vat_rate' } as const;
-const SELECT = ['id', 'code', 'kind', 'name', 'description', 'unit', 'sale_price as salePrice', 'purchase_price as purchasePrice', 'vat_rate as vatRate', 'archived_at as archivedAt'] as const;
+const SELECT = ['id', 'code', 'kind', 'name', 'description', 'unit', 'sale_price as salePrice', 'purchase_price as purchasePrice', 'vat_rate as vatRate', 'archived_at as archivedAt',
+  'track_stock as trackStock', 'stock_qty as stockQty'] as const;
 
-const toNumbers = <T extends { salePrice: string; purchasePrice: string | null; vatRate: string }>(p: T) =>
-  ({ ...p, salePrice: Number(p.salePrice), purchasePrice: p.purchasePrice === null ? null : Number(p.purchasePrice), vatRate: Number(p.vatRate) });
+const toNumbers = <T extends { salePrice: string; purchasePrice: string | null; vatRate: string; stockQty: string }>(p: T) =>
+  ({ ...p, salePrice: Number(p.salePrice), purchasePrice: p.purchasePrice === null ? null : Number(p.purchasePrice), vatRate: Number(p.vatRate), stockQty: Number(p.stockQty) });
 
 @ApiTags('Articles')
 @Controller('company/products')
@@ -74,7 +75,8 @@ export class ProductsController {
       const code = await this.resolveCode(trx, t, input.code);
       const values: Record<string, unknown> = {};
       for (const [k, col] of Object.entries(COLUMNS)) if ((input as any)[k] !== undefined) values[col] = (input as any)[k];
-      const p = await trx.insertInto('product').values({ ...values, code, company_id: t.companyId, created_by: t.ctx.userId } as any).returning(SELECT).executeTakeFirstOrThrow();
+      // Les biens sont suivis en stock dès leur création ; les services ne le sont jamais.
+      const p = await trx.insertInto('product').values({ ...values, code, company_id: t.companyId, created_by: t.ctx.userId, track_stock: (input.kind ?? 'good') === 'good' } as any).returning(SELECT).executeTakeFirstOrThrow();
       await this.audit.tenant(trx, t.ctx, { action: 'product.created', entityType: 'product', entityId: p.id, data: { code, name: p.name, salePrice: Number(p.salePrice) } });
       return toNumbers(p);
     });
@@ -92,6 +94,11 @@ export class ProductsController {
       const patch: Record<string, unknown> = {};
       for (const [k, col] of Object.entries(COLUMNS)) if ((input as any)[k] !== undefined) patch[col] = (input as any)[k];
       if (input.code !== undefined) patch.code = await this.resolveCode(trx, t, input.code, id);
+      // Un bien est suivi en stock, un service jamais : changer de type n'est possible qu'à stock vide.
+      if (input.kind && input.kind !== before.kind) {
+        if (Number(before.stock_qty) !== 0) throw conflict(`« ${before.name} » a encore ${Number(before.stock_qty).toLocaleString('fr-FR')} en stock : soldez-le par un inventaire avant de changer son type.`, 'stock_not_empty');
+        patch.track_stock = input.kind === 'good';
+      }
       if (!Object.keys(patch).length) return toNumbers(await trx.selectFrom('product').select(SELECT).where('id', '=', id).executeTakeFirstOrThrow());
       const after = await trx.updateTable('product').set(patch).where('id', '=', id).returning(SELECT).executeTakeFirstOrThrow();
       const changes = Object.fromEntries(Object.keys(patch).filter((c) => String((before as any)[c]) !== String(patch[c])).map((c) => [c, { from: (before as any)[c], to: patch[c] }]));

@@ -35,6 +35,7 @@ const NAV: { href: string; label: string; perm?: string; module?: string; group:
   { href: '/app/comptabilite', label: 'Comptabilité', perm: 'accounting.read', module: 'accounting', group: 'Finance' },
   { href: '/app/contacts', label: 'Clients et fournisseurs', perm: 'contacts.read', group: 'Référentiels' },
   { href: '/app/articles', label: 'Articles', perm: 'products.read', group: 'Référentiels' },
+  { href: '/app/stocks', label: 'Stocks', perm: 'products.read', group: 'Référentiels' },
   { href: '/app/utilisateurs', label: 'Utilisateurs', perm: 'users.read', group: 'Administration' },
   { href: '/app/roles', label: 'Rôles et permissions', perm: 'users.read', group: 'Administration' },
   { href: '/app/abonnement', label: 'Abonnement', perm: 'billing.read', group: 'Administration' },

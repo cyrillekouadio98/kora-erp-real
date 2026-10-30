@@ -46,6 +46,9 @@ describe('Ventes : articles, devis, factures, encaissements', () => {
     expect(p.status).toBe(201);
     expect(p.body).toMatchObject({ code: 'ART-00001', salePrice: 15000, vatRate: 18, kind: 'good', unit: 'sac' });
     productId = p.body.id;
+    expect(p.body).toMatchObject({ trackStock: true, stockQty: 0 });
+    // Un bien ne se vend que s'il est en stock : stock initial de 200 sacs à 12 000 FCFA.
+    expect((await owner.agent.post(`/company/stock/${productId}/opening`).send({ quantity: 200, unitCost: 12000 })).status).toBe(200);
     expect((await owner.agent.post('/company/products').send({ name: 'Taux exotique', salePrice: 10, vatRate: 5 })).status).toBe(400);
     expect((await owner.agent.get('/company/products').query({ q: 'ciment' })).body).toHaveLength(1);
   });
@@ -105,10 +108,11 @@ describe('Ventes : articles, devis, factures, encaissements', () => {
 
   it('la base de données refuse de modifier une facture émise, même hors API', async () => {
     const c = await ownerClient();
-    await expect(c.query(`UPDATE sales_document SET total_ttc = 1 WHERE id = $1`, [invoiceId])).rejects.toThrow(/non modifiable/);
-    await expect(c.query(`DELETE FROM sales_document WHERE id = $1`, [invoiceId])).rejects.toThrow(/suppression interdite/);
-    await expect(c.query(`UPDATE sales_document_line SET unit_price = 1 WHERE document_id = $1`, [invoiceId])).rejects.toThrow(/lignes non modifiables/);
-    await c.end();
+    try {
+      await expect(c.query(`UPDATE sales_document SET total_ttc = 1 WHERE id = $1`, [invoiceId])).rejects.toThrow(/non modifiable/);
+      await expect(c.query(`DELETE FROM sales_document WHERE id = $1`, [invoiceId])).rejects.toThrow(/suppression interdite/);
+      await expect(c.query(`UPDATE sales_document_line SET unit_price = 1 WHERE document_id = $1`, [invoiceId])).rejects.toThrow(/lignes non modifiables/);
+    } finally { await c.end(); }
   });
 
   it('applique les rôles : le commercial prépare, le caissier encaisse, aucun ne valide', async () => {

@@ -7,10 +7,11 @@ import { DatabaseService, TenantTrx } from '../../db/database.service';
 import type { PaymentMethod, ReminderChannel, SalesDocStatus, SalesDocType } from '../../db/schema';
 import { AuditService } from '../audit/audit.service';
 import { AccountingService } from '../accounting/accounting.service';
+import { StockService } from '../stock/stock.service';
 import { TreasuryService } from '../treasury/treasury.service';
 
 export interface LineInput { productId?: string | null; description: string; quantity: number; unit?: string | null; unitPrice: number; discountPct?: number; vatRate: number }
-export interface DocInput { contactId: string; issueDate?: string; dueDate?: string | null; validUntil?: string | null; notes?: string | null; lines: LineInput[] }
+export interface DocInput { contactId: string; issueDate?: string; dueDate?: string | null; validUntil?: string | null; notes?: string | null; restock?: boolean; lines: LineInput[] }
 
 const PREFIX: Record<SalesDocType, string> = { quote: 'DEV', invoice: 'FAC', credit_note: 'AV' };
 const LABEL: Record<SalesDocType, string> = { quote: 'Devis', invoice: 'Facture', credit_note: 'Avoir' };
@@ -46,7 +47,7 @@ export function computeTotals(lines: LineInput[]) {
 
 @Injectable()
 export class SalesService {
-  constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly treasury: TreasuryService, private readonly accounting: AccountingService) {}
+  constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly treasury: TreasuryService, private readonly accounting: AccountingService, private readonly stock: StockService) {}
 
   private async doc(trx: TenantTrx, id: string, lock = false) {
     if (!isUuid(id)) throw notFound('Document');
@@ -131,7 +132,7 @@ export class SalesService {
       }, {})).sort((a, b) => b.rate - a.rate);
       return {
         id: d.id, type: d.type, status: d.status, number: d.number, issueDate: d.issue_date, dueDate: d.due_date, validUntil: d.valid_until,
-        currency: d.currency, notes: d.notes, validatedAt: d.validated_at, sourceQuoteId: d.source_quote_id,
+        currency: d.currency, notes: d.notes, restock: d.restock, validatedAt: d.validated_at, sourceQuoteId: d.source_quote_id,
         customer: d.status === 'draft' ? contact : { ...contact, ...(d.customer as object) }, contact,
         totalHt: Number(d.total_ht), totalVat: Number(d.total_vat), totalTtc: Number(d.total_ttc), paidAmount: Number(d.paid_amount), creditedAmount: Number(d.credited_amount), refundedAmount: Number(d.refunded_amount),
         refunds: refunds.map((r) => ({ ...r, amount: Number(r.amount) })),
@@ -171,6 +172,7 @@ export class SalesService {
       if (input.notes !== undefined) patch.notes = input.notes;
       if (d.type === 'invoice' && input.dueDate !== undefined) patch.due_date = input.dueDate;
       if (d.type === 'quote' && input.validUntil !== undefined) patch.valid_until = input.validUntil;
+      if (d.type === 'credit_note' && input.restock !== undefined) patch.restock = input.restock;
       if (input.lines) {
         const totals = await this.writeLines(trx, t, id, input.lines);
         Object.assign(patch, { total_ht: totals.ht, total_vat: totals.vat, total_ttc: totals.ttc });
@@ -210,6 +212,7 @@ export class SalesService {
       await trx.updateTable('sales_document').set({
         status: d.type === 'quote' ? 'sent' : 'issued', number, issue_date: issue, customer: JSON.stringify(customer), validated_at: new Date(), validated_by: t.ctx.userId, ...dates,
       }).where('id', '=', id).execute();
+      await this.stock.applySalesDocument(trx, t, id);
       await this.accounting.postSalesDocument(trx, t, id);
       await this.audit.tenant(trx, t.ctx, { action: `${d.type}.validated`, entityType: 'sales_document', entityId: id, data: { number, customer: c.name, totalTtc: Number(d.total_ttc) } });
     });

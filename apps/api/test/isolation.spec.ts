@@ -55,6 +55,8 @@ describe('Isolation des données entre entreprises', () => {
     const od = await B.agent.post('/company/accounting/entries').send({ date: new Date().toISOString().slice(0, 10), label: 'Écriture secrète Bêta', lines: [
       { account: '6222', label: 'Ligne comptable secrète Bêta', debit: 100 }, { account: '401', label: 'Ligne comptable secrète Bêta', credit: 100 }] });
     await B.agent.post('/company/accounting/accounts').send({ code: '6229', name: 'Compte secret Bêta' });
+    await B.agent.post(`/company/stock/${product.body.id}/opening`).send({ quantity: 7, unitCost: 100 });
+    await B.agent.post(`/company/stock/${product.body.id}/count`).send({ counted: 6, reason: 'Inventaire secret Bêta' });
     const sessions = await B.agent.get('/auth/sessions');
     const support = await platformUser(app, 'support');
     const grant = await support.agent.post('/platform/support-access').send({ companyId: B.companyId, reason: 'Diagnostic de test isolation', scope: ['users'] });
@@ -69,7 +71,7 @@ describe('Isolation des données entre entreprises', () => {
       company: B.companyId, role: role.body.id, invitation: inv.body.id, membership: members.body[0].id,
       session: sessions.body[0].id, grant: grant.body.id, invoice: invB.rows[0].id, contact: contact.body.id, product: product.body.id, quote: quote.body.id, salesInvoice: invoice.body.id, creditNote: creditNote.body.id, purchaseOrder: order.body.id, purchaseInvoice: bill.body.id, treasuryAccount: bCash.id, treasuryMovement: expense.body.id, journalEntry: od.body.id,
     });
-    bSecrets = [...Object.values(bIds), B.email, 'Entreprise Bêta', 'Rôle secret Bêta', 'invite.beta@test.ci', 'Client secret Bêta', 'client.beta@test.ci', 'Article secret Bêta', 'Ligne secrète Bêta', 'PAIEMENT-SECRET-BETA', 'RELANCE-SECRETE-BETA', 'Fournisseur secret Bêta', 'Achat secret Bêta', 'REF-SECRETE-BETA', 'DECAISSEMENT-SECRET-BETA', 'Caisse secrète Bêta', 'Dépense secrète Bêta', 'Écriture secrète Bêta', 'Ligne comptable secrète Bêta', 'Compte secret Bêta'];
+    bSecrets = [...Object.values(bIds), B.email, 'Entreprise Bêta', 'Rôle secret Bêta', 'invite.beta@test.ci', 'Client secret Bêta', 'client.beta@test.ci', 'Article secret Bêta', 'Ligne secrète Bêta', 'PAIEMENT-SECRET-BETA', 'RELANCE-SECRETE-BETA', 'Fournisseur secret Bêta', 'Achat secret Bêta', 'REF-SECRETE-BETA', 'DECAISSEMENT-SECRET-BETA', 'Caisse secrète Bêta', 'Dépense secrète Bêta', 'Écriture secrète Bêta', 'Ligne comptable secrète Bêta', 'Compte secret Bêta', 'Inventaire secret Bêta'];
   });
 
   afterAll(async () => { await app.close(); });

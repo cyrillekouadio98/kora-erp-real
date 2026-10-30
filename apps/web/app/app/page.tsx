@@ -14,6 +14,7 @@ export default function Dashboard() {
   const [sales, setSales] = useState<any>(null);
   const [purchases, setPurchases] = useState<any>(null);
   const [treasury, setTreasury] = useState<any>(null);
+  const [stock, setStock] = useState<any>(null);
   const [name, setName] = useState('');
   const { busy, error, run } = useAction();
   useEffect(() => {
@@ -21,6 +22,7 @@ export default function Dashboard() {
     if (ctx && can('sales.read') && ctx.entitlements.modules.includes('sales')) api('/company/sales/summary').then(setSales, () => {});
     if (ctx && can('purchases.read') && ctx.entitlements.modules.includes('purchases')) api('/company/purchases/summary').then(setPurchases, () => {});
     if (ctx && can('cash.read') && ctx.entitlements.modules.includes('cash')) api('/company/treasury/summary').then(setTreasury, () => {});
+    if (ctx && can('products.read')) api('/company/stock').then((s) => s.items.length && setStock(s), () => {});
   }, [ctx]); // eslint-disable-line
 
   if (!ctx) {
@@ -45,6 +47,13 @@ export default function Dashboard() {
         <div className="kpis">
           <div className="card kpi"><div className="l">Trésorerie disponible</div><div className="v">{money(treasury.total)}</div><div className="small muted"><Link href="/app/tresorerie">caisse et banque</Link></div></div>
           {treasury.accounts.map((a: any) => <div key={a.id} className="card kpi"><div className="l">{a.name}</div><div className="v" style={{ color: a.balance < 0 ? 'var(--crit)' : undefined }}>{money(a.balance)}</div></div>)}
+        </div>
+      )}
+      {stock && (
+        <div className="kpis">
+          <div className="card kpi"><div className="l">Valeur du stock</div><div className="v">{money(stock.totalValue)}</div><div className="small muted"><Link href="/app/stocks">voir les stocks</Link></div></div>
+          <div className="card kpi"><div className="l">Articles en rupture</div><div className="v" style={{ color: stock.outOfStock ? 'var(--crit)' : undefined }}>{stock.outOfStock}</div></div>
+          <div className="card kpi"><div className="l">Sous le seuil d'alerte</div><div className="v" style={{ color: stock.lowStock ? 'var(--warn)' : undefined }}>{stock.lowStock}</div></div>
         </div>
       )}
       {sales && (
@@ -77,7 +86,7 @@ export default function Dashboard() {
         <div className="row">
           {Object.entries(MODULE_LABELS).map(([k, l]) => <Pill key={k} tone={ctx.entitlements.modules.includes(k) ? 'ok' : 'mute'}>{l}{ctx.entitlements.modules.includes(k) ? '' : ' · non inclus'}</Pill>)}
         </div>
-        <p className="small muted" style={{ marginBottom: 0 }}>Disponibles : clients et fournisseurs, articles, ventes (devis, factures, avoirs, encaissements, relances) achats (bons de commande, factures et règlements fournisseurs, échéancier) trésorerie (caisse, banque, mobile money) et comptabilité SYSCOHADA (écritures automatiques, grand livre, balance, TVA, résultat). Les stocks et la paie arrivent avec les prochains lots.</p>
+        <p className="small muted" style={{ marginBottom: 0 }}>Disponibles : clients et fournisseurs, articles, ventes (devis, factures, avoirs, encaissements, relances) achats (bons de commande, factures et règlements fournisseurs, échéancier) trésorerie (caisse, banque, mobile money) comptabilité SYSCOHADA (écritures automatiques, grand livre, balance, TVA, résultat) et stocks valorisés au CMUP. La paie arrive avec le prochain lot.</p>
       </div>
       <div className="card">
         <header><h2>Pour bien démarrer</h2></header>

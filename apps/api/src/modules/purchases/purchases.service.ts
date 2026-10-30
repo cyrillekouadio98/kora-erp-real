@@ -7,6 +7,7 @@ import { DatabaseService, TenantTrx } from '../../db/database.service';
 import type { PaymentMethod, PurchaseDocStatus, PurchaseDocType } from '../../db/schema';
 import { AuditService } from '../audit/audit.service';
 import { AccountingService } from '../accounting/accounting.service';
+import { StockService } from '../stock/stock.service';
 import { TreasuryService } from '../treasury/treasury.service';
 import { addDays, computeTotals, LineInput, today } from '../sales/sales.service';
 
@@ -21,7 +22,7 @@ const remainingOf = (d: { total_ttc: string; paid_amount: string }) => Math.max(
 
 @Injectable()
 export class PurchasesService {
-  constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly treasury: TreasuryService, private readonly accounting: AccountingService) {}
+  constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly treasury: TreasuryService, private readonly accounting: AccountingService, private readonly stock: StockService) {}
 
   private async doc(trx: TenantTrx, id: string, lock = false) {
     if (!isUuid(id)) throw notFound('Document');
@@ -189,6 +190,7 @@ export class PurchasesService {
         status: d.type === 'order' ? 'sent' : 'to_pay', number, issue_date: issue, supplier: JSON.stringify(supplier), validated_at: new Date(), validated_by: t.ctx.userId,
         ...(d.type === 'invoice' ? { due_date: d.due_date ?? addDays(issue, c.payment_terms_days) } : {}),
       }).where('id', '=', id).execute();
+      if (d.type === 'invoice') await this.stock.applyPurchaseInvoice(trx, t, id);
       await this.accounting.postPurchaseDocument(trx, t, id);
       await this.audit.tenant(trx, t.ctx, { action: `purchase_${d.type}.validated`, entityType: 'purchase_document', entityId: id, data: { number, supplier: c.name, supplierRef: d.supplier_ref, totalTtc: Number(d.total_ttc) } });
     });

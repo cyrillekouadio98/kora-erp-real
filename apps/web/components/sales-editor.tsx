@@ -44,6 +44,7 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
   const [supplierRef, setSupplierRef] = useState<string>(doc?.supplierRef ?? '');
   const [issueDate, setIssueDate] = useState<string>(doc?.issueDate ?? today());
   const [lines, setLines] = useState<Line[]>(doc?.lines?.length ? doc.lines.map(toLine) : [{ ...EMPTY_LINE }]);
+  const [restock, setRestock] = useState<boolean>(doc?.restock ?? true);
   const [dirty, setDirty] = useState(false);
   const { busy, error, run } = useAction();
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty]); // eslint-disable-line
@@ -69,6 +70,7 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
       lines: lines.map(toLine).map((l) => ({ ...l, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), discountPct: Number(l.discountPct || 0), unit: l.unit || null })),
       ...(limitKey ? { [limitKey]: limitDate || null } : {}),
       ...(isPurchaseInvoice ? { supplierRef: supplierRef || null, issueDate } : {}),
+      ...(isCredit ? { restock } : {}),
     };
     const saved = doc ? await api(`${cfg.base}/${doc.id}`, { method: 'PATCH', body }) : await api(cfg.base, { body: { ...body, type } });
     setDirty(false);
@@ -106,7 +108,7 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
           {lines.map((l, i) => (
             <tr key={i}>
               <td><select className="input" value={l.productId ?? ''} onChange={(e) => pickProduct(i, e.target.value)} aria-label={`Article ligne ${i + 1}`}>
-                <option value="">Saisie libre</option>{products.map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
+                <option value="">Saisie libre</option>{products.map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}{p.trackStock ? ` (stock : ${p.stockQty.toLocaleString('fr-FR')})` : ''}</option>)}
               </select></td>
               <td><input className="input" required value={l.description} onChange={(e) => setLine(i, { description: e.target.value })} aria-label={`Désignation ligne ${i + 1}`} /></td>
               <td><input className="input n" type="number" min="0.001" step="any" required value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} aria-label={`Quantité ligne ${i + 1}`} style={{ width: 80 }} /></td>
@@ -123,6 +125,8 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
         <button type="button" className="btn" onClick={() => editLines([...lines, { ...EMPTY_LINE }])}>+ Ajouter une ligne</button>
         <dl className="totals"><dt>Total HT</dt><dd>{money(ht)}</dd><dt>TVA</dt><dd>{money(vat)}</dd><dt className="grand">Total TTC</dt><dd className="grand">{money(ht + vat)}</dd></dl>
       </div>
+      {isCredit && <label className="row small"><input type="checkbox" checked={restock} onChange={(e) => setRestock(e.target.checked)} />
+        Les marchandises de cet avoir reviennent en stock (décochez pour une simple remise de prix)</label>}
       <label className="field">{scope === 'purchases' ? 'Notes internes, conditions (facultatif)' : 'Conditions, mentions (facultatif)'}<textarea className="input" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
       <div className="row"><button className="btn primary" disabled={busy || !contactId}>{busy ? 'Enregistrement…' : 'Enregistrer le brouillon'}</button></div>
     </form>
