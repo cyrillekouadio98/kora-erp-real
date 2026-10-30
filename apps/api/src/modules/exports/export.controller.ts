@@ -59,6 +59,7 @@ export class ExportController {
           'cnps_number', 'marital_status', 'children', 'parts_override', 'base_salary', 'housing_allowance', 'transport_allowance', 'other_allowances', 'payment_method', 'phone', 'email']).execute(),
         payroll_runs: await trx.selectFrom('payroll_run').selectAll().orderBy('period').execute(),
         payslips: await trx.selectFrom('payslip').selectAll().orderBy('run_id').execute(),
+        fiscal_year_closings: await trx.selectFrom('fiscal_year_closing').selectAll().orderBy('year').execute(),
         audit_log: await trx.selectFrom('audit_log').selectAll().orderBy('id').execute(),
       };
       await this.audit.tenant(trx, t.ctx, { action: 'data.exported', data: { tables: Object.keys(out) } });

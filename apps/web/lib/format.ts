@@ -39,7 +39,7 @@ export const ACTION_LABELS: Record<string, string> = {
   'treasury.movement_reversed': 'Mouvement contre-passé',
   'accounting.synced': 'Historique comptabilisé', 'accounting.entry_created': 'Écriture saisie', 'accounting.entry_deleted': 'Brouillon d’écriture supprimé',
   'accounting.entry_posted': 'Écriture validée', 'accounting.entry_reversed': 'Écriture contre-passée', 'accounting.account_created': 'Compte ajouté au plan comptable',
-  'accounting.period_locked': 'Période comptable clôturée', 'accounting.exported': 'Écritures exportées',
+  'accounting.period_locked': 'Période comptable clôturée', 'accounting.year_closed': 'Exercice comptable clôturé', 'accounting.exported': 'Écritures exportées',
   'stock.opening_recorded': 'Stock initial enregistré', 'stock.counted': 'Inventaire de stock', 'stock.settings_updated': 'Paramètres de stock modifiés',
   'stock.variation_posted': 'Variation de stock comptabilisée',
   'employee.created': 'Employé créé', 'employee.updated': 'Fiche employé modifiée', 'payroll.settings_updated': 'Paramètres de paie modifiés',

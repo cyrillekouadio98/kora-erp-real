@@ -83,13 +83,13 @@ export class AccountingService {
   }
 
   /** Numéro définitif (VT-2026-00001…) et passage au statut validé ; la base vérifie l'équilibre en fin de transaction. */
-  private async post(trx: TenantTrx, t: TenantInfo, entryId: string, journal: string, date: string) {
+  private async post(trx: TenantTrx, t: TenantInfo, entryId: string, journal: string, date: string, ignoreLock = false) {
     const lines = await trx.selectFrom('journal_line').select(['debit', 'credit']).where('entry_id', '=', entryId).execute();
     const d = round(lines.reduce((s, l) => s + Number(l.debit), 0)), c = round(lines.reduce((s, l) => s + Number(l.credit), 0));
     if (lines.length < 2 || d !== c || d === 0) {
       throw badRequest(`L'écriture n'est pas équilibrée : débit ${d.toLocaleString('fr-FR')} / crédit ${c.toLocaleString('fr-FR')}.`, { debit: d, credit: c }, 'unbalanced_entry');
     }
-    await this.assertOpen(trx, t, date);
+    if (!ignoreLock) await this.assertOpen(trx, t, date);
     const number = await nextNumber(trx, t.companyId, `journal_${journal}`, journal, Number(date.slice(0, 4)));
     await trx.updateTable('journal_entry').set({ status: 'posted', number, posted_by: t.ctx.userId, posted_at: new Date() }).where('id', '=', entryId).execute();
     return number;
@@ -103,7 +103,7 @@ export class AccountingService {
       source_id: e.sourceId ?? null, reversal_of: e.reversalOf ?? null, number: null, reversed_by: null, created_by: t.ctx.userId, posted_by: null,
     }).returning('id').executeTakeFirstOrThrow();
     await this.writeLines(trx, t, entry.id, e.lines);
-    const number = await this.post(trx, t, entry.id, e.journal, e.date);
+    const number = await this.post(trx, t, entry.id, e.journal, e.date, e.sourceType === 'year_closing');
     return { id: entry.id, number };
   }
 
@@ -193,7 +193,7 @@ export class AccountingService {
   }
 
   /** Opérations validées pas encore comptabilisées (données saisies avant l'activation de la comptabilité). */
-  private async pending(trx: TenantTrx) {
+  async pending(trx: TenantTrx) {
     const has = (type: EntrySource) => (eb: any) => eb.not(eb.exists(eb.selectFrom('journal_entry as e').select('e.id').where('e.source_type', '=', type).whereRef('e.source_id', '=', 'x.id')));
     const sales = await trx.selectFrom('sales_document as x').select(['x.id', 'x.issue_date as date', 'x.created_at']).where('x.type', 'in', ['invoice', 'credit_note']).where('x.status', '!=', 'draft').where(has('sales_document')).execute();
     const purchases = await trx.selectFrom('purchase_document as x').select(['x.id', 'x.issue_date as date', 'x.created_at']).where('x.type', '=', 'invoice').where('x.status', '!=', 'draft').where(has('purchase_document')).execute();

@@ -8,6 +8,7 @@ import { parse } from '../../common/validation';
 import { toCsv } from '../exports/export.controller';
 import { isoDate } from '../sales/sales.controller';
 import { AccountingService } from './accounting.service';
+import { FinancialService } from './financial.service';
 
 const accountCode = z.string().trim().regex(/^[1-9][0-9]{1,9}$/, { message: 'Numéro de compte invalide (chiffres uniquement)' });
 const LineSchema = z.object({
@@ -29,7 +30,33 @@ const Period = z.object({ from: isoDate.optional(), to: isoDate.optional() });
 @ApiTags('Comptabilité')
 @Controller('company/accounting')
 export class AccountingController {
-  constructor(private readonly accounting: AccountingService) {}
+  constructor(private readonly accounting: AccountingService, private readonly financial: FinancialService) {}
+
+  /** Bilan à une date (présentation simplifiée du système normal SYSCOHADA). */
+  @Permission('accounting.read') @AllowWhenReadOnly()
+  @Get('balance-sheet')
+  balanceSheet(@Tenant() t: TenantInfo, @Query() query: unknown) { return this.financial.balanceSheet(t, parse(z.object({ date: isoDate }), query).date); }
+
+  /** Soldes significatifs de gestion : marge commerciale, valeur ajoutée, EBE, résultats. */
+  @Permission('accounting.read') @AllowWhenReadOnly()
+  @Get('management-balances')
+  managementBalances(@Tenant() t: TenantInfo, @Query() query: unknown) { return this.financial.managementBalances(t, parse(z.object({ from: isoDate, to: isoDate }), query)); }
+
+  @Permission('accounting.read') @AllowWhenReadOnly()
+  @Get('fiscal-years')
+  years(@Tenant() t: TenantInfo) { return this.financial.years(t); }
+
+  @Permission('accounting.read') @AllowWhenReadOnly()
+  @Get('fiscal-years/:year/checklist')
+  checklist(@Tenant() t: TenantInfo, @Param('year') year: string) { this.financial.assertYear(Number(year)); return this.financial.checklist(t, Number(year)); }
+
+  /** Clôture d'exercice : détermination du résultat et verrouillage, irréversibles. */
+  @Permission('accounting.close') @HttpCode(200)
+  @Post('fiscal-years/:year/close')
+  close(@Tenant() t: TenantInfo, @Param('year') year: string, @Body() body: unknown) {
+    this.financial.assertYear(Number(year));
+    return this.financial.close(t, Number(year), parse(z.object({ acknowledgeWarnings: z.boolean().default(false) }).strict(), body ?? {}).acknowledgeWarnings);
+  }
 
   @Permission('accounting.read') @AllowWhenReadOnly()
   @Get('status')

@@ -7,7 +7,8 @@ import { Alert, Field, Pill, useAction } from '@/components/ui';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const yearStart = () => `${today().slice(0, 4)}-01-01`;
-const TABS = [['entries', 'Écritures'], ['ledger', 'Grand livre'], ['balance', 'Balance'], ['vat', 'TVA'], ['result', 'Compte de résultat'], ['chart', 'Plan comptable']] as const;
+const TABS = [['entries', 'Écritures'], ['ledger', 'Grand livre'], ['balance', 'Balance'], ['sheet', 'Bilan'], ['sig', 'Soldes de gestion'], ['result', 'Compte de résultat'],
+  ['vat', 'TVA'], ['closing', 'Clôture d\u2019exercice'], ['chart', 'Plan comptable']] as const;
 type Tab = (typeof TABS)[number][0];
 const num = (n: number) => (n ? money(n) : '');
 
@@ -59,7 +60,7 @@ export default function AccountingPage() {
 
       <div className="row" role="tablist" style={{ gap: 6 }}>
         {TABS.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={`btn sm${tab === k ? ' primary' : ''}`} onClick={() => setTab(k)}>{l}</button>)}
-        {tab !== 'chart' && tab !== 'vat' && <div className="row" style={{ marginLeft: 'auto', gap: 8 }}>
+        {!['chart', 'vat', 'sheet', 'closing'].includes(tab) && <div className="row" style={{ marginLeft: 'auto', gap: 8 }}>
           <Field label="Du" type="date" value={period.from} onChange={(e) => setPeriod({ ...period, from: e.target.value })} />
           <Field label="Au" type="date" value={period.to} onChange={(e) => setPeriod({ ...period, to: e.target.value })} />
         </div>}
@@ -70,6 +71,9 @@ export default function AccountingPage() {
       {tab === 'balance' && <TrialBalance period={period} version={version} />}
       {tab === 'vat' && <Vat version={version} />}
       {tab === 'result' && <IncomeStatement period={period} version={version} />}
+      {tab === 'sheet' && <BalanceSheet version={version} />}
+      {tab === 'sig' && <ManagementBalances period={period} version={version} />}
+      {tab === 'closing' && <Closing version={version} changed={changed} />}
       {tab === 'chart' && <Chart accounts={accounts} changed={changed} />}
 
       {modal && (
@@ -303,6 +307,104 @@ function Chart({ accounts, changed }: { accounts: any[]; changed: () => void }) 
             <td className="small muted">{['', 'Ressources durables', 'Actif immobilisé', 'Stocks', 'Tiers', 'Trésorerie', 'Charges', 'Produits', 'Autres charges et produits'][Number(a.code[0])]}</td>
             <td>{a.used && <Pill tone="ok">Mouvementé</Pill>}{!a.isSystem && <> <Pill>Ajouté</Pill></>}</td></tr>))}</tbody>
       </table></div>
+    </div>
+  );
+}
+
+/** Bilan à une date : actif (brut, amortissements, net) et passif, avec le détail des comptes de chaque rubrique. */
+function BalanceSheet({ version }: { version: number }) {
+  const [date, setDate] = useState(today());
+  const [open, setOpen] = useState<string | null>(null);
+  const { data } = useLatest<any>(`/company/accounting/balance-sheet?date=${date}`, [version]);
+  const side = (title: string, sections: any[], total: number, isAssets: boolean) => (
+    <div className="card" style={{ flex: 1, minWidth: 340 }}>
+      <header><h2>{title}</h2><b>{money(total)}</b></header>
+      <table className="vat" style={{ width: '100%' }}>
+        {isAssets && <thead><tr><th></th><th className="n">Brut</th><th className="n">Amort./dépréc.</th><th className="n">Net</th></tr></thead>}
+        {sections.map((s: any) => (
+          <tbody key={s.section}>
+            <tr><td colSpan={isAssets ? 3 : 1}><b>{s.section}</b></td><td className="n"><b>{money(s.total)}</b></td></tr>
+            {s.rows.filter((r: any) => r.net || r.gross).map((r: any) => [
+              <tr key={r.key} style={{ cursor: r.accounts?.length ? 'pointer' : undefined }} onClick={() => setOpen(open === r.key ? null : r.key)}>
+                <td style={{ paddingLeft: 18 }}>{r.label}{r.accounts?.length ? <span className="muted small"> {open === r.key ? '▾' : '▸'}</span> : null}</td>
+                {isAssets && <><td className="n">{r.gross !== undefined ? money(r.gross) : ''}</td><td className="n">{r.depreciation ? money(r.depreciation) : ''}</td></>}
+                <td className="n" style={{ color: r.net < 0 ? 'var(--crit)' : undefined }}>{money(r.net)}</td></tr>,
+              ...(open === r.key ? r.accounts.map((a: any) => <tr key={`${r.key}-${a.code}`} className="small muted"><td style={{ paddingLeft: 32 }}><code className="k">{a.code}</code> {a.name}</td>{isAssets && <><td></td><td></td></>}<td className="n">{money(a.amount)}</td></tr>) : []),
+            ])}
+          </tbody>
+        ))}
+      </table>
+    </div>
+  );
+  return (
+    <>
+      <div className="row no-print"><Field label="Bilan arrêté au" type="date" max={today()} value={date} onChange={(e) => setDate(e.target.value)} />
+        {data && (data.balanced ? <Pill tone="ok">Actif = passif</Pill> : <Pill tone="crit">Bilan déséquilibré</Pill>)}
+        <button className="btn sm" onClick={() => window.print()}>Imprimer / PDF</button></div>
+      {data && <div className="row" style={{ alignItems: 'flex-start' }}>{side('Actif', data.assets, data.totalAssets, true)}{side('Passif', data.liabilities, data.totalLiabilities, false)}</div>}
+      <p className="small muted" style={{ margin: 0 }}>Présentation simplifiée du système normal SYSCOHADA révisé. Les comptes de tiers et de trésorerie figurent à l'actif ou au passif selon le sens de leur solde. Les états officiels (DSF) restent établis par votre expert-comptable.</p>
+    </>
+  );
+}
+
+/** Soldes significatifs de gestion SYSCOHADA. */
+function ManagementBalances({ period, version }: { period: any; version: number }) {
+  const { data } = useLatest<any>(`/company/accounting/management-balances?from=${period.from}&to=${period.to}`, [version]);
+  if (!data) return null;
+  const strong = ['revenue', 'addedValue', 'ebitda', 'operatingResult', 'netResult'];
+  return (
+    <div className="card">
+      <header><h2>Soldes significatifs de gestion</h2><span className="small muted">du {date(data.from)} au {date(data.to)}</span></header>
+      <table className="vat" style={{ width: '100%' }}><tbody>
+        {data.lines.map((l: any) => (
+          <tr key={l.key}><td>{strong.includes(l.key) ? <b>{l.label}</b> : l.label}
+            {l.plus || l.minus ? <div className="small muted">{[l.plus ? `produits ${money(l.plus)}` : '', l.minus ? `charges ${money(l.minus)}` : ''].filter(Boolean).join(' · ')}</div> : null}</td>
+            <td className="n" style={{ color: l.value < 0 ? 'var(--crit)' : undefined, fontWeight: strong.includes(l.key) ? 700 : 400 }}>{money(l.value)}</td></tr>))}
+      </tbody></table>
+      <p className="small muted" style={{ marginBottom: 0 }}>Marge commerciale = ventes de marchandises − achats de marchandises ± variation de stock. Valeur ajoutée = chiffre d'affaires et autres produits − consommations (60 à 65). EBE = valeur ajoutée − charges de personnel.</p>
+    </div>
+  );
+}
+
+/** Clôture d'exercice : liste de contrôle, puis détermination du résultat et verrouillage. */
+function Closing({ version, changed }: { version: number; changed: () => void }) {
+  const { can, ctx } = useSession();
+  const { data: years } = useLatest<any[]>('/company/accounting/fiscal-years', [version]);
+  const [year, setYear] = useState<number | null>(null);
+  const [ack, setAck] = useState(false);
+  const { busy, error, run } = useAction();
+  const selected = year ?? years?.find((y) => !y.closed && y.year < Number(today().slice(0, 4)))?.year ?? years?.[0]?.year ?? null;
+  const { data: c } = useLatest<any>(selected ? `/company/accounting/fiscal-years/${selected}/checklist` : null, [version, selected]);
+  return (
+    <div className="row" style={{ alignItems: 'flex-start' }}>
+      <div className="card" style={{ minWidth: 220 }}><header><h2>Exercices</h2></header>
+        <div style={{ display: 'grid', gap: 6 }}>{years?.map((y) => (
+          <button key={y.year} className={`btn sm${y.year === selected ? ' primary' : ''}`} style={{ justifyContent: 'space-between' }} onClick={() => { setYear(y.year); setAck(false); }}>
+            {y.year} {y.closed ? <Pill tone="ok">Clôturé</Pill> : <Pill tone="warn">Ouvert</Pill>}</button>))}</div></div>
+      {c && (
+        <div className="card" style={{ flex: 1, minWidth: 320, display: 'grid', gap: 12 }}>
+          <header><h2>Exercice {c.year}</h2><span className="small muted">du 01/01/{c.year} au 31/12/{c.year}</span></header>
+          {c.closed ? <>
+            <Alert kind="ok">Exercice clôturé le {date(c.closed.closedAt)} — {c.closed.result >= 0 ? 'bénéfice' : 'perte'} de <b>{money(Math.abs(c.closed.result))}</b>, porté au compte {c.closed.result >= 0 ? '131' : '139'}.</Alert>
+            <p className="small muted" style={{ margin: 0 }}>Après l'assemblée qui approuve les comptes, passez l'affectation du résultat par une écriture d'OD (ex. 131 vers 111 réserve légale, 121 report à nouveau ou 465 dividendes).</p>
+          </> : <>
+            <div className="kpis"><div className="card kpi"><div className="l">Résultat provisoire</div><div className="v" style={{ color: c.result < 0 ? 'var(--crit)' : 'var(--ok)' }}>{money(c.result)}</div></div></div>
+            {c.blocking.length > 0 && <Alert>{c.blocking.map((b: string) => <div key={b}>✕ {b}</div>)}</Alert>}
+            {c.warnings.length > 0 && <Alert kind="warn">{c.warnings.map((w: string) => <div key={w}>⚠ {w}</div>)}</Alert>}
+            {!c.blocking.length && !c.warnings.length && <Alert kind="ok">Tous les contrôles sont satisfaits.</Alert>}
+            <Alert>{error}</Alert>
+            {can('accounting.close') && !ctx?.readOnly && !c.blocking.length && <>
+              {c.warnings.length > 0 && <label className="row small"><input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} /> J'ai pris connaissance des points ci-dessus et je clôture malgré tout.</label>}
+              <div><button className="btn primary" disabled={busy || (c.warnings.length > 0 && !ack)} onClick={() => {
+                if (window.confirm(`Clôturer l'exercice ${c.year} ? Le résultat sera porté au bilan et plus aucune écriture ne pourra être passée sur cet exercice. Cette opération est définitive.`)) {
+                  run(async () => { await api(`/company/accounting/fiscal-years/${c.year}/close`, { body: { acknowledgeWarnings: ack } }); changed(); });
+                }
+              }}>Clôturer l'exercice {c.year}</button></div>
+            </>}
+            <p className="small muted" style={{ margin: 0 }}>La clôture solde les comptes de charges et de produits (classes 6, 7 et 8) dans le résultat (131 ou 139), puis verrouille l'exercice. La comptabilité étant continue, les soldes de clôture deviennent les soldes d'ouverture de l'exercice suivant.</p>
+          </>}
+        </div>
+      )}
     </div>
   );
 }

@@ -141,7 +141,7 @@ export interface TreasuryMovementTable {
 
 export interface LedgerAccountTable { company_id: string; code: string; name: string; is_system: Generated<boolean>; archived_at: TsNullable; created_at: Generated<Date>; }
 export interface JournalTable { company_id: string; code: string; name: string; }
-export type EntrySource = 'manual' | 'sales_document' | 'purchase_document' | 'treasury_movement' | 'treasury_opening' | 'stock_opening' | 'stock_variation' | 'payroll_run' | 'reversal';
+export type EntrySource = 'manual' | 'sales_document' | 'purchase_document' | 'treasury_movement' | 'treasury_opening' | 'stock_opening' | 'stock_variation' | 'payroll_run' | 'year_closing' | 'reversal';
 export interface JournalEntryTable {
   company_id: string; id: Generated<string>; journal_code: string; number: string | null; date: string; label: string; reference: string | null;
   status: Generated<'draft' | 'posted'>; source_type: EntrySource; source_id: string | null; reversal_of: string | null; reversed_by: string | null;
@@ -187,6 +187,10 @@ export interface DocumentShareTable {
   created_by: string | null; created_at: Generated<Date>;
 }
 
+export interface FiscalYearClosingTable {
+  company_id: string; year: number; result: Num; entry_id: string | null; warnings: JsonDefault<unknown[]>; closed_by: string | null; closed_at: Generated<Date>;
+}
+
 export interface DB {
   user_account: UserAccountTable; platform_role_assignment: PlatformRoleAssignmentTable; user_session: UserSessionTable;
   company: CompanyTable; company_membership: CompanyMembershipTable; role: RoleTable; membership_role: MembershipRoleTable;
@@ -200,5 +204,5 @@ export interface DB {
   ledger_account: LedgerAccountTable; journal: JournalTable; journal_entry: JournalEntryTable; journal_line: JournalLineTable;
   stock_movement: StockMovementTable;
   employee: EmployeeTable; payroll_settings: PayrollSettingsTable; payroll_run: PayrollRunTable; payslip: PayslipTable;
-  email_message: EmailMessageTable; password_reset: PasswordResetTable; document_share: DocumentShareTable;
+  email_message: EmailMessageTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable;
 }

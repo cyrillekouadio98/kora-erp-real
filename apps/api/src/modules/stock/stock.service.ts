@@ -181,6 +181,14 @@ export class StockService {
     });
   }
 
+  /** Valeur du stock à une date : dernière valeur connue de chaque article à cette date. */
+  async valueAt(trx: TenantTrx, date: string) {
+    const moves = await trx.selectFrom('stock_movement').select(['product_id', 'value_after']).where('date', '<=', date).orderBy('date').orderBy('created_at').execute();
+    const lastByProduct = new Map<string, number>();
+    for (const m of moves) lastByProduct.set(m.product_id, Number(m.value_after));
+    return round2([...lastByProduct.values()].reduce((s, v) => s + v, 0));
+  }
+
   /**
    * Variation de stock (inventaire intermittent SYSCOHADA) : aligne le compte 311 sur la valeur du stock à la date.
    * Hausse : D 311 / C 6031 ; baisse : D 6031 / C 311. Corrige le résultat des achats comptés en charges.
@@ -188,11 +196,7 @@ export class StockService {
   async postVariation(t: TenantInfo, date: string) {
     if (date > today()) throw badRequest('La date ne peut pas être dans le futur.', undefined, 'future_date');
     return this.db.tenant(t.ctx, async (trx) => {
-      const moves = await trx.selectFrom('stock_movement').select(['product_id', 'value_after', 'date', 'created_at']).where('date', '<=', date)
-        .orderBy('date').orderBy('created_at').execute();
-      const lastByProduct = new Map<string, number>();
-      for (const m of moves) lastByProduct.set(m.product_id, Number(m.value_after));
-      const stockValue = round2([...lastByProduct.values()].reduce((s, v) => s + v, 0));
+      const stockValue = await this.valueAt(trx, date);
       const ledger = await trx.selectFrom('journal_line as l').innerJoin('journal_entry as e', (j) => j.onRef('e.id', '=', 'l.entry_id').onRef('e.company_id', '=', 'l.company_id'))
         .select((eb) => [eb.fn.sum<string>('l.debit').as('d'), eb.fn.sum<string>('l.credit').as('c')])
         .where('e.status', '=', 'posted').where('e.date', '<=', date).where('l.account_code', 'like', '311%').executeTakeFirst();
