@@ -8,3 +8,4 @@ coverage/
 .pgdata/
 .DS_Store
 *.tsbuildinfo
+.next-build/

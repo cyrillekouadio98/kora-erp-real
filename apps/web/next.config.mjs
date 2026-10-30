@@ -3,6 +3,8 @@ const apiUrl = process.env.API_URL ?? 'http://localhost:3001';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Dossier de construction modifiable : permet un « next build » sans perturber un « next dev » en cours.
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   reactStrictMode: true,
   poweredByHeader: false,
   async rewrites() {
