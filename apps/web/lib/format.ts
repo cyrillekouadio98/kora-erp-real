@@ -42,6 +42,8 @@ export const ACTION_LABELS: Record<string, string> = {
   'accounting.period_locked': 'Période comptable clôturée', 'accounting.exported': 'Écritures exportées',
   'stock.opening_recorded': 'Stock initial enregistré', 'stock.counted': 'Inventaire de stock', 'stock.settings_updated': 'Paramètres de stock modifiés',
   'stock.variation_posted': 'Variation de stock comptabilisée',
+  'employee.created': 'Employé créé', 'employee.updated': 'Fiche employé modifiée', 'payroll.settings_updated': 'Paramètres de paie modifiés',
+  'payroll.run_created': 'Paie préparée', 'payroll.run_deleted': 'Paie en brouillon supprimée', 'payroll.run_validated': 'Paie validée', 'payroll.salaries_paid': 'Salaires payés',
 };
 
 export const DOC_STATUS: Record<string, [string, 'ok' | 'warn' | 'crit' | 'mute']> = {
@@ -74,7 +76,10 @@ export const EXPENSE_CATEGORIES: Record<string, string> = {
 export const INCOME_CATEGORIES: Record<string, string> = { capital: 'Apport (capital, exploitant)', loan: 'Emprunt reçu', other_income: 'Autre recette' };
 export const MOVEMENT_CATEGORIES: Record<string, string> = {
   ...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES, customer_payment: 'Encaissement client', supplier_payment: 'Règlement fournisseur', customer_refund: 'Remboursement client',
-  transfer: 'Virement interne', cash_difference: 'Écart de caisse',
+  transfer: 'Virement interne', cash_difference: 'Écart de caisse', net_salary: 'Salaire net',
 };
 
 export const JOURNALS: Record<string, string> = { VT: 'Ventes', AC: 'Achats', TR: 'Trésorerie', OD: 'Opérations diverses', AN: 'À-nouveaux' };
+
+export const CONTRACTS: Record<string, string> = { cdi: 'CDI', cdd: 'CDD', stage: 'Stage', journalier: 'Journalier' };
+export const MARITAL: Record<string, string> = { single: 'Célibataire', married: 'Marié(e)', divorced: 'Divorcé(e)', widowed: 'Veuf / veuve' };

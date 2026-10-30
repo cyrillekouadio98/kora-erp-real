@@ -132,7 +132,7 @@ export interface TreasuryAccountTable {
   company_id: string; id: Generated<string>; kind: TreasuryKind; name: string; bank_name: string | null; account_number: string | null; ledger_code: string;
   opening_balance: NumDefault; opening_date: ColumnType<string, string | undefined, string>; archived_at: TsNullable; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
-export type MovementSource = 'sales_payment' | 'purchase_payment' | 'sales_refund' | 'expense' | 'income' | 'transfer' | 'cash_count' | 'reversal';
+export type MovementSource = 'sales_payment' | 'purchase_payment' | 'sales_refund' | 'payroll' | 'expense' | 'income' | 'transfer' | 'cash_count' | 'reversal';
 export interface TreasuryMovementTable {
   company_id: string; id: Generated<string>; account_id: string; date: DateCol; direction: 'in' | 'out'; amount: Num; category: string; label: string;
   contact_id: string | null; source_type: MovementSource; source_id: string | null; transfer_id: string | null; reversal_of: string | null; reversed_by: string | null;
@@ -141,7 +141,7 @@ export interface TreasuryMovementTable {
 
 export interface LedgerAccountTable { company_id: string; code: string; name: string; is_system: Generated<boolean>; archived_at: TsNullable; created_at: Generated<Date>; }
 export interface JournalTable { company_id: string; code: string; name: string; }
-export type EntrySource = 'manual' | 'sales_document' | 'purchase_document' | 'treasury_movement' | 'treasury_opening' | 'stock_opening' | 'stock_variation' | 'reversal';
+export type EntrySource = 'manual' | 'sales_document' | 'purchase_document' | 'treasury_movement' | 'treasury_opening' | 'stock_opening' | 'stock_variation' | 'payroll_run' | 'reversal';
 export interface JournalEntryTable {
   company_id: string; id: Generated<string>; journal_code: string; number: string | null; date: string; label: string; reference: string | null;
   status: Generated<'draft' | 'posted'>; source_type: EntrySource; source_id: string | null; reversal_of: string | null; reversed_by: string | null;
@@ -157,6 +157,25 @@ export interface StockMovementTable {
   qty_after: Num; value_after: Num; reason: StockReason; source_id: string | null; label: string; created_by: string | null; created_at: Generated<Date>;
 }
 
+type NumNullable = ColumnType<string | null, number | string | null | undefined, number | string | null>;
+export interface EmployeeTable {
+  company_id: string; id: Generated<string>; number: string; first_name: string; last_name: string; job_title: string | null; department: string | null;
+  hire_date: string; end_date: DateNullable; contract_type: Generated<'cdi' | 'cdd' | 'stage' | 'journalier'>; cnps_number: string | null;
+  marital_status: Generated<'single' | 'married' | 'divorced' | 'widowed'>; children: Generated<number>; parts_override: NumNullable;
+  base_salary: NumDefault; housing_allowance: NumDefault; transport_allowance: NumDefault; other_allowances: NumDefault;
+  payment_method: Generated<'cash' | 'bank_transfer' | 'mobile_money'>; bank_details_enc: string | null; phone: string | null; email: string | null;
+  created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface PayrollSettingsTable { company_id: string; params: Json; updated_by: string | null; updated_at: Generated<Date>; }
+export interface PayrollRunTable {
+  company_id: string; id: Generated<string>; period: string; status: Generated<'draft' | 'validated'>; params: Json;
+  validated_at: TsNullable; validated_by: string | null; created_by: string | null; created_at: Generated<Date>;
+}
+export interface PayslipTable {
+  company_id: string; id: Generated<string>; run_id: string; employee_id: string; employee: Json; inputs: Json; lines: Json; totals: Json;
+  gross: Num; taxable: Num; net: Num; employer_cost: Num; paid_at: DateNullable;
+}
+
 export interface DB {
   user_account: UserAccountTable; platform_role_assignment: PlatformRoleAssignmentTable; user_session: UserSessionTable;
   company: CompanyTable; company_membership: CompanyMembershipTable; role: RoleTable; membership_role: MembershipRoleTable;
@@ -169,4 +188,5 @@ export interface DB {
   treasury_account: TreasuryAccountTable; treasury_movement: TreasuryMovementTable;
   ledger_account: LedgerAccountTable; journal: JournalTable; journal_entry: JournalEntryTable; journal_line: JournalLineTable;
   stock_movement: StockMovementTable;
+  employee: EmployeeTable; payroll_settings: PayrollSettingsTable; payroll_run: PayrollRunTable; payslip: PayslipTable;
 }

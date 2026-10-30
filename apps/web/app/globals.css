@@ -116,3 +116,10 @@ table.vat { width: auto; font-size: 13px; } table.vat td, table.vat th { padding
   .shell { display: block; } .main { padding: 0; } .main > .wrap { max-width: none; }
   .card { border: 0; padding: 0; } .table-wrap { border: 0; overflow: visible; }
 }
+
+/* Impression d'un bulletin de paie ouvert dans une fenêtre : seul le bulletin est imprimé. */
+@media print {
+  body:has(.print-area) .main > .wrap > *:not(.modal-back) { display: none !important; }
+  .modal-back:has(.print-area) { position: static; background: none; padding: 0; display: block; }
+  .modal:has(.print-area) { box-shadow: none; max-height: none; width: 100% !important; padding: 0; }
+}

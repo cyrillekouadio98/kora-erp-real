@@ -54,6 +54,11 @@ export class ExportController {
         journal_entries: await trx.selectFrom('journal_entry').selectAll().orderBy('date').orderBy('number').execute(),
         journal_lines: await trx.selectFrom('journal_line').selectAll().orderBy('entry_id').orderBy('position').execute(),
         stock_movements: await trx.selectFrom('stock_movement').selectAll().orderBy('date').orderBy('created_at').execute(),
+        // Le RIB chiffré des employés n'est pas exporté en clair.
+        employees: await trx.selectFrom('employee').select(['id', 'number', 'first_name', 'last_name', 'job_title', 'department', 'hire_date', 'end_date', 'contract_type',
+          'cnps_number', 'marital_status', 'children', 'parts_override', 'base_salary', 'housing_allowance', 'transport_allowance', 'other_allowances', 'payment_method', 'phone', 'email']).execute(),
+        payroll_runs: await trx.selectFrom('payroll_run').selectAll().orderBy('period').execute(),
+        payslips: await trx.selectFrom('payslip').selectAll().orderBy('run_id').execute(),
         audit_log: await trx.selectFrom('audit_log').selectAll().orderBy('id').execute(),
       };
       await this.audit.tenant(trx, t.ctx, { action: 'data.exported', data: { tables: Object.keys(out) } });
@@ -66,7 +71,7 @@ export class ExportController {
     zip.pipe(res);
     zip.append(JSON.stringify(data, null, 2), { name: 'donnees-completes.json' });
     for (const [name, rows] of Object.entries(data)) zip.append(toCsv(rows as Record<string, unknown>[]), { name: `csv/${name}.csv` });
-    zip.append(`Export Kora ERP du ${stamp}\nEntreprise : ${t.companyId}\nFichiers CSV séparés par des points-virgules, encodés en UTF-8.\nLes autres modules métier (paie) seront ajoutés à cet export au fil des phases.\n`, { name: 'LISEZ-MOI.txt' });
+    zip.append(`Export Kora ERP du ${stamp}\nEntreprise : ${t.companyId}\nFichiers CSV séparés par des points-virgules, encodés en UTF-8.\nLes coordonnées bancaires des employés, chiffrées, ne sont pas exportées.\n`, { name: 'LISEZ-MOI.txt' });
     await zip.finalize();
   }
 }

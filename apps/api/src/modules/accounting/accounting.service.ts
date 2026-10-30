@@ -19,7 +19,7 @@ export const ACCOUNTS = {
 const MOVEMENT_COUNTERPART: Record<string, string> = {
   rent: '6222', electricity: '6052', water: '6051', fuel: '6053', transport: '618', telecom: '628', supplies: '6055', maintenance: '624',
   salaries: '661', taxes: '641', bank_fees: '631', owner_withdrawal: '104', other_expense: '658', capital: '101', loan: '162', other_income: '758',
-  transfer: ACCOUNTS.transfer,
+  transfer: ACCOUNTS.transfer, net_salary: '422',
 };
 
 /** Rubriques du compte de résultat (deux premiers chiffres du compte). */
@@ -216,7 +216,7 @@ export class AccountingService {
   /** Comptabilise l'historique (idempotent) : chaque opération validée reçoit son écriture. */
   async sync(t: TenantInfo) {
     return this.db.tenant(t.ctx, async (trx) => {
-      await sql`select seed_accounting(${t.companyId}::uuid)`.execute(trx);
+      await sql`select seed_accounting(${t.companyId}::uuid), seed_accounting_extra(${t.companyId}::uuid)`.execute(trx);
       const todo = await this.pending(trx);
       for (const op of todo) {
         if (op.kind === 'sales') await this.postSalesDocument(trx, t, op.id);

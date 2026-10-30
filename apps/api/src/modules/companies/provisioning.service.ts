@@ -44,7 +44,7 @@ export class ProvisioningService {
     await t.insertInto('subscription_event').values({ subscription_id: sub.id, company_id: companyId, type: 'trial_started', to_status: 'trialing', from_status: null, data: JSON.stringify({ trial_days: plan.trial_days }) }).execute();
 
     // Plan comptable SYSCOHADA, journaux, puis trois comptes de trésorerie avec leur sous-compte comptable.
-    await sql`select seed_accounting(${companyId}::uuid)`.execute(t);
+    await sql`select seed_accounting(${companyId}::uuid), seed_accounting_extra(${companyId}::uuid)`.execute(t);
     const treasury = [
       { kind: 'cash' as const, name: 'Caisse principale', ledger_code: '5711' },
       { kind: 'bank' as const, name: 'Banque principale', ledger_code: '5211' },

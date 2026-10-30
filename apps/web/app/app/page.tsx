@@ -86,7 +86,7 @@ export default function Dashboard() {
         <div className="row">
           {Object.entries(MODULE_LABELS).map(([k, l]) => <Pill key={k} tone={ctx.entitlements.modules.includes(k) ? 'ok' : 'mute'}>{l}{ctx.entitlements.modules.includes(k) ? '' : ' · non inclus'}</Pill>)}
         </div>
-        <p className="small muted" style={{ marginBottom: 0 }}>Disponibles : clients et fournisseurs, articles, ventes (devis, factures, avoirs, encaissements, relances) achats (bons de commande, factures et règlements fournisseurs, échéancier) trésorerie (caisse, banque, mobile money) comptabilité SYSCOHADA (écritures automatiques, grand livre, balance, TVA, résultat) et stocks valorisés au CMUP. La paie arrive avec le prochain lot.</p>
+        <p className="small muted" style={{ marginBottom: 0 }}>Disponibles : clients et fournisseurs, articles, ventes (devis, factures, avoirs, encaissements, relances) achats (bons de commande, factures et règlements fournisseurs, échéancier) trésorerie (caisse, banque, mobile money) comptabilité SYSCOHADA (écritures automatiques, grand livre, balance, TVA, résultat), stocks valorisés au CMUP, employés et paie ivoirienne (selon votre formule).</p>
       </div>
       <div className="card">
         <header><h2>Pour bien démarrer</h2></header>

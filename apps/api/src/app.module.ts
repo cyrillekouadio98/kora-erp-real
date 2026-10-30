@@ -25,6 +25,8 @@ import { AccountingController } from './modules/accounting/accounting.controller
 import { AccountingService } from './modules/accounting/accounting.service';
 import { StockController } from './modules/stock/stock.controller';
 import { StockService } from './modules/stock/stock.service';
+import { PayrollController } from './modules/payroll/payroll.controller';
+import { PayrollService } from './modules/payroll/payroll.service';
 import { ContactsController } from './modules/contacts/contacts.controller';
 import { CompaniesController } from './modules/companies/companies.controller';
 import { ProvisioningService } from './modules/companies/provisioning.service';
@@ -43,10 +45,10 @@ import { PlatformSupportController, SupportAccessController } from './modules/su
   controllers: [
     HealthController, AuthController, CompaniesController, MembersController, RolesController, BillingController, WebhooksController,
     DevController, AuditController, SupportAccessController, PlatformSupportController, PlatformController, ExportController,
-    ContactsController, ProductsController, SalesController, PurchasesController, TreasuryController, AccountingController, StockController,
+    ContactsController, ProductsController, SalesController, PurchasesController, TreasuryController, AccountingController, StockController, PayrollController,
   ],
   providers: [
-    AuditService, SessionService, AuthService, ProvisioningService, EntitlementService, QuotaService, BillingService, BillingScheduler, SalesService, PurchasesService, TreasuryService, AccountingService, StockService,
+    AuditService, SessionService, AuthService, ProvisioningService, EntitlementService, QuotaService, BillingService, BillingScheduler, SalesService, PurchasesService, TreasuryService, AccountingService, StockService, PayrollService,
     { provide: APP_GUARD, useClass: AccessGuard },
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
   ],

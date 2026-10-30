@@ -33,6 +33,8 @@ const NAV: { href: string; label: string; perm?: string; module?: string; group:
   { href: '/app/achats/echeancier', label: 'Échéancier', perm: 'purchases.read', module: 'purchases', group: 'Achats' },
   { href: '/app/tresorerie', label: 'Caisse et banque', perm: 'cash.read', module: 'cash', group: 'Finance' },
   { href: '/app/comptabilite', label: 'Comptabilité', perm: 'accounting.read', module: 'accounting', group: 'Finance' },
+  { href: '/app/employes', label: 'Employés', perm: 'employees.read', module: 'hr', group: 'Ressources humaines' },
+  { href: '/app/paie', label: 'Paie', perm: 'payroll.read', module: 'payroll', group: 'Ressources humaines' },
   { href: '/app/contacts', label: 'Clients et fournisseurs', perm: 'contacts.read', group: 'Référentiels' },
   { href: '/app/articles', label: 'Articles', perm: 'products.read', group: 'Référentiels' },
   { href: '/app/stocks', label: 'Stocks', perm: 'products.read', group: 'Référentiels' },

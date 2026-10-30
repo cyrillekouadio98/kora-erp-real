@@ -82,7 +82,7 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
   {
     key: 'owner', name: 'Propriétaire / administrateur', description: "Tous les droits sur l'entreprise",
     permissions: [
-      ...expand({ contacts: 'LCMNEA', products: 'LCMNEA', sales: 'LCMVNEA', purchases: 'LCMVNEA', cash: 'LCMVNEA', bank: 'LCMVNEA', accounting: 'LCMVNEA', employees: 'LCMNEA', leave: 'LCMVNEA', payroll: 'LVE' }),
+      ...expand({ contacts: 'LCMNEA', products: 'LCMNEA', sales: 'LCMVNEA', purchases: 'LCMVNEA', cash: 'LCMVNEA', bank: 'LCMVNEA', accounting: 'LCMVNEA', employees: 'LCMNEA', leave: 'LCMVNEA', payroll: 'LCMVNEA' }),
       ...Object.keys(CORE_PERMISSIONS), ...Object.keys(SENSITIVE_PERMISSIONS),
     ],
   },
