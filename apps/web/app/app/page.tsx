@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import { date, money, SUB_STATUS } from '@/lib/format';
 import { useSession } from '@/components/session';
 import { Alert, Field, Pill, useAction } from '@/components/ui';
+import { ChartCard, ColumnChart, fcfa, LineChart, monthLong, RankedBars } from '@/components/charts';
 
 const MODULE_LABELS: Record<string, string> = { contacts: 'Contacts', sales: 'Devis et ventes', cash: 'Caisse', purchases: 'Achats', bank: 'Banque', accounting: 'Comptabilité', hr: 'Employés et congés', payroll: 'Paie' };
 
@@ -13,7 +14,9 @@ export default function Dashboard() {
   const [sub, setSub] = useState<any>(null);
   const [sales, setSales] = useState<any>(null);
   const [purchases, setPurchases] = useState<any>(null);
-  const [treasury, setTreasury] = useState<any>(null);
+  const [dash, setDash] = useState<any>(null);
+  const [months, setMonths] = useState(12);
+  const [loading, setLoading] = useState(false);
   const [stock, setStock] = useState<any>(null);
   const [name, setName] = useState('');
   const { busy, error, run } = useAction();
@@ -21,9 +24,14 @@ export default function Dashboard() {
     if (ctx && can('billing.read')) api('/company/subscription').then(setSub, () => {});
     if (ctx && can('sales.read') && ctx.entitlements.modules.includes('sales')) api('/company/sales/summary').then(setSales, () => {});
     if (ctx && can('purchases.read') && ctx.entitlements.modules.includes('purchases')) api('/company/purchases/summary').then(setPurchases, () => {});
-    if (ctx && can('cash.read') && ctx.entitlements.modules.includes('cash')) api('/company/treasury/summary').then(setTreasury, () => {});
     if (ctx && can('products.read')) api('/company/stock').then((s) => s.items.length && setStock(s), () => {});
   }, [ctx]); // eslint-disable-line
+  // Le changement de période garde l'affichage précédent (atténué) pendant le rechargement : pas de saut.
+  useEffect(() => {
+    if (!ctx) return;
+    setLoading(true);
+    api(`/company/dashboard?months=${months}`).then(setDash, () => {}).finally(() => setLoading(false));
+  }, [ctx, months]);
 
   if (!ctx) {
     return (
@@ -39,39 +47,75 @@ export default function Dashboard() {
     );
   }
   const st = sub ? SUB_STATUS[sub.status] : null;
+  const cur = dash?.monthly[dash.monthly.length - 1];
+  const prev = dash?.monthly[dash.monthly.length - 2];
+  const chartSeries = dash ? [
+    { key: 'revenue', label: "Chiffre d'affaires", color: 'var(--series-1)', values: dash.monthly.map((x: any) => x.revenueHt) },
+    ...(dash.sections.purchases ? [{ key: 'purchases', label: 'Achats', color: 'var(--series-2)', values: dash.monthly.map((x: any) => x.purchasesHt) }] : []),
+  ] : [];
   return (
     <>
       <div className="page-head"><h1>{ctx.company.name}</h1>
         {can('sales.create') && !ctx.readOnly && <div className="row"><Link className="btn" href="/app/ventes/nouveau?type=quote">Nouveau devis</Link><Link className="btn primary" href="/app/ventes/nouveau?type=invoice">Nouvelle facture</Link></div>}</div>
-      {treasury && (
-        <div className="kpis">
-          <div className="card kpi"><div className="l">Trésorerie disponible</div><div className="v">{money(treasury.total)}</div><div className="small muted"><Link href="/app/tresorerie">caisse et banque</Link></div></div>
-          {treasury.accounts.map((a: any) => <div key={a.id} className="card kpi"><div className="l">{a.name}</div><div className="v" style={{ color: a.balance < 0 ? 'var(--crit)' : undefined }}>{money(a.balance)}</div></div>)}
+      {dash && (dash.sections.sales || dash.sections.cash) && <>
+        <div className="row" style={{ justifyContent: 'space-between' }}>
+          <div className="seg" role="group" aria-label="Période des graphiques">
+            {[3, 6, 12].map((n) => <button key={n} aria-pressed={months === n} onClick={() => setMonths(n)}>{n} mois</button>)}
+          </div>
+        </div>
+        <div className="kpis" style={{ opacity: loading ? 0.6 : 1 }}>
+          {dash.sections.sales && <Kpi label="Chiffre d'affaires du mois" value={cur?.revenueHt ?? 0} previous={prev?.revenueHt} hint="hors taxes, avoirs déduits" />}
+          {dash.sections.sales && <Kpi label="Encaissé ce mois" value={cur?.collected ?? 0} previous={prev?.collected} hint="tous modes de paiement" />}
+          {dash.sections.cash && <Kpi label="Trésorerie disponible" value={cur?.cashEnd ?? 0} previous={prev?.cashEnd ?? undefined} hint={<Link href="/app/tresorerie">caisse et banque</Link>} />}
+          {sales && <div className="card kpi"><div className="l">À encaisser</div><div className="v">{money(sales.outstanding)}</div>
+            <div className="small">{sales.overdueCount ? <Link href="/app/ventes/relances" style={{ color: 'var(--crit)' }}>{sales.overdueCount} en retard · {money(sales.overdueAmount)}</Link> : <span className="muted">aucune facture en retard</span>}</div></div>}
+          {purchases && <div className="card kpi"><div className="l">À payer aux fournisseurs</div><div className="v">{money(purchases.payable)}</div>
+            <div className="small"><Link href="/app/achats/echeancier">voir l'échéancier</Link></div></div>}
+        </div>
+      </>}
+      {dash?.alerts.length > 0 && (
+        <div className="card"><header><h2>À traiter</h2><span className="small muted">{dash.alerts.length} point(s)</span></header>
+          <div style={{ display: 'grid', gap: 8 }}>{dash.alerts.map((a: any) => (
+            <Link key={a.kind} href={a.href} className="row" style={{ justifyContent: 'space-between', textDecoration: 'none', color: 'var(--ink)', padding: '6px 0', borderBottom: '1px solid var(--line)' }}>
+              <span><Pill tone={a.severity === 'critical' ? 'crit' : a.severity === 'warning' ? 'warn' : 'mute'}>{a.severity === 'critical' ? '⚠ Urgent' : a.severity === 'warning' ? 'À surveiller' : 'Info'}</Pill> {a.label}</span>
+              <span className="small"><b>{a.count}</b>{a.amount ? ` · ${money(a.amount)}` : ''} →</span>
+            </Link>))}</div>
         </div>
       )}
-      {stock && (
-        <div className="kpis">
-          <div className="card kpi"><div className="l">Valeur du stock</div><div className="v">{money(stock.totalValue)}</div><div className="small muted"><Link href="/app/stocks">voir les stocks</Link></div></div>
-          <div className="card kpi"><div className="l">Articles en rupture</div><div className="v" style={{ color: stock.outOfStock ? 'var(--crit)' : undefined }}>{stock.outOfStock}</div></div>
-          <div className="card kpi"><div className="l">Sous le seuil d'alerte</div><div className="v" style={{ color: stock.lowStock ? 'var(--warn)' : undefined }}>{stock.lowStock}</div></div>
+      {dash?.sections.sales && (
+        <ChartCard title={dash.sections.purchases ? "Chiffre d'affaires et achats" : "Chiffre d'affaires"} subtitle={`par mois, hors taxes — ${months} derniers mois`}
+          legend={chartSeries.map((s) => ({ label: s.label, color: s.color, kind: 'box' as const }))}
+          table={{ head: ['Mois', ...chartSeries.map((s) => s.label)], rows: dash.months.map((mo: string, i: number) => [monthLong(mo), ...chartSeries.map((s) => fcfa(s.values[i] ?? 0))]) }}>
+          <ColumnChart categories={dash.months} series={chartSeries} />
+        </ChartCard>
+      )}
+      {dash && (dash.sections.cash || dash.topCustomers.length > 0) && (
+        <div className="dash-grid">
+          {dash.sections.cash && (
+            <ChartCard title="Trésorerie" subtitle="solde de tous les comptes en fin de mois"
+              table={{ head: ['Mois', 'Solde'], rows: dash.months.map((mo: string, i: number) => [monthLong(mo), dash.monthly[i].cashEnd === null ? '—' : fcfa(dash.monthly[i].cashEnd)]) }}>
+              <LineChart categories={dash.months} values={dash.monthly.map((x: any) => x.cashEnd)} color="var(--series-1)" label="Trésorerie" />
+            </ChartCard>
+          )}
+          {dash.topCustomers.length > 0 && (
+            <ChartCard title="Meilleurs clients" subtitle={`chiffre d'affaires hors taxes — ${months} derniers mois`}
+              table={{ head: ['Client', 'Chiffre d’affaires HT'], rows: dash.topCustomers.map((c: any) => [c.name, fcfa(c.amount)]) }}>
+              <RankedBars items={dash.topCustomers.map((c: any) => ({ label: c.name, value: c.amount }))} />
+            </ChartCard>
+          )}
+          {dash.topProducts.length > 0 && (
+            <ChartCard title="Articles les plus vendus" subtitle={`chiffre d'affaires hors taxes — ${months} derniers mois`}
+              table={{ head: ['Article', 'Quantité', 'Chiffre d’affaires HT'], rows: dash.topProducts.map((p: any) => [p.name, `${p.quantity.toLocaleString('fr-FR')} ${p.unit ?? ''}`, fcfa(p.amount)]) }}>
+              <RankedBars items={dash.topProducts.map((p: any) => ({ label: p.name, value: p.amount, detail: `${p.quantity.toLocaleString('fr-FR')} ${p.unit ?? ''}` }))} />
+            </ChartCard>
+          )}
         </div>
       )}
-      {sales && (
+      {(sales || purchases || stock) && (
         <div className="kpis">
-          <div className="card kpi"><div className="l">Chiffre d'affaires du mois</div><div className="v">{money(sales.revenueMonthHt)}</div><div className="small muted">hors taxes, factures émises</div></div>
-          <div className="card kpi"><div className="l">Encaissé ce mois</div><div className="v">{money(sales.collectedMonth)}</div><div className="small muted">tous modes de paiement</div></div>
-          <div className="card kpi"><div className="l">À encaisser</div><div className="v">{money(sales.outstanding)}</div>
-            <div className="small">{sales.overdueCount ? <Link href="/app/ventes/relances" style={{ color: 'var(--crit)' }}>{sales.overdueCount} facture(s) en retard · {money(sales.overdueAmount)}</Link> : <span className="muted">aucune facture en retard</span>}</div></div>
-          <div className="card kpi"><div className="l">Devis en cours</div><div className="v">{sales.openQuotes}</div><div className="small muted"><Link href="/app/ventes/devis">voir les devis</Link></div></div>
-        </div>
-      )}
-      {purchases && (
-        <div className="kpis">
-          <div className="card kpi"><div className="l">Achats du mois</div><div className="v">{money(purchases.purchasesMonthHt)}</div><div className="small muted">hors taxes, factures fournisseurs</div></div>
-          <div className="card kpi"><div className="l">Payé aux fournisseurs ce mois</div><div className="v">{money(purchases.paidMonth)}</div></div>
-          <div className="card kpi"><div className="l">À payer aux fournisseurs</div><div className="v">{money(purchases.payable)}</div>
-            <div className="small">{purchases.overdueCount ? <Link href="/app/achats/echeancier" style={{ color: 'var(--crit)' }}>{purchases.overdueCount} facture(s) en retard · {money(purchases.overdueAmount)}</Link> : <Link href="/app/achats/echeancier">voir l'échéancier</Link>}</div></div>
-          <div className="card kpi"><div className="l">Commandes en cours</div><div className="v">{purchases.openOrders}</div><div className="small muted"><Link href="/app/achats/commandes">voir les commandes</Link></div></div>
+          {sales && <div className="card kpi"><div className="l">Devis en cours</div><div className="v">{sales.openQuotes}</div><div className="small muted"><Link href="/app/ventes/devis">voir les devis</Link></div></div>}
+          {purchases && <div className="card kpi"><div className="l">Commandes fournisseurs en cours</div><div className="v">{purchases.openOrders}</div><div className="small muted"><Link href="/app/achats/commandes">voir les commandes</Link></div></div>}
+          {stock && <div className="card kpi"><div className="l">Valeur du stock</div><div className="v">{money(stock.totalValue)}</div><div className="small muted"><Link href="/app/stocks">voir les stocks</Link></div></div>}
         </div>
       )}
       {sub && (
@@ -103,5 +147,22 @@ export default function Dashboard() {
         </ul>
       </div>
     </>
+  );
+}
+
+/** Indicateur du mois avec son évolution par rapport au mois précédent. */
+function Kpi({ label, value, previous, hint }: { label: string; value: number; previous?: number | null; hint?: React.ReactNode }) {
+  const delta = previous === undefined || previous === null ? null : value - previous;
+  const pct = delta !== null && previous ? Math.round((delta / Math.abs(previous)) * 100) : null;
+  return (
+    <div className="card kpi"><div className="l">{label}</div><div className="v">{money(value)}</div>
+      {delta !== null && (
+        <div className={`delta ${delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat'}`}>
+          {delta > 0 ? '▲' : delta < 0 ? '▼' : '='} {delta === 0 ? 'stable' : `${delta > 0 ? '+' : '−'}${money(Math.abs(delta))}${pct !== null ? ` (${pct > 0 ? '+' : ''}${pct} %)` : ''}`}
+          <span className="muted" style={{ fontWeight: 400 }}> vs mois précédent</span>
+        </div>
+      )}
+      {hint && <div className="small muted">{hint}</div>}
+    </div>
   );
 }
