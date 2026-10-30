@@ -6,6 +6,7 @@ import type { TenantInfo } from '../../common/request-context';
 import { DatabaseService, TenantTrx } from '../../db/database.service';
 import type { PaymentMethod, ReminderChannel, SalesDocStatus, SalesDocType } from '../../db/schema';
 import { AuditService } from '../audit/audit.service';
+import { AccountingService } from '../accounting/accounting.service';
 import { TreasuryService } from '../treasury/treasury.service';
 
 export interface LineInput { productId?: string | null; description: string; quantity: number; unit?: string | null; unitPrice: number; discountPct?: number; vatRate: number }
@@ -45,7 +46,7 @@ export function computeTotals(lines: LineInput[]) {
 
 @Injectable()
 export class SalesService {
-  constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly treasury: TreasuryService) {}
+  constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly treasury: TreasuryService, private readonly accounting: AccountingService) {}
 
   private async doc(trx: TenantTrx, id: string, lock = false) {
     if (!isUuid(id)) throw notFound('Document');
@@ -209,6 +210,7 @@ export class SalesService {
       await trx.updateTable('sales_document').set({
         status: d.type === 'quote' ? 'sent' : 'issued', number, issue_date: issue, customer: JSON.stringify(customer), validated_at: new Date(), validated_by: t.ctx.userId, ...dates,
       }).where('id', '=', id).execute();
+      await this.accounting.postSalesDocument(trx, t, id);
       await this.audit.tenant(trx, t.ctx, { action: `${d.type}.validated`, entityType: 'sales_document', entityId: id, data: { number, customer: c.name, totalTtc: Number(d.total_ttc) } });
     });
     return this.get(t, id);

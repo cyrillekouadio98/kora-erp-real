@@ -21,6 +21,8 @@ import { PurchasesController } from './modules/purchases/purchases.controller';
 import { PurchasesService } from './modules/purchases/purchases.service';
 import { TreasuryController } from './modules/treasury/treasury.controller';
 import { TreasuryService } from './modules/treasury/treasury.service';
+import { AccountingController } from './modules/accounting/accounting.controller';
+import { AccountingService } from './modules/accounting/accounting.service';
 import { ContactsController } from './modules/contacts/contacts.controller';
 import { CompaniesController } from './modules/companies/companies.controller';
 import { ProvisioningService } from './modules/companies/provisioning.service';
@@ -39,10 +41,10 @@ import { PlatformSupportController, SupportAccessController } from './modules/su
   controllers: [
     HealthController, AuthController, CompaniesController, MembersController, RolesController, BillingController, WebhooksController,
     DevController, AuditController, SupportAccessController, PlatformSupportController, PlatformController, ExportController,
-    ContactsController, ProductsController, SalesController, PurchasesController, TreasuryController,
+    ContactsController, ProductsController, SalesController, PurchasesController, TreasuryController, AccountingController,
   ],
   providers: [
-    AuditService, SessionService, AuthService, ProvisioningService, EntitlementService, QuotaService, BillingService, BillingScheduler, SalesService, PurchasesService, TreasuryService,
+    AuditService, SessionService, AuthService, ProvisioningService, EntitlementService, QuotaService, BillingService, BillingScheduler, SalesService, PurchasesService, TreasuryService, AccountingService,
     { provide: APP_GUARD, useClass: AccessGuard },
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
   ],

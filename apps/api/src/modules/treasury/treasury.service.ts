@@ -4,6 +4,7 @@ import { isUuid, uuidv7 } from '../../common/ids';
 import type { TenantInfo } from '../../common/request-context';
 import { DatabaseService, TenantTrx } from '../../db/database.service';
 import type { MovementSource, PaymentMethod, TreasuryKind } from '../../db/schema';
+import { AccountingService } from '../accounting/accounting.service';
 import { AuditService } from '../audit/audit.service';
 
 /** Catégories saisissables à la main (les autres sont posées par les ventes, achats, virements et arrêtés). */
@@ -22,7 +23,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 @Injectable()
 export class TreasuryService {
-  constructor(private readonly db: DatabaseService, private readonly audit: AuditService) {}
+  constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly accounting: AccountingService) {}
 
   private async account(trx: TenantTrx, id: string, lock = false) {
     if (!isUuid(id)) throw notFound('Compte de trésorerie');
@@ -67,11 +68,13 @@ export class TreasuryService {
         throw conflict(`Solde insuffisant dans « ${a.name} » : ${available.toLocaleString('fr-FR')} FCFA disponibles pour une sortie de ${m.amount.toLocaleString('fr-FR')} FCFA.`, 'insufficient_cash');
       }
     }
-    return trx.insertInto('treasury_movement').values({
+    const row = await trx.insertInto('treasury_movement').values({
       company_id: t.companyId, account_id: a.id, date: m.date, direction: m.direction, amount: m.amount, category: m.category, label: m.label,
       contact_id: m.contactId ?? null, source_type: m.sourceType, source_id: m.sourceId ?? null, transfer_id: m.transferId ?? null,
       reversal_of: m.reversalOf ?? null, reversed_by: null, reference: m.reference ?? null, created_by: t.ctx.userId,
     }).returning(['id']).executeTakeFirstOrThrow();
+    await this.accounting.postMovement(trx, t, row.id);
+    return row;
   }
 
   // ------------------------------------------------------------------ comptes
@@ -85,7 +88,7 @@ export class TreasuryService {
         const mine = sums.filter((m) => m.account_id === a.id);
         const signed = (m: { direction: string; amount: string }) => (m.direction === 'in' ? 1 : -1) * Number(m.amount);
         return {
-          id: a.id, kind: a.kind, name: a.name, bankName: a.bank_name, accountNumber: a.account_number, openingBalance: Number(a.opening_balance), openingDate: a.opening_date,
+          id: a.id, kind: a.kind, name: a.name, bankName: a.bank_name, accountNumber: a.account_number, ledgerCode: a.ledger_code, openingBalance: Number(a.opening_balance), openingDate: a.opening_date,
           archivedAt: a.archived_at, balance: Number(a.opening_balance) + mine.reduce((s, m) => s + signed(m), 0),
           monthIn: mine.filter((m) => m.date >= monthStart && m.direction === 'in').reduce((s, m) => s + Number(m.amount), 0),
           monthOut: mine.filter((m) => m.date >= monthStart && m.direction === 'out').reduce((s, m) => s + Number(m.amount), 0),
@@ -99,10 +102,18 @@ export class TreasuryService {
     return this.db.tenant(t.ctx, async (trx) => {
       const exists = await trx.selectFrom('treasury_account').select('id').where('name', '=', input.name).executeTakeFirst();
       if (exists) throw conflict(`Un compte s'appelle déjà « ${input.name} ».`, 'account_name_taken');
+      // Sous-compte comptable suivant : 5711, 5712… (caisse), 5211… (banque), 5521… (mobile money)
+      const root = { cash: '571', bank: '521', mobile_money: '552' }[input.kind];
+      const used = await trx.selectFrom('ledger_account').select('code').where('code', 'like', `${root}_%`).execute();
+      let n = 1;
+      while (used.some((u) => u.code === `${root}${n}`)) n++;
+      const ledgerCode = `${root}${n}`;
+      await trx.insertInto('ledger_account').values({ company_id: t.companyId, code: ledgerCode, name: input.name, is_system: true }).execute();
       const a = await trx.insertInto('treasury_account').values({
-        company_id: t.companyId, kind: input.kind, name: input.name, bank_name: input.bankName ?? null, account_number: input.accountNumber ?? null,
+        company_id: t.companyId, kind: input.kind, name: input.name, bank_name: input.bankName ?? null, account_number: input.accountNumber ?? null, ledger_code: ledgerCode,
         opening_balance: input.openingBalance ?? 0, opening_date: input.openingDate ?? today(),
       }).returning('id').executeTakeFirstOrThrow();
+      await this.accounting.postOpening(trx, t, a.id);
       await this.audit.tenant(trx, t.ctx, { action: 'treasury_account.created', entityType: 'treasury_account', entityId: a.id, data: { name: input.name, kind: input.kind, openingBalance: input.openingBalance ?? 0 } });
       return a;
     });
@@ -121,12 +132,16 @@ export class TreasuryService {
         if (first && first.date < input.openingDate) throw badRequest(`Des mouvements existent dès le ${first.date} : la date d'ouverture ne peut pas être postérieure.`, undefined, 'opening_after_movements');
       }
       const patch: Record<string, unknown> = {};
-      if (input.name) patch.name = input.name;
+      if (input.name) {
+        patch.name = input.name;
+        await trx.updateTable('ledger_account').set({ name: input.name }).where('code', '=', a.ledger_code).execute();
+      }
       if (input.bankName !== undefined) patch.bank_name = input.bankName;
       if (input.accountNumber !== undefined) patch.account_number = input.accountNumber;
       if (input.openingBalance !== undefined) patch.opening_balance = input.openingBalance;
       if (input.openingDate) patch.opening_date = input.openingDate;
       if (Object.keys(patch).length) await trx.updateTable('treasury_account').set(patch).where('id', '=', id).execute();
+      if (input.openingBalance !== undefined || input.openingDate) await this.accounting.postOpening(trx, t, id);
       // Le solde d'ouverture change tout l'historique du compte : il est tracé avec sa valeur précédente.
       await this.audit.tenant(trx, t.ctx, { action: 'treasury_account.updated', entityType: 'treasury_account', entityId: id, data: {
         name: input.name ?? a.name, ...(input.openingBalance !== undefined ? { openingBalance: { from: Number(a.opening_balance), to: input.openingBalance } } : {}),

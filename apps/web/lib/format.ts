@@ -37,6 +37,9 @@ export const ACTION_LABELS: Record<string, string> = {
   'treasury_account.archived': 'Compte de trésorerie archivé', 'treasury_account.restored': 'Compte de trésorerie restauré', 'treasury.expense_recorded': 'Dépense enregistrée',
   'treasury.income_recorded': 'Recette enregistrée', 'treasury.transfer_recorded': 'Virement interne', 'treasury.cash_counted': 'Arrêté de caisse',
   'treasury.movement_reversed': 'Mouvement contre-passé',
+  'accounting.synced': 'Historique comptabilisé', 'accounting.entry_created': 'Écriture saisie', 'accounting.entry_deleted': 'Brouillon d’écriture supprimé',
+  'accounting.entry_posted': 'Écriture validée', 'accounting.entry_reversed': 'Écriture contre-passée', 'accounting.account_created': 'Compte ajouté au plan comptable',
+  'accounting.period_locked': 'Période comptable clôturée', 'accounting.exported': 'Écritures exportées',
 };
 
 export const DOC_STATUS: Record<string, [string, 'ok' | 'warn' | 'crit' | 'mute']> = {
@@ -71,3 +74,5 @@ export const MOVEMENT_CATEGORIES: Record<string, string> = {
   ...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES, customer_payment: 'Encaissement client', supplier_payment: 'Règlement fournisseur', customer_refund: 'Remboursement client',
   transfer: 'Virement interne', cash_difference: 'Écart de caisse',
 };
+
+export const JOURNALS: Record<string, string> = { VT: 'Ventes', AC: 'Achats', TR: 'Trésorerie', OD: 'Opérations diverses', AN: 'À-nouveaux' };

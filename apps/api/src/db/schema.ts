@@ -19,7 +19,7 @@ export interface UserSessionTable {
 export interface CompanyTable {
   id: string; name: string; legal_form: string | null; rccm: string | null; tax_id: string | null; tax_regime: string | null;
   address: string | null; city: string | null; phone: string | null; email: string | null; country_code: Generated<string>;
-  currency: Generated<string>; logo_key: string | null; status: Generated<'active' | 'suspended' | 'closed'>; status_reason: string | null;
+  currency: Generated<string>; logo_key: string | null; status: Generated<'active' | 'suspended' | 'closed'>; status_reason: string | null; accounting_locked_until: ColumnType<string | null, string | null | undefined, string | null>;
   created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 export interface CompanyMembershipTable {
@@ -127,7 +127,7 @@ export type PurchasePaymentTable = SalesPaymentTable;
 
 export type TreasuryKind = 'cash' | 'bank' | 'mobile_money';
 export interface TreasuryAccountTable {
-  company_id: string; id: Generated<string>; kind: TreasuryKind; name: string; bank_name: string | null; account_number: string | null;
+  company_id: string; id: Generated<string>; kind: TreasuryKind; name: string; bank_name: string | null; account_number: string | null; ledger_code: string;
   opening_balance: NumDefault; opening_date: ColumnType<string, string | undefined, string>; archived_at: TsNullable; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 export type MovementSource = 'sales_payment' | 'purchase_payment' | 'sales_refund' | 'expense' | 'income' | 'transfer' | 'cash_count' | 'reversal';
@@ -135,6 +135,18 @@ export interface TreasuryMovementTable {
   company_id: string; id: Generated<string>; account_id: string; date: DateCol; direction: 'in' | 'out'; amount: Num; category: string; label: string;
   contact_id: string | null; source_type: MovementSource; source_id: string | null; transfer_id: string | null; reversal_of: string | null; reversed_by: string | null;
   reference: string | null; created_by: string | null; created_at: Generated<Date>;
+}
+
+export interface LedgerAccountTable { company_id: string; code: string; name: string; is_system: Generated<boolean>; archived_at: TsNullable; created_at: Generated<Date>; }
+export interface JournalTable { company_id: string; code: string; name: string; }
+export type EntrySource = 'manual' | 'sales_document' | 'purchase_document' | 'treasury_movement' | 'treasury_opening' | 'reversal';
+export interface JournalEntryTable {
+  company_id: string; id: Generated<string>; journal_code: string; number: string | null; date: string; label: string; reference: string | null;
+  status: Generated<'draft' | 'posted'>; source_type: EntrySource; source_id: string | null; reversal_of: string | null; reversed_by: string | null;
+  created_by: string | null; posted_by: string | null; posted_at: TsNullable; created_at: Generated<Date>;
+}
+export interface JournalLineTable {
+  company_id: string; id: Generated<string>; entry_id: string; position: number; account_code: string; contact_id: string | null; label: string; debit: NumDefault; credit: NumDefault;
 }
 
 export interface DB {
@@ -147,4 +159,5 @@ export interface DB {
   product: ProductTable; sales_document: SalesDocumentTable; sales_document_line: SalesDocumentLineTable; sales_payment: SalesPaymentTable; sales_reminder: SalesReminderTable;
   purchase_document: PurchaseDocumentTable; purchase_document_line: PurchaseDocumentLineTable; purchase_payment: PurchasePaymentTable;
   treasury_account: TreasuryAccountTable; treasury_movement: TreasuryMovementTable;
+  ledger_account: LedgerAccountTable; journal: JournalTable; journal_entry: JournalEntryTable; journal_line: JournalLineTable;
 }

@@ -77,7 +77,7 @@ export default function Dashboard() {
         <div className="row">
           {Object.entries(MODULE_LABELS).map(([k, l]) => <Pill key={k} tone={ctx.entitlements.modules.includes(k) ? 'ok' : 'mute'}>{l}{ctx.entitlements.modules.includes(k) ? '' : ' · non inclus'}</Pill>)}
         </div>
-        <p className="small muted" style={{ marginBottom: 0 }}>Disponibles : clients et fournisseurs, articles, ventes (devis, factures, avoirs, encaissements, relances) achats (bons de commande, factures et règlements fournisseurs, échéancier) et trésorerie (caisse, banque, mobile money). Les stocks, la comptabilité et la paie arrivent avec les prochains lots.</p>
+        <p className="small muted" style={{ marginBottom: 0 }}>Disponibles : clients et fournisseurs, articles, ventes (devis, factures, avoirs, encaissements, relances) achats (bons de commande, factures et règlements fournisseurs, échéancier) trésorerie (caisse, banque, mobile money) et comptabilité SYSCOHADA (écritures automatiques, grand livre, balance, TVA, résultat). Les stocks et la paie arrivent avec les prochains lots.</p>
       </div>
       <div className="card">
         <header><h2>Pour bien démarrer</h2></header>
