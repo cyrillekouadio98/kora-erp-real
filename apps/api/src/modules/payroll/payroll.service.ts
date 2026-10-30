@@ -7,6 +7,7 @@ import type { TenantInfo } from '../../common/request-context';
 import { DatabaseService, TenantTrx } from '../../db/database.service';
 import { AccountingService } from '../accounting/accounting.service';
 import { AuditService } from '../audit/audit.service';
+import { LeaveService } from '../leave/leave.service';
 import { TreasuryService } from '../treasury/treasury.service';
 import { computePayslip, DEFAULT_PAYROLL_PARAMS, familyParts, MaritalStatus, PayrollParams } from './payroll.calc';
 
@@ -35,7 +36,7 @@ type EmployeeRow = Awaited<ReturnType<PayrollService['employeeRow']>>;
 
 @Injectable()
 export class PayrollService {
-  constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly accounting: AccountingService, private readonly treasury: TreasuryService) {}
+  constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly accounting: AccountingService, private readonly treasury: TreasuryService, private readonly leave: LeaveService) {}
 
   /** Les montants de paie ne sont visibles qu'avec la permission sensible « voir les salaires ». */
   private assertSalaries(t: TenantInfo) {
@@ -78,7 +79,7 @@ export class PayrollService {
       id: e.id, number: e.number, firstName: e.first_name, lastName: e.last_name, fullName: `${e.first_name} ${e.last_name}`, jobTitle: e.job_title, department: e.department,
       hireDate: e.hire_date, endDate: e.end_date, contractType: e.contract_type, cnpsNumber: e.cnps_number, maritalStatus: e.marital_status, children: e.children,
       partsOverride: e.parts_override === null ? null : Number(e.parts_override), parts, paymentMethod: e.payment_method, phone: e.phone, email: e.email,
-      active: !e.end_date || e.end_date >= today(),
+      active: !e.end_date || e.end_date >= today(), linked: !!e.user_id,
       ...(salaries ? { baseSalary: Number(e.base_salary), housingAllowance: Number(e.housing_allowance), transportAllowance: Number(e.transport_allowance), otherAllowances: Number(e.other_allowances) } : {}),
       bankDetails: bank ? (e.bank_details_enc ? decrypt(e.bank_details_enc) : null) : e.bank_details_enc ? '••••' : null,
     };
@@ -194,7 +195,8 @@ export class PayrollService {
       if (!employees.length) throw badRequest('Aucun employé présent sur cette période.', undefined, 'no_employees');
       const r = await trx.insertInto('payroll_run').values({ company_id: t.companyId, period, params: JSON.stringify(params), validated_by: null, created_by: t.ctx.userId })
         .returning('id').executeTakeFirstOrThrow();
-      for (const e of employees) await this.writeSlip(trx, t, r.id, e, NO_INPUTS, params);
+      // Les congés sans solde validés du mois sont repris comme absences (modifiables ensuite).
+      for (const e of employees) await this.writeSlip(trx, t, r.id, e, { ...NO_INPUTS, absenceDays: await this.leave.unpaidDays(trx, e.id, period) }, params);
       await this.audit.tenant(trx, t.ctx, { action: 'payroll.run_created', entityType: 'payroll_run', entityId: r.id, data: { period, employees: employees.length } });
       return r.id;
     });

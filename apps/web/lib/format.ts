@@ -44,7 +44,8 @@ export const ACTION_LABELS: Record<string, string> = {
   'stock.variation_posted': 'Variation de stock comptabilisée',
   'employee.created': 'Employé créé', 'employee.updated': 'Fiche employé modifiée', 'payroll.settings_updated': 'Paramètres de paie modifiés',
   'sales_document.sent': 'Document envoyé au client par e-mail',
-  'payroll.run_created': 'Paie préparée', 'payroll.run_deleted': 'Paie en brouillon supprimée', 'payroll.run_validated': 'Paie validée', 'payroll.salaries_paid': 'Salaires payés',
+  'leave.requested': 'Demande de congé', 'leave.approved': 'Congé validé', 'leave.refused': 'Congé refusé', 'leave.cancelled': 'Congé annulé',
+  'leave.opening_set': 'Report de congés modifié', 'payroll.run_created': 'Paie préparée', 'payroll.run_deleted': 'Paie en brouillon supprimée', 'payroll.run_validated': 'Paie validée', 'payroll.salaries_paid': 'Salaires payés',
 };
 
 export const DOC_STATUS: Record<string, [string, 'ok' | 'warn' | 'crit' | 'mute']> = {
@@ -84,3 +85,12 @@ export const JOURNALS: Record<string, string> = { VT: 'Ventes', AC: 'Achats', TR
 
 export const CONTRACTS: Record<string, string> = { cdi: 'CDI', cdd: 'CDD', stage: 'Stage', journalier: 'Journalier' };
 export const MARITAL: Record<string, string> = { single: 'Célibataire', married: 'Marié(e)', divorced: 'Divorcé(e)', widowed: 'Veuf / veuve' };
+const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+/** « 2026-10 » → « octobre 2026 » */
+export const periodLabel = (p: string) => `${MONTHS[Number(p.slice(5, 7)) - 1]} ${p.slice(0, 4)}`;
+export const LEAVE_TYPES: Record<string, string> = {
+  annual: 'Congé payé', sick: 'Maladie', maternity: 'Maternité', family_event: 'Permission exceptionnelle', unpaid: 'Congé sans solde', other: 'Autre absence',
+};
+export const LEAVE_STATUS: Record<string, [string, 'ok' | 'warn' | 'crit' | 'mute']> = {
+  pending: ['En attente', 'warn'], approved: ['Validé', 'ok'], refused: ['Refusé', 'crit'], cancelled: ['Annulé', 'mute'],
+};

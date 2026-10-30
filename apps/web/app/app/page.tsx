@@ -81,17 +81,21 @@ export default function Dashboard() {
           <div className="card kpi"><div className="l">Utilisateurs</div><div className="v">{sub.usage.users}{sub.entitlements.quotas.users !== null && <span className="muted" style={{ fontSize: 15 }}> / {sub.entitlements.quotas.users}</span>}</div><div className="small muted">{sub.usage.pendingInvitations} invitation(s) en attente</div></div>
         </div>
       )}
-      <div className="card">
+      {can('employees.self') && (
+        <div className="card"><header><h2>Mon espace</h2><Link href="/app/moi">Ouvrir</Link></header>
+          <p className="small" style={{ margin: 0 }}>Consultez vos bulletins de paie, votre solde de congés, et demandez un congé.</p></div>
+      )}
+      {can('billing.read') && <div className="card">
         <header><h2>Modules de votre formule</h2>{can('billing.admin') && <Link href="/app/abonnement">Changer de formule</Link>}</header>
         <div className="row">
           {Object.entries(MODULE_LABELS).map(([k, l]) => <Pill key={k} tone={ctx.entitlements.modules.includes(k) ? 'ok' : 'mute'}>{l}{ctx.entitlements.modules.includes(k) ? '' : ' · non inclus'}</Pill>)}
         </div>
         <p className="small muted" style={{ marginBottom: 0 }}>Disponibles : clients et fournisseurs, articles, ventes (devis, factures, avoirs, encaissements, relances) achats (bons de commande, factures et règlements fournisseurs, échéancier) trésorerie (caisse, banque, mobile money) comptabilité SYSCOHADA (écritures automatiques, grand livre, balance, TVA, résultat), stocks valorisés au CMUP, employés et paie ivoirienne (selon votre formule).</p>
-      </div>
+      </div>}
       <div className="card">
         <header><h2>Pour bien démarrer</h2></header>
         <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 6 }}>
-          <li><Link href="/app/entreprise">Compléter la fiche de l'entreprise</Link> (RCCM, compte contribuable, adresse).</li>
+          {can('settings.admin') && <li><Link href="/app/entreprise">Compléter la fiche de l'entreprise</Link> (RCCM, compte contribuable, adresse).</li>}
           {can('contacts.create') && <li><Link href="/app/contacts">Enregistrer vos clients et fournisseurs</Link>, puis <Link href="/app/articles">vos articles</Link>.</li>}
           {can('sales.create') && <li><Link href="/app/ventes/nouveau?type=quote">Établir votre premier devis</Link> et le transformer en facture.</li>}
           {can('users.admin') && <li><Link href="/app/utilisateurs">Inviter vos collaborateurs</Link> et leur attribuer un rôle.</li>}

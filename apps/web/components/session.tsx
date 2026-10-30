@@ -23,7 +23,7 @@ export const useSession = () => useContext(Ctx)!;
 /** module : entrée masquée si le module n'est pas inclus dans la formule. */
 const NAV: { href: string; label: string; perm?: string; module?: string; group: string }[] = [
   { href: '/app', label: 'Tableau de bord', group: 'Entreprise' },
-  { href: '/app/entreprise', label: 'Fiche entreprise', group: 'Entreprise' },
+  { href: '/app/entreprise', label: 'Fiche entreprise', perm: 'settings.read', group: 'Entreprise' },
   { href: '/app/ventes/devis', label: 'Devis', perm: 'sales.read', group: 'Ventes' },
   { href: '/app/ventes/factures', label: 'Factures', perm: 'sales.read', group: 'Ventes' },
   { href: '/app/ventes/avoirs', label: 'Avoirs', perm: 'sales.read', group: 'Ventes' },
@@ -34,6 +34,7 @@ const NAV: { href: string; label: string; perm?: string; module?: string; group:
   { href: '/app/tresorerie', label: 'Caisse et banque', perm: 'cash.read', module: 'cash', group: 'Finance' },
   { href: '/app/comptabilite', label: 'Comptabilité', perm: 'accounting.read', module: 'accounting', group: 'Finance' },
   { href: '/app/employes', label: 'Employés', perm: 'employees.read', module: 'hr', group: 'Ressources humaines' },
+  { href: '/app/conges', label: 'Congés', perm: 'leave.read', module: 'hr', group: 'Ressources humaines' },
   { href: '/app/paie', label: 'Paie', perm: 'payroll.read', module: 'payroll', group: 'Ressources humaines' },
   { href: '/app/contacts', label: 'Clients et fournisseurs', perm: 'contacts.read', group: 'Référentiels' },
   { href: '/app/articles', label: 'Articles', perm: 'products.read', group: 'Référentiels' },
@@ -44,6 +45,7 @@ const NAV: { href: string; label: string; perm?: string; module?: string; group:
   { href: '/app/journal', label: "Journal d'audit", perm: 'audit.read', group: 'Administration' },
   { href: '/app/emails', label: 'E-mails envoyés', perm: 'settings.read', group: 'Administration' },
   { href: '/app/support', label: 'Accès du support', perm: 'settings.admin', group: 'Administration' },
+  { href: '/app/moi', label: 'Mon espace', perm: 'employees.self', module: 'hr', group: 'Mon compte' },
   { href: '/app/securite', label: 'Ma sécurité', group: 'Mon compte' },
 ];
 
@@ -56,8 +58,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const refresh = useCallback(async () => {
     try {
       const m = await api<Me>('/auth/me');
+      // Utilisateur et droits de l'entreprise sont posés ensemble : une page ne s'affiche jamais sans ses droits.
+      const c = m.activeCompanyId ? await api<CompanyContext>('/company/context').catch(() => null) : null;
+      setCtx(c);
       setMe(m);
-      setCtx(m.activeCompanyId ? await api<CompanyContext>('/company/context').catch(() => null) : null);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) router.replace('/connexion');
     }

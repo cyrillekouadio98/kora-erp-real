@@ -33,6 +33,7 @@ const SettingsSchema = z.object({
   familyBenefitsRate: rate.optional(), workAccidentRate: rate.optional(), smallBenefitsCeiling: money.optional(),
   cmuPerPerson: money.optional(), cmuEmployerShare: money.optional(), employerTaxRate: rate.optional(), apprenticeshipTaxRate: rate.optional(),
   trainingTaxRate: rate.optional(), transportExemptCap: money.optional(), workingDays: z.coerce.number().int().min(20).max(31).optional(),
+  leaveDaysPerMonth: z.coerce.number().min(0).max(5).optional(),
 }).strict();
 
 @ApiTags('Employés et paie')

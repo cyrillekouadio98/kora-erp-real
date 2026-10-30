@@ -23,6 +23,7 @@ export default function EmployeesPage() {
   const [q, setQ] = useState('');
   const [includeLeft, setIncludeLeft] = useState(false);
   const [edit, setEdit] = useState<any>(null);
+  const [notice, setNotice] = useState('');
   const { busy, error, run } = useAction();
   const load = useCallback(() => api(`/company/employees?includeLeft=${includeLeft}${q ? `&q=${encodeURIComponent(q)}` : ''}`).then(setRows), [q, includeLeft]);
   useEffect(() => { const h = setTimeout(load, 250); return () => clearTimeout(h); }, [load]);
@@ -45,6 +46,8 @@ export default function EmployeesPage() {
     <>
       <div className="page-head"><h1>Employés</h1>
         {can('employees.create') && writable && <button className="btn primary" onClick={() => setEdit({ ...EMPTY })}>Nouvel employé</button>}</div>
+      <Alert kind="ok">{notice}</Alert>
+      <Alert>{!edit && error}</Alert>
       {!salaries && <Alert kind="info">Les salaires et la paie ne sont visibles qu'avec la permission sensible « voir les salaires et bulletins ».</Alert>}
       <div className="row">
         <div style={{ flex: 2, minWidth: 220 }}><Field label="Rechercher" type="search" placeholder="Nom, matricule, poste…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
@@ -56,13 +59,16 @@ export default function EmployeesPage() {
           {rows?.map((e) => (
             <tr key={e.id} style={e.active ? undefined : { opacity: 0.6 }}>
               <td><code className="k">{e.number}</code></td>
-              <td><b>{e.fullName}</b>{!e.active && <> <Pill>Sorti le {date(e.endDate)}</Pill></>}<div className="small muted">{[e.jobTitle, e.department].filter(Boolean).join(' · ')}</div></td>
+              <td><b>{e.fullName}</b>{!e.active && <> <Pill>Sorti le {date(e.endDate)}</Pill></>}{e.linked && <> <Pill tone="ok">Espace employé</Pill></>}<div className="small muted">{[e.jobTitle, e.department].filter(Boolean).join(' · ')}</div></td>
               <td>{CONTRACTS[e.contractType]}</td>
               <td style={{ whiteSpace: 'nowrap' }}>{date(e.hireDate)}</td>
               <td className="n">{e.parts}</td>
               {salaries && <td className="n" style={{ whiteSpace: 'nowrap' }}>{money(e.baseSalary)}</td>}
               <td className="small">{PAYMENT_METHODS[e.paymentMethod]}</td>
-              <td className="n">{can('employees.update') && writable && <button className="btn sm" onClick={() => setEdit(toForm(e))}>Modifier</button>}</td>
+              <td className="n"><div className="row" style={{ justifyContent: 'flex-end', gap: 6, flexWrap: 'nowrap' }}>
+                {can('users.admin') && writable && e.active && !e.linked && <button className="btn sm" disabled={busy} title={e.email ? undefined : 'Renseignez d’abord son e-mail'}
+                  onClick={() => run(async () => { await api(`/company/employees/${e.id}/invite`, { body: {} }); setNotice(`Invitation envoyée à ${e.fullName} (${e.email}) : à son acceptation, il ou elle accédera à ses bulletins et à ses congés.`); })}>Inviter dans son espace</button>}
+                {can('employees.update') && writable && <button className="btn sm" onClick={() => setEdit(toForm(e))}>Modifier</button>}</div></td>
             </tr>
           ))}
           {rows && !rows.length && <tr><td colSpan={8} className="muted" style={{ textAlign: 'center', padding: 24 }}>Aucun employé.</td></tr>}
@@ -90,6 +96,7 @@ export default function EmployeesPage() {
                 {['bank_transfer', 'mobile_money', 'cash'].map((k) => <option key={k} value={k}>{PAYMENT_METHODS[k]}</option>)}</select></label>
               {bank && <Field label={edit.paymentMethod === 'mobile_money' ? 'Numéro mobile money' : 'RIB'} value={edit.bankDetails ?? ''} onChange={set('bankDetails')} />}
               <Field label="Téléphone" value={edit.phone ?? ''} onChange={set('phone')} />
+              <Field label="E-mail (pour l'espace employé)" type="email" value={edit.email ?? ''} onChange={set('email')} />
             </div>
             {salaries && <>
               <h3 style={{ marginTop: 4 }}>Rémunération mensuelle</h3>

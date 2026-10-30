@@ -60,6 +60,7 @@ export class ExportController {
         payroll_runs: await trx.selectFrom('payroll_run').selectAll().orderBy('period').execute(),
         payslips: await trx.selectFrom('payslip').selectAll().orderBy('run_id').execute(),
         fiscal_year_closings: await trx.selectFrom('fiscal_year_closing').selectAll().orderBy('year').execute(),
+        leave_requests: await trx.selectFrom('leave_request').selectAll().orderBy('start_date').execute(),
         audit_log: await trx.selectFrom('audit_log').selectAll().orderBy('id').execute(),
       };
       await this.audit.tenant(trx, t.ctx, { action: 'data.exported', data: { tables: Object.keys(out) } });

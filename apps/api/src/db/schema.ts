@@ -33,7 +33,7 @@ export interface RoleTable {
 export interface MembershipRoleTable { company_id: string; membership_id: string; role_id: string; }
 export interface InvitationTable {
   company_id: string; id: Generated<string>; email: string; role_ids: string[]; token_hash: string; invited_by: string;
-  expires_at: Ts; accepted_at: TsNullable; revoked_at: TsNullable; created_at: Generated<Date>;
+  expires_at: Ts; accepted_at: TsNullable; revoked_at: TsNullable; created_at: Generated<Date>; employee_id: Generated<string | null>;
 }
 export interface PlanTable { id: Generated<string>; code: string; name: string; is_public: Generated<boolean>; sort_order: Generated<number>; created_at: Generated<Date>; }
 export interface PlanVersionTable {
@@ -164,7 +164,14 @@ export interface EmployeeTable {
   marital_status: Generated<'single' | 'married' | 'divorced' | 'widowed'>; children: Generated<number>; parts_override: NumNullable;
   base_salary: NumDefault; housing_allowance: NumDefault; transport_allowance: NumDefault; other_allowances: NumDefault;
   payment_method: Generated<'cash' | 'bank_transfer' | 'mobile_money'>; bank_details_enc: string | null; phone: string | null; email: string | null;
+  user_id: string | null; leave_opening_balance: NumDefault; leave_opening_date: DateNullable;
   created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export type LeaveType = 'annual' | 'sick' | 'maternity' | 'family_event' | 'unpaid' | 'other';
+export interface LeaveRequestTable {
+  company_id: string; id: Generated<string>; employee_id: string; type: LeaveType; start_date: string; end_date: string; days: Num; reason: string | null;
+  status: Generated<'pending' | 'approved' | 'refused' | 'cancelled'>; decided_by: string | null; decided_at: TsNullable; decision_note: string | null;
+  created_by: string | null; created_at: Generated<Date>;
 }
 export interface PayrollSettingsTable { company_id: string; params: Json; updated_by: string | null; updated_at: Generated<Date>; }
 export interface PayrollRunTable {
@@ -204,5 +211,5 @@ export interface DB {
   ledger_account: LedgerAccountTable; journal: JournalTable; journal_entry: JournalEntryTable; journal_line: JournalLineTable;
   stock_movement: StockMovementTable;
   employee: EmployeeTable; payroll_settings: PayrollSettingsTable; payroll_run: PayrollRunTable; payslip: PayslipTable;
-  email_message: EmailMessageTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable;
+  email_message: EmailMessageTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable; leave_request: LeaveRequestTable;
 }

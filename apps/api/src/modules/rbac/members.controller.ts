@@ -109,36 +109,56 @@ export class MembersController {
   @Post('company/invitations')
   invite(@Tenant() t: TenantInfo, @Body() body: unknown) {
     const input = parse(z.object({ email, roleIds: z.array(z.string()).min(1).max(20) }), body);
+    return this.db.tenant(t.ctx, (trx) => this.createInvitation(trx, t, input));
+  }
+
+  /** Invite un employé dans son espace personnel (rôle « Employé ») ; sa fiche est rattachée au compte à l'acceptation. */
+  @Permission('users.admin')
+  @Post('company/employees/:id/invite')
+  inviteEmployee(@Tenant() t: TenantInfo, @Param('id') id: string) {
+    if (!isUuid(id)) throw notFound('Employé');
     return this.db.tenant(t.ctx, async (trx) => {
-      await assertRolesAssignable(trx, t, input.roleIds);
-      const already = await trx.selectFrom('company_membership as m').innerJoin('user_account as u', 'u.id', 'm.user_id')
-        .select('m.id').where('u.email', '=', input.email).executeTakeFirst();
-      if (already) throw conflict('Cette personne a déjà un accès à cette entreprise.', 'already_member');
-      await this.quotas.assertUsers(trx, t.companyId, t.entitlements, { includePending: true });
-      const secret = randomToken(24);
-      const inv = await trx.insertInto('invitation').values({
-        company_id: t.companyId, email: input.email, role_ids: [...new Set(input.roleIds)], token_hash: sha256(secret),
-        invited_by: t.ctx.userId, expires_at: new Date(Date.now() + INVITE_DAYS * 86400_000),
-      }).returning(['id', 'expires_at']).executeTakeFirstOrThrow();
-      const token = `${t.companyId}.${inv.id}.${secret}`;
-      const inviteUrl = `${config.webUrl}/invitation?token=${encodeURIComponent(token)}`;
-      const company = await trx.selectFrom('company').select('name').where('id', '=', t.companyId).executeTakeFirstOrThrow();
-      const inviter = await trx.selectFrom('user_account').select(['full_name', 'email']).where('id', '=', t.ctx.userId).executeTakeFirstOrThrow();
-      const roles = await trx.selectFrom('role').select('name').where('id', 'in', input.roleIds).execute();
-      await this.mail.enqueue(trx, {
-        companyId: t.companyId, to: input.email, kind: 'invitation', entityId: inv.id, fromName: company.name, replyTo: inviter.email, createdBy: t.ctx.userId,
-        subject: `${inviter.full_name} vous invite à rejoindre ${company.name} sur Kora ERP`,
-        paragraphs: [
-          'Bonjour,',
-          `${inviter.full_name} vous invite à rejoindre l'espace de ${company.name} sur Kora ERP, avec le rôle : ${roles.map((r) => r.name).join(', ')}.`,
-          `Cette invitation est valable ${INVITE_DAYS} jours. Si vous n'attendiez pas ce message, ignorez-le simplement.`,
-        ],
-        action: { label: "Accepter l'invitation", url: inviteUrl },
-      });
-      await this.audit.tenant(trx, t.ctx, { action: 'invitation.created', entityType: 'invitation', entityId: inv.id, data: { email: input.email, role_ids: input.roleIds } });
-      // Le lien est aussi rendu à l'administrateur, pour un envoi par un autre canal (WhatsApp…).
-      return { id: inv.id, expiresAt: inv.expires_at, inviteUrl, emailQueued: true };
+      const e = await trx.selectFrom('employee').select(['id', 'email', 'user_id']).where('id', '=', id).executeTakeFirst();
+      if (!e) throw notFound('Employé');
+      if (e.user_id) throw conflict('Cet employé a déjà accès à son espace.', 'already_linked');
+      if (!e.email) throw badRequest("Renseignez l'adresse e-mail de l'employé avant de l'inviter.", undefined, 'no_email');
+      const role = await trx.selectFrom('role').select('id').where('key', '=', 'employee').executeTakeFirst();
+      if (!role) throw badRequest('Le rôle « Employé » a été supprimé.', undefined, 'no_employee_role');
+      const pending = await trx.selectFrom('invitation').select('id').where('employee_id', '=', id).where('accepted_at', 'is', null).where('revoked_at', 'is', null).where('expires_at', '>', new Date()).executeTakeFirst();
+      if (pending) throw conflict('Une invitation est déjà en attente pour cet employé.', 'invitation_pending');
+      return this.createInvitation(trx, t, { email: e.email, roleIds: [role.id], employeeId: id });
     });
+  }
+
+  private async createInvitation(trx: TenantTrx, t: TenantInfo, input: { email: string; roleIds: string[]; employeeId?: string }) {
+    await assertRolesAssignable(trx, t, input.roleIds);
+    const already = await trx.selectFrom('company_membership as m').innerJoin('user_account as u', 'u.id', 'm.user_id')
+      .select('m.id').where('u.email', '=', input.email).executeTakeFirst();
+    if (already) throw conflict('Cette personne a déjà un accès à cette entreprise.', 'already_member');
+    await this.quotas.assertUsers(trx, t.companyId, t.entitlements, { includePending: true });
+    const secret = randomToken(24);
+    const inv = await trx.insertInto('invitation').values({
+      company_id: t.companyId, email: input.email, role_ids: [...new Set(input.roleIds)], token_hash: sha256(secret),
+      invited_by: t.ctx.userId, expires_at: new Date(Date.now() + INVITE_DAYS * 86400_000), employee_id: input.employeeId ?? null,
+    }).returning(['id', 'expires_at']).executeTakeFirstOrThrow();
+    const token = `${t.companyId}.${inv.id}.${secret}`;
+    const inviteUrl = `${config.webUrl}/invitation?token=${encodeURIComponent(token)}`;
+    const company = await trx.selectFrom('company').select('name').where('id', '=', t.companyId).executeTakeFirstOrThrow();
+    const inviter = await trx.selectFrom('user_account').select(['full_name', 'email']).where('id', '=', t.ctx.userId).executeTakeFirstOrThrow();
+    const roles = await trx.selectFrom('role').select('name').where('id', 'in', input.roleIds).execute();
+    await this.mail.enqueue(trx, {
+      companyId: t.companyId, to: input.email, kind: 'invitation', entityId: inv.id, fromName: company.name, replyTo: inviter.email, createdBy: t.ctx.userId,
+      subject: `${inviter.full_name} vous invite à rejoindre ${company.name} sur Kora ERP`,
+      paragraphs: [
+        'Bonjour,',
+        `${inviter.full_name} vous invite à rejoindre l'espace de ${company.name} sur Kora ERP, avec le rôle : ${roles.map((r) => r.name).join(', ')}.`,
+        `Cette invitation est valable ${INVITE_DAYS} jours. Si vous n'attendiez pas ce message, ignorez-le simplement.`,
+      ],
+      action: { label: "Accepter l'invitation", url: inviteUrl },
+    });
+    await this.audit.tenant(trx, t.ctx, { action: 'invitation.created', entityType: 'invitation', entityId: inv.id, data: { email: input.email, role_ids: input.roleIds } });
+    // Le lien est aussi rendu à l'administrateur, pour un envoi par un autre canal (WhatsApp…).
+    return { id: inv.id, expiresAt: inv.expires_at, inviteUrl, emailQueued: true };
   }
 
   @Permission('users.admin')
@@ -162,7 +182,7 @@ export class MembersController {
 
   private async loadInvitation(trx: TenantTrx, token: { invitationId: string; secret: string }) {
     const inv = await trx.selectFrom('invitation as i').innerJoin('company as c', 'c.id', 'i.company_id')
-      .select(['i.id', 'i.email', 'i.role_ids', 'i.token_hash', 'i.expires_at', 'i.accepted_at', 'i.revoked_at', 'c.name as companyName', 'c.status as companyStatus'])
+      .select(['i.id', 'i.email', 'i.role_ids', 'i.employee_id', 'i.token_hash', 'i.expires_at', 'i.accepted_at', 'i.revoked_at', 'c.name as companyName', 'c.status as companyStatus'])
       .where('i.id', '=', token.invitationId).executeTakeFirst();
     if (!inv || !safeEqual(inv.token_hash, sha256(token.secret)) || inv.accepted_at || inv.revoked_at || new Date(inv.expires_at) < new Date()) {
       throw notFound('Invitation');
@@ -219,6 +239,8 @@ export class MembersController {
       await t.deleteFrom('membership_role').where('membership_id', '=', membershipId!).execute();
       if (roles.length) await t.insertInto('membership_role').values(roles.map((r) => ({ company_id: tk.companyId, membership_id: membershipId!, role_id: r.id }))).execute();
       await t.updateTable('invitation').set({ accepted_at: new Date() }).where('id', '=', inv.id).execute();
+      // Invitation à l'espace employé : la fiche de l'employé est rattachée à ce compte.
+      if (inv.employee_id) await t.updateTable('employee').set({ user_id: userId }).where('id', '=', inv.employee_id).where('user_id', 'is', null).execute();
       const ctx = { companyId: tk.companyId, userId, actorType: 'user' as const, ip: clientIp(req) };
       await this.audit.tenant(t, ctx, { action: 'invitation.accepted', entityType: 'invitation', entityId: inv.id, data: { membership_id: membershipId } });
       let session = null;

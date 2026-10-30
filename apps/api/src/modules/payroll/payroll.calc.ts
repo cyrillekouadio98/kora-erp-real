@@ -24,6 +24,7 @@ export interface PayrollParams {
   trainingTaxRate: number;       // taxe additionnelle à la formation professionnelle continue (%)
   transportExemptCap: number;    // indemnité de transport exonérée par mois
   workingDays: number;           // base de proratisation des absences
+  leaveDaysPerMonth: number;     // congés payés acquis par mois de service (jours ouvrables)
 }
 
 export const DEFAULT_PAYROLL_PARAMS: PayrollParams = {
@@ -33,7 +34,7 @@ export const DEFAULT_PAYROLL_PARAMS: PayrollParams = {
   familyBenefitsRate: 5, workAccidentRate: 2, smallBenefitsCeiling: 70_000,
   cmuPerPerson: 1_000, cmuEmployerShare: 500,
   employerTaxRate: 1.2, apprenticeshipTaxRate: 0.4, trainingTaxRate: 1.2,
-  transportExemptCap: 30_000, workingDays: 30,
+  transportExemptCap: 30_000, workingDays: 30, leaveDaysPerMonth: 2.2,
 };
 
 export type MaritalStatus = 'single' | 'married' | 'divorced' | 'widowed';
