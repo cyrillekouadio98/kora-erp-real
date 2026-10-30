@@ -27,6 +27,9 @@ import { StockController } from './modules/stock/stock.controller';
 import { StockService } from './modules/stock/stock.service';
 import { PayrollController } from './modules/payroll/payroll.controller';
 import { PayrollService } from './modules/payroll/payroll.service';
+import { MailService } from './modules/mail/mail.service';
+import { EmailsController } from './modules/mail/emails.controller';
+import { PublicDocumentsController } from './modules/sales/public.controller';
 import { ContactsController } from './modules/contacts/contacts.controller';
 import { CompaniesController } from './modules/companies/companies.controller';
 import { ProvisioningService } from './modules/companies/provisioning.service';
@@ -45,10 +48,10 @@ import { PlatformSupportController, SupportAccessController } from './modules/su
   controllers: [
     HealthController, AuthController, CompaniesController, MembersController, RolesController, BillingController, WebhooksController,
     DevController, AuditController, SupportAccessController, PlatformSupportController, PlatformController, ExportController,
-    ContactsController, ProductsController, SalesController, PurchasesController, TreasuryController, AccountingController, StockController, PayrollController,
+    ContactsController, ProductsController, SalesController, PurchasesController, TreasuryController, AccountingController, StockController, PayrollController, PublicDocumentsController, EmailsController,
   ],
   providers: [
-    AuditService, SessionService, AuthService, ProvisioningService, EntitlementService, QuotaService, BillingService, BillingScheduler, SalesService, PurchasesService, TreasuryService, AccountingService, StockService, PayrollService,
+    AuditService, SessionService, AuthService, ProvisioningService, EntitlementService, QuotaService, BillingService, BillingScheduler, SalesService, PurchasesService, TreasuryService, AccountingService, StockService, PayrollService, MailService,
     { provide: APP_GUARD, useClass: AccessGuard },
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
   ],

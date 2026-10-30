@@ -42,6 +42,7 @@ const NAV: { href: string; label: string; perm?: string; module?: string; group:
   { href: '/app/roles', label: 'Rôles et permissions', perm: 'users.read', group: 'Administration' },
   { href: '/app/abonnement', label: 'Abonnement', perm: 'billing.read', group: 'Administration' },
   { href: '/app/journal', label: "Journal d'audit", perm: 'audit.read', group: 'Administration' },
+  { href: '/app/emails', label: 'E-mails envoyés', perm: 'settings.read', group: 'Administration' },
   { href: '/app/support', label: 'Accès du support', perm: 'settings.admin', group: 'Administration' },
   { href: '/app/securite', label: 'Ma sécurité', group: 'Mon compte' },
 ];

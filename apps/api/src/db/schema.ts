@@ -176,6 +176,17 @@ export interface PayslipTable {
   gross: Num; taxable: Num; net: Num; employer_cost: Num; paid_at: DateNullable;
 }
 
+export interface EmailMessageTable {
+  id: Generated<string>; company_id: string | null; to_address: string; reply_to: string | null; from_name: string; subject: string; text_body: string; html_body: string;
+  kind: string; entity_id: string | null; status: Generated<'queued' | 'sent' | 'failed'>; attempts: Generated<number>; next_attempt_at: Generated<Date>;
+  last_error: string | null; sent_at: TsNullable; created_by: string | null; created_at: Generated<Date>;
+}
+export interface PasswordResetTable { id: Generated<string>; user_id: string; token_hash: string; expires_at: Ts; used_at: TsNullable; ip: string | null; created_at: Generated<Date>; }
+export interface DocumentShareTable {
+  company_id: string; id: Generated<string>; document_id: string; token_hash: string; expires_at: Ts; views: Generated<number>; last_viewed_at: TsNullable;
+  created_by: string | null; created_at: Generated<Date>;
+}
+
 export interface DB {
   user_account: UserAccountTable; platform_role_assignment: PlatformRoleAssignmentTable; user_session: UserSessionTable;
   company: CompanyTable; company_membership: CompanyMembershipTable; role: RoleTable; membership_role: MembershipRoleTable;
@@ -189,4 +200,5 @@ export interface DB {
   ledger_account: LedgerAccountTable; journal: JournalTable; journal_entry: JournalEntryTable; journal_line: JournalLineTable;
   stock_movement: StockMovementTable;
   employee: EmployeeTable; payroll_settings: PayrollSettingsTable; payroll_run: PayrollRunTable; payslip: PayslipTable;
+  email_message: EmailMessageTable; password_reset: PasswordResetTable; document_share: DocumentShareTable;
 }

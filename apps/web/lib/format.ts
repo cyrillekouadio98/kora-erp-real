@@ -43,6 +43,7 @@ export const ACTION_LABELS: Record<string, string> = {
   'stock.opening_recorded': 'Stock initial enregistré', 'stock.counted': 'Inventaire de stock', 'stock.settings_updated': 'Paramètres de stock modifiés',
   'stock.variation_posted': 'Variation de stock comptabilisée',
   'employee.created': 'Employé créé', 'employee.updated': 'Fiche employé modifiée', 'payroll.settings_updated': 'Paramètres de paie modifiés',
+  'sales_document.sent': 'Document envoyé au client par e-mail',
   'payroll.run_created': 'Paie préparée', 'payroll.run_deleted': 'Paie en brouillon supprimée', 'payroll.run_validated': 'Paie validée', 'payroll.salaries_paid': 'Salaires payés',
 };
 

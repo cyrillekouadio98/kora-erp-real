@@ -17,6 +17,7 @@ import { AuthService } from '../auth/auth.service';
 import { SessionService } from '../auth/session.service';
 import { EntitlementService } from '../billing/entitlement.service';
 import { QuotaService } from '../billing/quota.service';
+import { MailService } from '../mail/mail.service';
 import { isSensitive } from './permissions';
 
 const INVITE_DAYS = 7;
@@ -37,6 +38,7 @@ export class MembersController {
   constructor(
     private readonly db: DatabaseService, private readonly audit: AuditService, private readonly quotas: QuotaService,
     private readonly sessions: SessionService, private readonly auth: AuthService, private readonly entitlements: EntitlementService,
+    private readonly mail: MailService,
   ) {}
 
   @Permission('users.read')
@@ -119,9 +121,23 @@ export class MembersController {
         invited_by: t.ctx.userId, expires_at: new Date(Date.now() + INVITE_DAYS * 86400_000),
       }).returning(['id', 'expires_at']).executeTakeFirstOrThrow();
       const token = `${t.companyId}.${inv.id}.${secret}`;
+      const inviteUrl = `${config.webUrl}/invitation?token=${encodeURIComponent(token)}`;
+      const company = await trx.selectFrom('company').select('name').where('id', '=', t.companyId).executeTakeFirstOrThrow();
+      const inviter = await trx.selectFrom('user_account').select(['full_name', 'email']).where('id', '=', t.ctx.userId).executeTakeFirstOrThrow();
+      const roles = await trx.selectFrom('role').select('name').where('id', 'in', input.roleIds).execute();
+      await this.mail.enqueue(trx, {
+        companyId: t.companyId, to: input.email, kind: 'invitation', entityId: inv.id, fromName: company.name, replyTo: inviter.email, createdBy: t.ctx.userId,
+        subject: `${inviter.full_name} vous invite à rejoindre ${company.name} sur Kora ERP`,
+        paragraphs: [
+          'Bonjour,',
+          `${inviter.full_name} vous invite à rejoindre l'espace de ${company.name} sur Kora ERP, avec le rôle : ${roles.map((r) => r.name).join(', ')}.`,
+          `Cette invitation est valable ${INVITE_DAYS} jours. Si vous n'attendiez pas ce message, ignorez-le simplement.`,
+        ],
+        action: { label: "Accepter l'invitation", url: inviteUrl },
+      });
       await this.audit.tenant(trx, t.ctx, { action: 'invitation.created', entityType: 'invitation', entityId: inv.id, data: { email: input.email, role_ids: input.roleIds } });
-      // L'envoi de l'e-mail sera branché sur le service de notification ; le lien est aussi rendu à l'administrateur.
-      return { id: inv.id, expiresAt: inv.expires_at, inviteUrl: `${config.webUrl}/invitation?token=${encodeURIComponent(token)}` };
+      // Le lien est aussi rendu à l'administrateur, pour un envoi par un autre canal (WhatsApp…).
+      return { id: inv.id, expiresAt: inv.expires_at, inviteUrl, emailQueued: true };
     });
   }
 

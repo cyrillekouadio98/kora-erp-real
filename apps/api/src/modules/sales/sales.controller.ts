@@ -108,6 +108,16 @@ export class SalesController {
   @Post('documents/:id/convert')
   convert(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.sales.convert(t, id); }
 
+  /** Envoi du document au client par e-mail, avec un lien de consultation valable 90 jours. */
+  @Permission('sales.update') @HttpCode(200)
+  @Post('documents/:id/send')
+  send(@Tenant() t: TenantInfo, @Param('id') id: string, @Body() body: unknown) {
+    return this.sales.send(t, id, parse(z.object({
+      to: z.string().trim().toLowerCase().email({ message: 'Adresse e-mail invalide' }).nullable().optional(),
+      message: z.string().trim().max(5000).nullable().optional(),
+    }).strict(), body ?? {}));
+  }
+
   /** Avoir sur une facture émise : brouillon reprenant ses lignes, à valider ensuite. */
   @Permission('sales.create') @HttpCode(200)
   @Post('documents/:id/credit-note')
@@ -120,6 +130,9 @@ export class SalesController {
       channel: z.enum(['phone', 'whatsapp', 'sms', 'email', 'letter', 'visit'], { message: 'Moyen de relance invalide' }),
       note: z.string().trim().max(1000).transform((v) => v || null).nullable().optional(),
       promisedOn: isoDate.nullable().optional(),
+      sendEmail: z.boolean().optional(),
+      message: z.string().trim().max(5000).nullable().optional(),
+      to: z.string().trim().toLowerCase().email({ message: 'Adresse e-mail invalide' }).nullable().optional(),
     }).strict(), body));
   }
 

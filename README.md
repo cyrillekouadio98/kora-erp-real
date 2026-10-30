@@ -27,6 +27,7 @@ ERP SaaS multi-entreprises pour les PME d'Afrique de l'Ouest : gestion commercia
 | Comptabilité SYSCOHADA | Plan comptable SYSCOHADA révisé installé par entreprise (sous-comptes ajoutables), journaux VT, AC, TR, OD, AN ; comptabilisation automatique des factures et avoirs (411 / 70x / 4431), factures fournisseurs (60x / 4452 / 401), encaissements, règlements, dépenses, virements (via 585), écarts de caisse et soldes d'ouverture (à-nouveaux contre 471) ; écritures d'OD en brouillon puis validées, contre-passation ; grand livre, balance générale, aide à la déclaration de TVA, compte de résultat, export au format du fichier des écritures comptables ; clôture de période définitive. La base garantit l'équilibre de chaque écriture, son intangibilité une fois validée et l'interdiction d'écrire dans une période clôturée |
 | Stocks | Biens suivis en quantité et en valeur au coût moyen unitaire pondéré (CMUP) ; entrées par les factures fournisseurs (prix net de remise), sorties par les factures de vente, retours par les avoirs (sauf remise de prix) ; stock initial passé en à-nouveaux (311 / 471), inventaire avec écart, seuil d'alerte et ruptures, fiche de stock ; écriture de variation de stock (311 / 6031) qui corrige le résultat. Une vente au-delà du stock est refusée ; la base interdit un stock négatif et toute retouche des mouvements |
 | Employés et paie | Fiches employés (contrat, CNPS, situation de famille et parts fiscales, rémunération, RIB chiffré) ; paie mensuelle : bulletins de tous les employés présents, éléments variables (heures supplémentaires, primes, absences, avances), calcul CNPS (retraite plafonnée, prestations familiales, accident du travail), CMU, ITS 2024 avec réduction pour charges de famille, taxes patronales ; validation intangible passée en comptabilité (661 / 664 / 641 contre 422 / 431 / 438 / 447 / 421), paiement des salaires depuis la trésorerie, bulletin imprimable, récapitulatif CNPS et impôts. **Taux et barèmes paramétrables, à faire valider par un expert-comptable** ; chaque paie validée garde ses paramètres. Salaires et RIB visibles seulement avec les permissions sensibles correspondantes |
+| E-mails | File d'envoi avec nouvelles tentatives (SMTP en production via `SMTP_URL`, mode développement sans envoi réel) ; invitations envoyées automatiquement ; mot de passe oublié (lien d'une heure, à usage unique, sans révéler si un compte existe, sessions fermées) ; devis, factures et avoirs envoyés au client avec un lien de consultation sécurisé (90 jours, sans compte) ; relances par e-mail ; page « E-mails envoyés » avec renvoi des messages en échec |
 | Réversibilité | Export complet des données de l'entreprise (JSON + CSV), toujours possible même en cas de suspension |
 
 ## Sécurité et isolation des données
@@ -91,7 +92,7 @@ Le super administrateur doit activer la double authentification (menu « Ma séc
 npm test
 ```
 
-103 tests d'intégration sur une vraie base PostgreSQL (`kora_test`, recréée à chaque fichier ; PostgreSQL doit tourner, par exemple via `npm run dev:db`) : authentification, rôles et quotas, abonnements et paiements, console éditeur et support, contacts, ventes (calculs, cycle devis → facture → encaissement, avoirs, relances, intangibilité en base, droits par rôle), achats (commandes, doublons, règlements, échéancier, séparation des rôles), trésorerie (soldes, caisse jamais négative, virements, contre-passation, arrêté de caisse, remboursements), comptabilité (écritures automatiques, équilibre et intangibilité en base, OD, clôture, balance, TVA, résultat, concordance trésorerie / comptabilité), stocks (CMUP, ventes refusées sans stock, retours, inventaire, variation 6031), paie (parts, barème ITS, bulletin complet, confidentialité des salaires, validation, comptabilisation, paiement), isolation multi-entreprises. Par sécurité, les tests refusent de s'exécuter sur une base dont le nom ne se termine pas par `_test`.
+108 tests d'intégration sur une vraie base PostgreSQL (`kora_test`, recréée à chaque fichier ; PostgreSQL doit tourner, par exemple via `npm run dev:db`) : authentification, rôles et quotas, abonnements et paiements, console éditeur et support, contacts, ventes (calculs, cycle devis → facture → encaissement, avoirs, relances, intangibilité en base, droits par rôle), achats (commandes, doublons, règlements, échéancier, séparation des rôles), trésorerie (soldes, caisse jamais négative, virements, contre-passation, arrêté de caisse, remboursements), comptabilité (écritures automatiques, équilibre et intangibilité en base, OD, clôture, balance, TVA, résultat, concordance trésorerie / comptabilité), stocks (CMUP, ventes refusées sans stock, retours, inventaire, variation 6031), paie (parts, barème ITS, bulletin complet, confidentialité des salaires, validation, comptabilisation, paiement), e-mails (invitation, mot de passe oublié, envoi de documents et lien public, relance, échecs et renvoi), isolation multi-entreprises. Par sécurité, les tests refusent de s'exécuter sur une base dont le nom ne se termine pas par `_test`.
 
 ## Organisation du code
 
@@ -100,7 +101,7 @@ apps/
   api/                 API NestJS (TypeScript)
     src/common/        garde d'accès, erreurs, validation, chiffrement
     src/db/            migrations SQL versionnées, accès PostgreSQL (Kysely), contexte RLS
-    src/modules/       auth, companies, rbac, billing, audit, support, platform, exports, contacts, sales, purchases, treasury, accounting, stock, payroll
+    src/modules/       auth, companies, rbac, billing, audit, support, platform, exports, contacts, sales, purchases, treasury, accounting, stock, payroll, mail
     test/              tests d'intégration
   web/                 interface Next.js (espace entreprise + console éditeur)
 infra/db/              création des rôles et des bases PostgreSQL, PostgreSQL local (dev-postgres.mjs)
@@ -113,12 +114,12 @@ scripts/dev.mjs        lancement de tout l'environnement en une commande
 - **Phase 3 — gestion commerciale (suite)** : stocks et mouvements (réception partielle des commandes, plusieurs dépôts, transferts entre dépôts), bons de livraison, avoirs fournisseurs, rapprochement bancaire (import des relevés), facture normalisée électronique de la DGI (dès réception des spécifications), envoi des documents par e-mail.
 - **Phase 4 — finance (suite)** : bilan et états financiers SYSCOHADA (DSF), immobilisations et plan d'amortissement, lettrage des comptes de tiers, rapprochement bancaire, à-nouveaux automatiques à la clôture d'exercice, paramétrage des comptes d'imputation par article.
 - **Phase 5 — RH et paie (suite)** : validation des barèmes par un expert-comptable, congés et absences, espace employé (consultation de ses bulletins), déclarations CNPS et DISA, état 301, salariés expatriés, virements de salaires groupés.
-- **Socle** : envoi réel des e-mails (invitations, rappels), prestataire de paiement réel, téléversement du logo, verrou du cycle de facturation si plusieurs instances de l'API.
+- **Socle** : prestataire de paiement réel, e-mails des rappels d'abonnement et des bulletins de paie, téléversement du logo, verrou du cycle de facturation si plusieurs instances de l'API.
 
 ## Décisions encore ouvertes
 
 - Prestataire de paiement réel (agrégateur mobile money + carte) : l'interface `PaymentProvider` est prête, seul le prestataire de test est branché.
-- Envoi des e-mails (invitations, rappels de paiement) : les notifications sont enregistrées, l'envoi reste à brancher.
+- Fournisseur d'envoi des e-mails (Brevo, Mailjet, Amazon SES…) et domaine expéditeur (SPF, DKIM) : Kora est prêt, il suffit de renseigner `SMTP_URL` et `MAIL_FROM`.
 - Hébergement et formalités ARTCI pour les données personnelles.
 - Facture normalisée électronique de la DGI : à intégrer au module ventes (phase 3) dès réception des spécifications.
 - Prix des formules : les montants de `apps/api/src/modules/billing/entitlements.ts` sont des exemples à valider.

@@ -39,7 +39,7 @@ export default function UsersPage() {
             </label>
             <button className="btn primary" disabled={busy} style={{ alignSelf: 'flex-end' }}>Inviter</button>
           </form>
-          {link && <Alert kind="ok">Invitation créée. Transmettez ce lien à la personne (l'envoi automatique par e-mail sera branché prochainement) :<br /><code className="k" style={{ wordBreak: 'break-all' }}>{link}</code></Alert>}
+          {link && <Alert kind="ok">Invitation envoyée par e-mail. Vous pouvez aussi transmettre ce lien directement (WhatsApp…) :<br /><code className="k" style={{ wordBreak: 'break-all' }}>{link}</code></Alert>}
         </div>
       )}
       <div className="table-wrap">

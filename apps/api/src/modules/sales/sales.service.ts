@@ -1,12 +1,15 @@
 import { Injectable } from '@nestjs/common';
+import { config } from '../../config';
+import { randomToken, safeEqual, sha256 } from '../../common/crypto';
 import { badRequest, conflict, notFound } from '../../common/errors';
 import { isUuid } from '../../common/ids';
 import { nextNumber } from '../../common/numbering';
 import type { TenantInfo } from '../../common/request-context';
-import { DatabaseService, TenantTrx } from '../../db/database.service';
+import { DatabaseService, setTenantContext, TenantTrx } from '../../db/database.service';
 import type { PaymentMethod, ReminderChannel, SalesDocStatus, SalesDocType } from '../../db/schema';
 import { AuditService } from '../audit/audit.service';
 import { AccountingService } from '../accounting/accounting.service';
+import { MailService } from '../mail/mail.service';
 import { StockService } from '../stock/stock.service';
 import { TreasuryService } from '../treasury/treasury.service';
 
@@ -47,7 +50,7 @@ export function computeTotals(lines: LineInput[]) {
 
 @Injectable()
 export class SalesService {
-  constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly treasury: TreasuryService, private readonly accounting: AccountingService, private readonly stock: StockService) {}
+  constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly treasury: TreasuryService, private readonly accounting: AccountingService, private readonly stock: StockService, private readonly mail: MailService) {}
 
   private async doc(trx: TenantTrx, id: string, lock = false) {
     if (!isUuid(id)) throw notFound('Document');
@@ -105,44 +108,47 @@ export class SalesService {
   }
 
   async get(t: TenantInfo, id: string) {
-    return this.db.tenant(t.ctx, async (trx) => {
-      const d = await this.doc(trx, id);
-      const contact = await trx.selectFrom('contact').select(['id', 'code', 'name', 'tax_id as taxId', 'rccm', 'email', 'phone', 'address', 'city', 'payment_terms_days as paymentTermsDays'])
-        .where('id', '=', d.contact_id).executeTakeFirstOrThrow();
-      const lines = await trx.selectFrom('sales_document_line').selectAll().where('document_id', '=', id).orderBy('position').execute();
-      const payments = await trx.selectFrom('sales_payment as p')
-        .leftJoin('treasury_movement as m', (j) => j.onRef('m.source_id', '=', 'p.id').onRef('m.company_id', '=', 'p.company_id'))
-        .leftJoin('treasury_account as a', (j) => j.onRef('a.id', '=', 'm.account_id').onRef('a.company_id', '=', 'm.company_id'))
-        .select(['p.id', 'p.amount', 'p.paid_on as paidOn', 'p.method', 'p.reference', 'p.created_at as createdAt', 'a.name as accountName'])
-        .where('p.document_id', '=', id).orderBy('p.paid_on').orderBy('p.created_at').execute();
-      const refunds = await trx.selectFrom('treasury_movement as m')
-        .innerJoin('treasury_account as a', (j) => j.onRef('a.id', '=', 'm.account_id').onRef('a.company_id', '=', 'm.company_id'))
-        .select(['m.id', 'm.amount', 'm.date', 'm.reference', 'a.name as accountName']).where('m.source_type', '=', 'sales_refund').where('m.source_id', '=', id).orderBy('m.date').execute();
-      const source = d.source_quote_id ?? d.source_invoice_id ?? id;
-      const related = await trx.selectFrom('sales_document').select(['id', 'type', 'number', 'status', 'total_ttc as totalTtc'])
-        .where((eb) => eb.or([eb('id', '=', source), eb('source_quote_id', '=', id), eb('source_invoice_id', '=', id)])).where('id', '!=', id).orderBy('created_at').execute();
-      const reminders = await trx.selectFrom('sales_reminder as r').leftJoin('user_account as u', 'u.id', 'r.created_by')
-        .select(['r.id', 'r.channel', 'r.note', 'r.promised_on as promisedOn', 'r.created_at as createdAt', 'u.full_name as by'])
-        .where('r.document_id', '=', id).orderBy('r.created_at', 'desc').execute();
-      const vatBreakdown = Object.values(lines.reduce<Record<string, { rate: number; base: number; vat: number }>>((acc, l) => {
-        const k = String(Number(l.vat_rate));
-        acc[k] ??= { rate: Number(l.vat_rate), base: 0, vat: 0 };
-        acc[k].base += Number(l.total_ht); acc[k].vat += Number(l.total_vat);
-        return acc;
-      }, {})).sort((a, b) => b.rate - a.rate);
-      return {
-        id: d.id, type: d.type, status: d.status, number: d.number, issueDate: d.issue_date, dueDate: d.due_date, validUntil: d.valid_until,
-        currency: d.currency, notes: d.notes, restock: d.restock, validatedAt: d.validated_at, sourceQuoteId: d.source_quote_id,
-        customer: d.status === 'draft' ? contact : { ...contact, ...(d.customer as object) }, contact,
-        totalHt: Number(d.total_ht), totalVat: Number(d.total_vat), totalTtc: Number(d.total_ttc), paidAmount: Number(d.paid_amount), creditedAmount: Number(d.credited_amount), refundedAmount: Number(d.refunded_amount),
-        refunds: refunds.map((r) => ({ ...r, amount: Number(r.amount) })),
-        ...(d.type === 'invoice' ? balance(d) : { remaining: 0, refundDue: 0 }), sourceInvoiceId: d.source_invoice_id, vatBreakdown, reminders,
-        related: related.map((r) => ({ ...r, totalTtc: Number(r.totalTtc) })),
-        lines: lines.map((l) => ({ id: l.id, productId: l.product_id, description: l.description, quantity: Number(l.quantity), unit: l.unit,
-          unitPrice: Number(l.unit_price), discountPct: Number(l.discount_pct), vatRate: Number(l.vat_rate), totalHt: Number(l.total_ht), totalVat: Number(l.total_vat) })),
-        payments: payments.map((p) => ({ ...p, amount: Number(p.amount) })),
-      };
-    });
+    return this.db.tenant(t.ctx, (trx) => this.view(trx, id));
+  }
+
+  /** Lecture complète d'un document dans une transaction déjà ouverte (espace entreprise ou lien de consultation). */
+  async view(trx: TenantTrx, id: string) {
+    const d = await this.doc(trx, id);
+    const contact = await trx.selectFrom('contact').select(['id', 'code', 'name', 'tax_id as taxId', 'rccm', 'email', 'phone', 'address', 'city', 'payment_terms_days as paymentTermsDays'])
+      .where('id', '=', d.contact_id).executeTakeFirstOrThrow();
+    const lines = await trx.selectFrom('sales_document_line').selectAll().where('document_id', '=', id).orderBy('position').execute();
+    const payments = await trx.selectFrom('sales_payment as p')
+      .leftJoin('treasury_movement as m', (j) => j.onRef('m.source_id', '=', 'p.id').onRef('m.company_id', '=', 'p.company_id'))
+      .leftJoin('treasury_account as a', (j) => j.onRef('a.id', '=', 'm.account_id').onRef('a.company_id', '=', 'm.company_id'))
+      .select(['p.id', 'p.amount', 'p.paid_on as paidOn', 'p.method', 'p.reference', 'p.created_at as createdAt', 'a.name as accountName'])
+      .where('p.document_id', '=', id).orderBy('p.paid_on').orderBy('p.created_at').execute();
+    const refunds = await trx.selectFrom('treasury_movement as m')
+      .innerJoin('treasury_account as a', (j) => j.onRef('a.id', '=', 'm.account_id').onRef('a.company_id', '=', 'm.company_id'))
+      .select(['m.id', 'm.amount', 'm.date', 'm.reference', 'a.name as accountName']).where('m.source_type', '=', 'sales_refund').where('m.source_id', '=', id).orderBy('m.date').execute();
+    const source = d.source_quote_id ?? d.source_invoice_id ?? id;
+    const related = await trx.selectFrom('sales_document').select(['id', 'type', 'number', 'status', 'total_ttc as totalTtc'])
+      .where((eb) => eb.or([eb('id', '=', source), eb('source_quote_id', '=', id), eb('source_invoice_id', '=', id)])).where('id', '!=', id).orderBy('created_at').execute();
+    const reminders = await trx.selectFrom('sales_reminder as r').leftJoin('user_account as u', 'u.id', 'r.created_by')
+      .select(['r.id', 'r.channel', 'r.note', 'r.promised_on as promisedOn', 'r.created_at as createdAt', 'u.full_name as by'])
+      .where('r.document_id', '=', id).orderBy('r.created_at', 'desc').execute();
+    const vatBreakdown = Object.values(lines.reduce<Record<string, { rate: number; base: number; vat: number }>>((acc, l) => {
+      const k = String(Number(l.vat_rate));
+      acc[k] ??= { rate: Number(l.vat_rate), base: 0, vat: 0 };
+      acc[k].base += Number(l.total_ht); acc[k].vat += Number(l.total_vat);
+      return acc;
+    }, {})).sort((a, b) => b.rate - a.rate);
+    return {
+      id: d.id, type: d.type, status: d.status, number: d.number, issueDate: d.issue_date, dueDate: d.due_date, validUntil: d.valid_until,
+      currency: d.currency, notes: d.notes, restock: d.restock, validatedAt: d.validated_at, sourceQuoteId: d.source_quote_id,
+      customer: d.status === 'draft' ? contact : { ...contact, ...(d.customer as object) }, contact,
+      totalHt: Number(d.total_ht), totalVat: Number(d.total_vat), totalTtc: Number(d.total_ttc), paidAmount: Number(d.paid_amount), creditedAmount: Number(d.credited_amount), refundedAmount: Number(d.refunded_amount),
+      refunds: refunds.map((r) => ({ ...r, amount: Number(r.amount) })),
+      ...(d.type === 'invoice' ? balance(d) : { remaining: 0, refundDue: 0 }), sourceInvoiceId: d.source_invoice_id, vatBreakdown, reminders,
+      related: related.map((r) => ({ ...r, totalTtc: Number(r.totalTtc) })),
+      lines: lines.map((l) => ({ id: l.id, productId: l.product_id, description: l.description, quantity: Number(l.quantity), unit: l.unit,
+        unitPrice: Number(l.unit_price), discountPct: Number(l.discount_pct), vatRate: Number(l.vat_rate), totalHt: Number(l.total_ht), totalVat: Number(l.total_vat) })),
+      payments: payments.map((p) => ({ ...p, amount: Number(p.amount) })),
+    };
   }
 
   async create(t: TenantInfo, type: SalesDocType, input: DocInput) {
@@ -316,11 +322,90 @@ export class SalesService {
     return this.get(t, id);
   }
 
-  async addReminder(t: TenantInfo, id: string, r: { channel: ReminderChannel; note?: string | null; promisedOn?: string | null }) {
+  // ------------------------------------------------------------------ envoi par e-mail et lien de consultation
+  /** Lien de consultation sans compte, valable 90 jours : seul son empreinte est conservée. */
+  private async shareLink(trx: TenantTrx, t: TenantInfo, documentId: string) {
+    const secret = randomToken(24);
+    const share = await trx.insertInto('document_share').values({
+      company_id: t.companyId, document_id: documentId, token_hash: sha256(secret), expires_at: new Date(Date.now() + 90 * 86400_000), created_by: t.ctx.userId, last_viewed_at: null,
+    }).returning('id').executeTakeFirstOrThrow();
+    return `${config.webUrl}/document?token=${encodeURIComponent(`${t.companyId}.${share.id}.${secret}`)}`;
+  }
+
+  private async sender(trx: TenantTrx, t: TenantInfo) {
+    const company = await trx.selectFrom('company').select(['name', 'email']).where('id', '=', t.companyId).executeTakeFirstOrThrow();
+    const user = await trx.selectFrom('user_account').select(['full_name', 'email']).where('id', '=', t.ctx.userId).executeTakeFirstOrThrow();
+    return { company, user, replyTo: company.email ?? user.email };
+  }
+
+  /** Envoie un devis, une facture ou un avoir au client, avec un lien vers sa version consultable et imprimable. */
+  async send(t: TenantInfo, id: string, input: { to?: string | null; message?: string | null }) {
+    const sent = await this.db.tenant(t.ctx, async (trx) => {
+      const d = await this.doc(trx, id);
+      if (d.status === 'draft') throw conflict("Un brouillon ne s'envoie pas : validez-le d'abord.", 'document_draft');
+      const contact = await trx.selectFrom('contact').select(['name', 'email']).where('id', '=', d.contact_id).executeTakeFirstOrThrow();
+      const to = input.to ?? contact.email;
+      if (!to) throw badRequest(`Aucune adresse e-mail pour ${contact.name} : indiquez-en une ou complétez sa fiche.`, undefined, 'no_email');
+      const { company, user, replyTo } = await this.sender(trx, t);
+      const url = await this.shareLink(trx, t, id);
+      const amount = `${Number(d.total_ttc).toLocaleString('fr-FR')} FCFA TTC`;
+      const fr = (iso: string | null) => (iso ? new Date(`${iso}T00:00:00Z`).toLocaleDateString('fr-FR', { timeZone: 'UTC' }) : '');
+      const intro = {
+        quote: `Veuillez trouver notre devis ${d.number} d'un montant de ${amount}, valable jusqu'au ${fr(d.valid_until)}.`,
+        invoice: `Veuillez trouver notre facture ${d.number} d'un montant de ${amount}${d.due_date ? `, à régler au plus tard le ${fr(d.due_date)}` : ''}.`,
+        credit_note: `Veuillez trouver notre avoir ${d.number} d'un montant de ${amount}.`,
+      }[d.type];
+      await this.mail.enqueue(trx, {
+        companyId: t.companyId, to, kind: 'sales_document', entityId: id, fromName: company.name, replyTo, createdBy: t.ctx.userId,
+        subject: `${LABEL[d.type]} ${d.number} — ${company.name}`,
+        paragraphs: [`Bonjour ${contact.name},`, intro, ...(input.message ? [input.message] : []), `Cordialement,\n${user.full_name}\n${company.name}`],
+        action: { label: `Consulter ${d.type === 'invoice' ? 'la facture' : d.type === 'quote' ? 'le devis' : "l'avoir"}`, url },
+      });
+      await this.audit.tenant(trx, t.ctx, { action: 'sales_document.sent', entityType: 'sales_document', entityId: id, data: { number: d.number, to } });
+      return { to, url };
+    });
+    return { ...(await this.get(t, id)), sentTo: sent.to };
+  }
+
+  /** Page de consultation d'un document par son destinataire (lien reçu par e-mail). */
+  async publicView(token: string) {
+    const [companyId, shareId, secret] = (token ?? '').split('.');
+    if (!isUuid(companyId) || !isUuid(shareId) || !secret) throw notFound('Document');
+    return this.db.identity(async (trx) => {
+      const tt = await setTenantContext(trx, companyId, '00000000-0000-0000-0000-000000000000');
+      const share = await tt.selectFrom('document_share').selectAll().where('id', '=', shareId).executeTakeFirst();
+      if (!share || !safeEqual(share.token_hash, sha256(secret)) || new Date(share.expires_at) < new Date()) throw notFound('Document');
+      await tt.updateTable('document_share').set({ views: share.views + 1, last_viewed_at: new Date() }).where('id', '=', shareId).execute();
+      const company = await tt.selectFrom('company').select(['name', 'address', 'city', 'phone', 'email', 'rccm', 'tax_id as taxId', 'tax_regime as taxRegime'])
+        .where('id', '=', companyId).executeTakeFirstOrThrow();
+      const v = await this.view(tt, share.document_id);
+      // Seul ce qui figure sur le document imprimé est montré : ni relances, ni historique interne.
+      return {
+        company, type: v.type, number: v.number, status: v.status, issueDate: v.issueDate, dueDate: v.dueDate, validUntil: v.validUntil, customer: v.customer, notes: v.notes,
+        lines: v.lines, vatBreakdown: v.vatBreakdown, totalHt: v.totalHt, totalVat: v.totalVat, totalTtc: v.totalTtc, paidAmount: v.paidAmount,
+        creditedAmount: v.creditedAmount, remaining: v.remaining,
+      };
+    });
+  }
+
+  async addReminder(t: TenantInfo, id: string, r: { channel: ReminderChannel; note?: string | null; promisedOn?: string | null; sendEmail?: boolean; message?: string | null; to?: string | null }) {
     await this.db.tenant(t.ctx, async (trx) => {
       const d = await this.doc(trx, id);
       if (d.type !== 'invoice' || !OPEN_INVOICE.includes(d.status)) throw conflict('Seule une facture émise et non soldée peut être relancée.', 'invalid_state');
       if (r.promisedOn && r.promisedOn < today()) throw badRequest('La date de paiement promise ne peut pas être passée.', undefined, 'past_date');
+      if (r.sendEmail) {
+        // Relance envoyée par Kora : le message préparé part avec un lien vers la facture.
+        const contact = await trx.selectFrom('contact').select(['name', 'email']).where('id', '=', d.contact_id).executeTakeFirstOrThrow();
+        const to = r.to ?? contact.email;
+        if (!to) throw badRequest(`Aucune adresse e-mail pour ${contact.name} : indiquez-en une ou complétez sa fiche.`, undefined, 'no_email');
+        if (!r.message?.trim()) throw badRequest('Le message de relance est vide.', undefined, 'empty_message');
+        const { company, replyTo } = await this.sender(trx, t);
+        await this.mail.enqueue(trx, {
+          companyId: t.companyId, to, kind: 'reminder', entityId: id, fromName: company.name, replyTo, createdBy: t.ctx.userId,
+          subject: `Relance — facture ${d.number} — ${company.name}`, paragraphs: r.message.split(/\n{2,}/), action: { label: 'Consulter la facture', url: await this.shareLink(trx, t, id) },
+        });
+        r = { ...r, channel: 'email', note: [r.note, `E-mail envoyé à ${to}`].filter(Boolean).join(' — ') };
+      }
       await trx.insertInto('sales_reminder').values({ company_id: t.companyId, document_id: id, channel: r.channel, note: r.note ?? null, promised_on: r.promisedOn ?? null, created_by: t.ctx.userId }).execute();
       await this.audit.tenant(trx, t.ctx, { action: 'invoice.reminder_recorded', entityType: 'sales_document', entityId: id, data: { number: d.number, channel: r.channel } });
     });

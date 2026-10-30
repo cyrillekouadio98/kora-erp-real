@@ -33,6 +33,8 @@ export default function SalesDocumentPage() {
   const [company, setCompany] = useState<any>(null);
   const [pay, setPay] = useState<any>(null);
   const [rem, setRem] = useState<any>(null);
+  const [send, setSend] = useState<any>(null);
+  const [notice, setNotice] = useState('');
   const [refund, setRefund] = useState<any>(null);
   const [copied, setCopied] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -77,13 +79,15 @@ export default function SalesDocumentPage() {
             <button className="btn primary" disabled={busy} onClick={() => act('convert')}>Transformer en facture</button>}
           {isInvoice && ['issued', 'partially_paid', 'paid'].includes(doc.status) && writable && can('sales.create') &&
             <button className="btn" disabled={busy} onClick={() => act('credit-note')}>Établir un avoir</button>}
-          {isOpen && writable && can('sales.update') && <button className="btn" onClick={() => { setCopied(false); setRem({ channel: 'whatsapp', note: '', promisedOn: '' }); }}>Relancer</button>}
+          {isOpen && writable && can('sales.update') && <button className="btn" onClick={() => { setCopied(false); setRem({ channel: 'whatsapp', note: '', promisedOn: '', message: reminderText(doc, company), sendEmail: !!doc.contact.email, to: doc.contact.email ?? '' }); }}>Relancer</button>}
           {isOpen && writable && can('cash.create') &&
             <button className="btn primary" onClick={() => setPay({ amount: doc.remaining, method: 'cash', paidOn: new Date().toISOString().slice(0, 10), reference: '' })}>Enregistrer un encaissement</button>}
+          {doc.status !== 'draft' && writable && can('sales.update') && <button className="btn" onClick={() => setSend({ to: doc.contact.email ?? '', message: '' })}>Envoyer par e-mail</button>}
           {doc.status !== 'draft' && <button className="btn" onClick={() => window.print()}>Imprimer / PDF</button>}
         </div>
       </div>
-      <Alert>{!pay && !rem && !refund && error}</Alert>
+      <Alert>{!pay && !rem && !refund && !send && error}</Alert>
+      <Alert kind="ok">{notice}</Alert>
       {dirty && <Alert kind="warn">Modifications non enregistrées : enregistrez le brouillon avant de le valider.</Alert>}
       {doc.related?.map((r: any) => <Alert key={r.id} kind="info">{relation(doc, r)} <Link href={`/app/ventes/${r.id}`}>{r.number ?? 'brouillon'}</Link>{r.status === 'draft' ? ' (brouillon à émettre)' : ''}.</Alert>)}
       {doc.refundDue > 0 && <Alert kind="warn">Le client a payé <b>{money(doc.refundDue)}</b> de plus que ce qu'il doit après avoir : ce trop-perçu est à lui rembourser.
@@ -188,27 +192,51 @@ export default function SalesDocumentPage() {
         </div>
       )}
 
+      {send && (
+        <div className="modal-back" onClick={() => setSend(null)}>
+          <form className="modal" style={{ width: 'min(520px, 100%)' }} onClick={(e) => e.stopPropagation()} onSubmit={(e) => {
+            e.preventDefault();
+            run(async () => { const r = await api(`/company/sales/documents/${id}/send`, { body: { to: send.to || null, message: send.message || null } }); setDoc(r); setNotice(`${DOC_LABEL[type]} ${doc.number} envoyé${type === 'invoice' ? 'e' : ''} à ${r.sentTo}.`); setSend(null); });
+          }}>
+            <h2>Envoyer {DOC_LABEL[type].toLowerCase()} {doc.number}</h2>
+            <p className="small muted" style={{ margin: 0 }}>Le client reçoit un e-mail avec un lien sécurisé (valable 90 jours) pour consulter et imprimer le document, sans créer de compte.</p>
+            <Alert>{error}</Alert>
+            <Field label="Destinataire" type="email" required value={send.to} onChange={(e) => setSend({ ...send, to: e.target.value })} placeholder="compta@client.ci" />
+            <label className="field">Message personnel (facultatif)<textarea className="input" rows={3} value={send.message} onChange={(e) => setSend({ ...send, message: e.target.value })} /></label>
+            <div className="row"><button className="btn primary" disabled={busy}>Envoyer</button><button type="button" className="btn" onClick={() => setSend(null)}>Annuler</button></div>
+          </form>
+        </div>
+      )}
+
       {rem && (
         <div className="modal-back" onClick={() => setRem(null)}>
           <form className="modal" style={{ width: 'min(560px, 100%)' }} onClick={(e) => e.stopPropagation()} onSubmit={(e) => {
             e.preventDefault();
-            run(async () => { setDoc(await api(`/company/sales/documents/${id}/reminders`, { body: { channel: rem.channel, note: rem.note || null, promisedOn: rem.promisedOn || null } })); setRem(null); });
+            run(async () => {
+              setDoc(await api(`/company/sales/documents/${id}/reminders`, { body: { channel: rem.sendEmail ? 'email' : rem.channel, note: rem.note || null, promisedOn: rem.promisedOn || null,
+                ...(rem.sendEmail ? { sendEmail: true, message: rem.message, to: rem.to || null } : {}) } }));
+              if (rem.sendEmail) setNotice(`Relance envoyée par e-mail à ${rem.to}.`);
+              setRem(null);
+            });
           }}>
             <h2>Relancer {doc.customer.name}</h2>
             <p className="small muted" style={{ margin: 0 }}>Facture {doc.number} · reste à payer <b>{money(doc.remaining)}</b>{doc.contact.phone ? ` · ${doc.contact.phone}` : ''}{doc.contact.email ? ` · ${doc.contact.email}` : ''}</p>
             <Alert>{error}</Alert>
-            <label className="field">Message proposé (à copier dans WhatsApp, un SMS ou un e-mail)
-              <textarea className="input" rows={8} readOnly value={reminderText(doc, company)} />
+            <label className="field">Message (modifiable)
+              <textarea className="input" rows={8} value={rem.message} onChange={(e) => setRem({ ...rem, message: e.target.value })} />
             </label>
-            <div><button type="button" className="btn sm" onClick={() => navigator.clipboard.writeText(reminderText(doc, company)).then(() => setCopied(true))}>{copied ? 'Copié ✓' : 'Copier le message'}</button></div>
+            <label className="row small"><input type="checkbox" checked={rem.sendEmail} onChange={(e) => setRem({ ...rem, sendEmail: e.target.checked })} /> Envoyer ce message par e-mail, avec un lien vers la facture</label>
+            {rem.sendEmail
+              ? <Field label="Adresse e-mail du client" type="email" required value={rem.to} onChange={(e) => setRem({ ...rem, to: e.target.value })} />
+              : <div><button type="button" className="btn sm" onClick={() => navigator.clipboard.writeText(rem.message).then(() => setCopied(true))}>{copied ? 'Copié ✓' : 'Copier le message (WhatsApp, SMS…)'}</button></div>}
             <div className="grid2">
-              <label className="field">Moyen utilisé
+              {!rem.sendEmail && <label className="field">Moyen utilisé
                 <select className="input" value={rem.channel} onChange={(e) => setRem({ ...rem, channel: e.target.value })}>{Object.entries(REMINDER_CHANNELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
-              </label>
+              </label>}
               <Field label="Paiement promis le (facultatif)" type="date" min={new Date().toISOString().slice(0, 10)} value={rem.promisedOn} onChange={(e) => setRem({ ...rem, promisedOn: e.target.value })} />
             </div>
             <Field label="Compte rendu (facultatif)" placeholder="Ex. : la comptable confirme un virement vendredi" value={rem.note} onChange={(e) => setRem({ ...rem, note: e.target.value })} />
-            <div className="row"><button className="btn primary" disabled={busy}>Enregistrer la relance</button><button type="button" className="btn" onClick={() => setRem(null)}>Annuler</button></div>
+            <div className="row"><button className="btn primary" disabled={busy}>{rem.sendEmail ? 'Envoyer la relance' : 'Enregistrer la relance'}</button><button type="button" className="btn" onClick={() => setRem(null)}>Annuler</button></div>
           </form>
         </div>
       )}

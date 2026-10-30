@@ -43,6 +43,22 @@ export class AuthController {
     return { mfaRequired: r.mfaRequired };
   }
 
+  /** Mot de passe oublié : envoie un lien de réinitialisation (réponse identique si le compte n'existe pas). */
+  @Public() @UseGuards(ThrottlerGuard) @HttpCode(200)
+  @Post('password-reset')
+  async requestReset(@Body() body: unknown, @Req() req: KoraRequest) {
+    await this.auth.requestPasswordReset(parse(z.object({ email }), body).email, clientIp(req));
+    return { ok: true };
+  }
+
+  @Public() @UseGuards(ThrottlerGuard) @HttpCode(200)
+  @Post('password-reset/confirm')
+  async confirmReset(@Body() body: unknown) {
+    const b = parse(z.object({ token: z.string().min(20).max(200), password }), body);
+    await this.auth.confirmPasswordReset(b.token, b.password);
+    return { ok: true };
+  }
+
   @AllowPendingMfa() @UseGuards(ThrottlerGuard) @HttpCode(200)
   @Post('mfa/verify')
   async verifyMfa(@Auth() auth: AuthInfo, @Body() body: unknown) {
