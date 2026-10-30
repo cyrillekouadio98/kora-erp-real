@@ -103,7 +103,9 @@ describe('Achats : commandes, factures et règlements fournisseurs', () => {
     expect((await accountant.post(`/company/purchases/documents/${d.body.id}/validate`)).status).toBe(200);
     expect((await accountant.post(`/company/purchases/documents/${d.body.id}/payments`).send({ amount: 1000, method: 'cash' })).status).toBe(403);
     const cashier = await invite(app, owner, 'cashier');
-    expect((await cashier.post(`/company/purchases/documents/${d.body.id}/payments`).send({ amount: 1000, method: 'cash' })).status).toBe(201);
+    const empty = await cashier.post(`/company/purchases/documents/${d.body.id}/payments`).send({ amount: 1000, method: 'cash' });
+    expect(empty.body.error.code).toBe('insufficient_cash'); // la caisse est vide : on ne sort pas d'espèces qu'on n'a pas
+    expect((await cashier.post(`/company/purchases/documents/${d.body.id}/payments`).send({ amount: 1000, method: 'bank_transfer' })).status).toBe(201);
     const rep = await invite(app, owner, 'sales_rep');
     expect((await rep.get('/company/purchases/documents').query({ type: 'invoice' })).status).toBe(403);
   });

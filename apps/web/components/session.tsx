@@ -31,6 +31,7 @@ const NAV: { href: string; label: string; perm?: string; module?: string; group:
   { href: '/app/achats/commandes', label: 'Bons de commande', perm: 'purchases.read', module: 'purchases', group: 'Achats' },
   { href: '/app/achats/factures', label: 'Factures fournisseurs', perm: 'purchases.read', module: 'purchases', group: 'Achats' },
   { href: '/app/achats/echeancier', label: 'Échéancier', perm: 'purchases.read', module: 'purchases', group: 'Achats' },
+  { href: '/app/tresorerie', label: 'Caisse et banque', perm: 'cash.read', module: 'cash', group: 'Trésorerie' },
   { href: '/app/contacts', label: 'Clients et fournisseurs', perm: 'contacts.read', group: 'Référentiels' },
   { href: '/app/articles', label: 'Articles', perm: 'products.read', group: 'Référentiels' },
   { href: '/app/utilisateurs', label: 'Utilisateurs', perm: 'users.read', group: 'Administration' },

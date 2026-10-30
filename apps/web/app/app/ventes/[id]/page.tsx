@@ -7,6 +7,7 @@ import { date, dateTime, DOC_LABEL, docStatus, DocType, money, PAYMENT_METHODS, 
 import { useSession } from '@/components/session';
 import { SalesEditor } from '@/components/sales-editor';
 import { Alert, Field, Pill, useAction } from '@/components/ui';
+import { AccountSelect } from '@/components/account-select';
 
 const LIST_HREF: Record<DocType, [string, string]> = { quote: ['/app/ventes/devis', 'Devis'], invoice: ['/app/ventes/factures', 'Factures'], credit_note: ['/app/ventes/avoirs', 'Avoirs'] };
 
@@ -32,6 +33,7 @@ export default function SalesDocumentPage() {
   const [company, setCompany] = useState<any>(null);
   const [pay, setPay] = useState<any>(null);
   const [rem, setRem] = useState<any>(null);
+  const [refund, setRefund] = useState<any>(null);
   const [copied, setCopied] = useState(false);
   const [dirty, setDirty] = useState(false);
   const { busy, error, run } = useAction();
@@ -81,10 +83,11 @@ export default function SalesDocumentPage() {
           {doc.status !== 'draft' && <button className="btn" onClick={() => window.print()}>Imprimer / PDF</button>}
         </div>
       </div>
-      <Alert>{!pay && !rem && error}</Alert>
+      <Alert>{!pay && !rem && !refund && error}</Alert>
       {dirty && <Alert kind="warn">Modifications non enregistrées : enregistrez le brouillon avant de le valider.</Alert>}
       {doc.related?.map((r: any) => <Alert key={r.id} kind="info">{relation(doc, r)} <Link href={`/app/ventes/${r.id}`}>{r.number ?? 'brouillon'}</Link>{r.status === 'draft' ? ' (brouillon à émettre)' : ''}.</Alert>)}
-      {doc.refundDue > 0 && <Alert kind="warn">Le client a payé <b>{money(doc.refundDue)}</b> de plus que ce qu'il doit après avoir : ce trop-perçu est à lui rembourser (la saisie du remboursement arrive avec le module caisse).</Alert>}
+      {doc.refundDue > 0 && <Alert kind="warn">Le client a payé <b>{money(doc.refundDue)}</b> de plus que ce qu'il doit après avoir : ce trop-perçu est à lui rembourser.
+        {writable && can('cash.create') && <> <button className="btn sm" onClick={() => setRefund({ amount: doc.refundDue, method: 'bank_transfer', accountId: '', paidOn: new Date().toISOString().slice(0, 10), reference: '' })}>Rembourser le client</button></>}</Alert>}
 
       {doc.status === 'draft' && writable && can('sales.update')
         ? <SalesEditor key={doc.id} type={type} doc={doc} onSaved={setDoc} onDirtyChange={setDirty} />
@@ -124,7 +127,35 @@ export default function SalesDocumentPage() {
       {isInvoice && doc.payments.length > 0 && (
         <div className="card no-print"><header><h2>Encaissements</h2></header>
           <div className="table-wrap"><table><tbody>{doc.payments.map((p: any) => (
-            <tr key={p.id}><td>{date(p.paidOn)}</td><td>{PAYMENT_METHODS[p.method]}</td><td className="small muted">{p.reference}</td><td className="n">{money(p.amount)}</td></tr>))}</tbody></table></div>
+            <tr key={p.id}><td>{date(p.paidOn)}</td><td>{PAYMENT_METHODS[p.method]}{p.accountName && <div className="small muted">{p.accountName}</div>}</td><td className="small muted">{p.reference}</td><td className="n">{money(p.amount)}</td></tr>))}</tbody></table></div>
+        </div>
+      )}
+
+      {isInvoice && doc.refunds?.length > 0 && (
+        <div className="card no-print"><header><h2>Remboursements au client</h2></header>
+          <div className="table-wrap"><table><tbody>{doc.refunds.map((r: any) => (
+            <tr key={r.id}><td>{date(r.date)}</td><td>{r.accountName}</td><td className="small muted">{r.reference}</td><td className="n">− {money(r.amount)}</td></tr>))}</tbody></table></div>
+        </div>
+      )}
+
+      {refund && (
+        <div className="modal-back" onClick={() => setRefund(null)}>
+          <form className="modal" style={{ width: 'min(460px, 100%)' }} onClick={(e) => e.stopPropagation()} onSubmit={(e) => {
+            e.preventDefault();
+            run(async () => { setDoc(await api(`/company/sales/documents/${id}/refunds`, { body: { ...refund, amount: Number(refund.amount), reference: refund.reference || null, accountId: refund.accountId || null } })); setRefund(null); });
+          }}>
+            <h2>Rembourser {doc.customer.name}</h2>
+            <p className="small muted" style={{ margin: 0 }}>Trop-perçu sur {doc.number} : <b>{money(doc.refundDue)}</b></p>
+            <Alert>{error}</Alert>
+            <Field label="Montant remboursé (FCFA)" type="number" min={1} max={doc.refundDue} required value={refund.amount} onChange={(e) => setRefund({ ...refund, amount: e.target.value })} />
+            <label className="field">Mode de remboursement
+              <select className="input" value={refund.method} onChange={(e) => setRefund({ ...refund, method: e.target.value })}>{Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+            </label>
+            <AccountSelect method={refund.method} value={refund.accountId} onChange={(v) => setRefund({ ...refund, accountId: v })} label="Payé depuis" />
+            <Field label="Date" type="date" required max={new Date().toISOString().slice(0, 10)} value={refund.paidOn} onChange={(e) => setRefund({ ...refund, paidOn: e.target.value })} />
+            <Field label="Référence (n° de virement, de chèque…)" value={refund.reference} onChange={(e) => setRefund({ ...refund, reference: e.target.value })} />
+            <div className="row"><button className="btn primary" disabled={busy}>Enregistrer</button><button type="button" className="btn" onClick={() => setRefund(null)}>Annuler</button></div>
+          </form>
         </div>
       )}
 
@@ -140,7 +171,7 @@ export default function SalesDocumentPage() {
         <div className="modal-back" onClick={() => setPay(null)}>
           <form className="modal" style={{ width: 'min(460px, 100%)' }} onClick={(e) => e.stopPropagation()} onSubmit={(e) => {
             e.preventDefault();
-            run(async () => { setDoc(await api(`/company/sales/documents/${id}/payments`, { body: { ...pay, amount: Number(pay.amount), reference: pay.reference || null } })); setPay(null); });
+            run(async () => { setDoc(await api(`/company/sales/documents/${id}/payments`, { body: { ...pay, amount: Number(pay.amount), reference: pay.reference || null, accountId: pay.accountId || null } })); setPay(null); });
           }}>
             <h2>Encaissement — {doc.number}</h2>
             <p className="small muted" style={{ margin: 0 }}>Reste à payer : <b>{money(doc.remaining)}</b></p>
@@ -149,6 +180,7 @@ export default function SalesDocumentPage() {
             <label className="field">Mode de paiement
               <select className="input" value={pay.method} onChange={(e) => setPay({ ...pay, method: e.target.value })}>{Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
             </label>
+            <AccountSelect method={pay.method} value={pay.accountId ?? ''} onChange={(v) => setPay({ ...pay, accountId: v })} />
             <Field label="Date" type="date" required max={new Date().toISOString().slice(0, 10)} value={pay.paidOn} onChange={(e) => setPay({ ...pay, paidOn: e.target.value })} />
             <Field label="Référence (n° de transaction, de chèque…)" value={pay.reference} onChange={(e) => setPay({ ...pay, reference: e.target.value })} />
             <div className="row"><button className="btn primary" disabled={busy}>Enregistrer</button><button type="button" className="btn" onClick={() => setPay(null)}>Annuler</button></div>

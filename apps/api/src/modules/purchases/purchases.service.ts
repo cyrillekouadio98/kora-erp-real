@@ -6,6 +6,7 @@ import type { TenantInfo } from '../../common/request-context';
 import { DatabaseService, TenantTrx } from '../../db/database.service';
 import type { PaymentMethod, PurchaseDocStatus, PurchaseDocType } from '../../db/schema';
 import { AuditService } from '../audit/audit.service';
+import { TreasuryService } from '../treasury/treasury.service';
 import { addDays, computeTotals, LineInput, today } from '../sales/sales.service';
 
 export interface PurchaseInput {
@@ -19,7 +20,7 @@ const remainingOf = (d: { total_ttc: string; paid_amount: string }) => Math.max(
 
 @Injectable()
 export class PurchasesService {
-  constructor(private readonly db: DatabaseService, private readonly audit: AuditService) {}
+  constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly treasury: TreasuryService) {}
 
   private async doc(trx: TenantTrx, id: string, lock = false) {
     if (!isUuid(id)) throw notFound('Document');
@@ -88,8 +89,11 @@ export class PurchasesService {
       const contact = await trx.selectFrom('contact').select(['id', 'code', 'name', 'tax_id as taxId', 'rccm', 'email', 'phone', 'address', 'city', 'payment_terms_days as paymentTermsDays'])
         .where('id', '=', d.contact_id).executeTakeFirstOrThrow();
       const lines = await trx.selectFrom('purchase_document_line').selectAll().where('document_id', '=', id).orderBy('position').execute();
-      const payments = await trx.selectFrom('purchase_payment').select(['id', 'amount', 'paid_on as paidOn', 'method', 'reference', 'created_at as createdAt'])
-        .where('document_id', '=', id).orderBy('paid_on').orderBy('created_at').execute();
+      const payments = await trx.selectFrom('purchase_payment as p')
+        .leftJoin('treasury_movement as m', (j) => j.onRef('m.source_id', '=', 'p.id').onRef('m.company_id', '=', 'p.company_id'))
+        .leftJoin('treasury_account as a', (j) => j.onRef('a.id', '=', 'm.account_id').onRef('a.company_id', '=', 'm.company_id'))
+        .select(['p.id', 'p.amount', 'p.paid_on as paidOn', 'p.method', 'p.reference', 'p.created_at as createdAt', 'a.name as accountName'])
+        .where('p.document_id', '=', id).orderBy('p.paid_on').orderBy('p.created_at').execute();
       const related = await trx.selectFrom('purchase_document').select(['id', 'type', 'number', 'status'])
         .where((eb) => eb.or([eb('id', '=', d.source_order_id ?? id), eb('source_order_id', '=', id)])).where('id', '!=', id).execute();
       const vatBreakdown = Object.values(lines.reduce<Record<string, { rate: number; base: number; vat: number }>>((acc, l) => {
@@ -218,7 +222,7 @@ export class PurchasesService {
     return this.get(t, invoiceId);
   }
 
-  async addPayment(t: TenantInfo, id: string, p: { amount: number; paidOn?: string; method: PaymentMethod; reference?: string | null }) {
+  async addPayment(t: TenantInfo, id: string, p: { amount: number; paidOn?: string; method: PaymentMethod; reference?: string | null; accountId?: string | null }) {
     await this.db.tenant(t.ctx, async (trx) => {
       const d = await this.doc(trx, id, true);
       if (d.type !== 'invoice' || !OPEN.includes(d.status)) throw conflict("Un règlement s'enregistre sur une facture fournisseur validée et non soldée.", 'invalid_state');
@@ -226,7 +230,11 @@ export class PurchasesService {
       if (p.amount > remaining) throw badRequest(`Le montant dépasse le reste à payer (${remaining.toLocaleString('fr-FR')} FCFA).`, undefined, 'amount_too_high');
       const paidOn = p.paidOn ?? today();
       if (paidOn > today()) throw badRequest('La date du règlement ne peut pas être dans le futur.', undefined, 'future_date');
-      await trx.insertInto('purchase_payment').values({ company_id: t.companyId, document_id: id, amount: p.amount, paid_on: paidOn, method: p.method, reference: p.reference ?? null, created_by: t.ctx.userId }).execute();
+      const account = await this.treasury.resolveAccount(trx, p.accountId, p.method);
+      const pay = await trx.insertInto('purchase_payment').values({ company_id: t.companyId, document_id: id, amount: p.amount, paid_on: paidOn, method: p.method, reference: p.reference ?? null, created_by: t.ctx.userId })
+        .returning('id').executeTakeFirstOrThrow();
+      await this.treasury.record(trx, t, { accountId: account.id, date: paidOn, direction: 'out', amount: p.amount, category: 'supplier_payment', label: `Règlement ${d.number}${d.supplier_ref ? ` (réf. ${d.supplier_ref})` : ''}`,
+        contactId: d.contact_id, sourceType: 'purchase_payment', sourceId: pay.id, reference: p.reference });
       const paid = Number(d.paid_amount) + p.amount;
       await trx.updateTable('purchase_document').set({ paid_amount: paid, status: paid >= Number(d.total_ttc) ? 'paid' : 'partially_paid' }).where('id', '=', id).execute();
       await this.audit.tenant(trx, t.ctx, { action: 'purchase_invoice.payment_recorded', entityType: 'purchase_document', entityId: id, data: { number: d.number, amount: p.amount, method: p.method } });

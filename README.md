@@ -2,7 +2,7 @@
 
 ERP SaaS multi-entreprises pour les PME d'Afrique de l'Ouest : gestion commerciale, comptabilité SYSCOHADA révisé, trésorerie, ressources humaines et paie. Marché initial : Côte d'Ivoire.
 
-> Nom provisoire. Ce dépôt contient la **phase 2 — socle SaaS** du dossier de conception validé : comptes, entreprises, rôles et permissions, abonnements, journal d'audit, accès exceptionnel du support et isolation des données. Modules métier de la phase 3 disponibles : **clients et fournisseurs, articles, ventes** (devis, factures, avoirs, encaissements, relances) **et achats** (bons de commande, factures et règlements fournisseurs, échéancier). La caisse, la banque, les stocks, la comptabilité et la paie arrivent aux lots suivants.
+> Nom provisoire. Ce dépôt contient la **phase 2 — socle SaaS** du dossier de conception validé : comptes, entreprises, rôles et permissions, abonnements, journal d'audit, accès exceptionnel du support et isolation des données. Modules métier de la phase 3 disponibles : **clients et fournisseurs, articles, ventes** (devis, factures, avoirs, encaissements, relances) **, achats** (bons de commande, factures et règlements fournisseurs, échéancier) **et trésorerie** (caisse, banque, mobile money). Les stocks, la comptabilité et la paie arrivent aux lots suivants.
 
 ## Ce que fait le socle
 
@@ -23,6 +23,7 @@ ERP SaaS multi-entreprises pour les PME d'Afrique de l'Ouest : gestion commercia
 | Avoirs | Établis depuis une facture émise (lignes reprises, à réduire pour un avoir partiel), numéro AV-2026-00001, plafonnés au montant encore créditable, diminuent le reste à payer ; facture « annulée par avoir » si entièrement couverte ; trop-perçu à rembourser signalé |
 | Relances clients | Balance âgée par client (non échu, 1-30, 31-60, 61-90, plus de 90 jours), message de relance prêt à copier (WhatsApp, SMS, e-mail), historique des relances et promesses de paiement |
 | Achats | Bons de commande (BC-2026-00001, imprimables, annulables) transformés en facture fournisseur ; facture saisie d'après le document reçu (référence et date du fournisseur), numéro interne ACH-2026-00001, doublon refusé (même fournisseur et même référence), échéance selon le délai du fournisseur ; règlements partiels ou complets ; échéancier (à payer sous 7 et 30 jours, retards) ; module réservé aux formules Business et supérieures |
+| Trésorerie | Comptes de caisse, banque et mobile money (trois comptes créés avec chaque entreprise, solde et date d'ouverture paramétrables) ; chaque encaissement client, règlement fournisseur et remboursement de trop-perçu est inscrit automatiquement sur le compte choisi ou sur celui du mode de paiement ; dépenses et recettes courantes (loyer, CIE, SODECI, carburant, apport…), virements internes, arrêté de caisse avec enregistrement de l'écart, journal avec solde progressif et export CSV. Mouvements en ajout seul : une erreur se contre-passe. La caisse ne peut jamais devenir négative |
 | Réversibilité | Export complet des données de l'entreprise (JSON + CSV), toujours possible même en cas de suspension |
 
 ## Sécurité et isolation des données
@@ -87,7 +88,7 @@ Le super administrateur doit activer la double authentification (menu « Ma séc
 npm test
 ```
 
-64 tests d'intégration sur une vraie base PostgreSQL (`kora_test`, recréée à chaque fichier ; PostgreSQL doit tourner, par exemple via `npm run dev:db`) : authentification, rôles et quotas, abonnements et paiements, console éditeur et support, contacts, ventes (calculs, cycle devis → facture → encaissement, avoirs, relances, intangibilité en base, droits par rôle), achats (commandes, doublons, règlements, échéancier, séparation des rôles), isolation multi-entreprises. Par sécurité, les tests refusent de s'exécuter sur une base dont le nom ne se termine pas par `_test`.
+72 tests d'intégration sur une vraie base PostgreSQL (`kora_test`, recréée à chaque fichier ; PostgreSQL doit tourner, par exemple via `npm run dev:db`) : authentification, rôles et quotas, abonnements et paiements, console éditeur et support, contacts, ventes (calculs, cycle devis → facture → encaissement, avoirs, relances, intangibilité en base, droits par rôle), achats (commandes, doublons, règlements, échéancier, séparation des rôles), trésorerie (soldes, caisse jamais négative, virements, contre-passation, arrêté de caisse, remboursements), isolation multi-entreprises. Par sécurité, les tests refusent de s'exécuter sur une base dont le nom ne se termine pas par `_test`.
 
 ## Organisation du code
 
@@ -96,7 +97,7 @@ apps/
   api/                 API NestJS (TypeScript)
     src/common/        garde d'accès, erreurs, validation, chiffrement
     src/db/            migrations SQL versionnées, accès PostgreSQL (Kysely), contexte RLS
-    src/modules/       auth, companies, rbac, billing, audit, support, platform, exports, contacts, sales, purchases
+    src/modules/       auth, companies, rbac, billing, audit, support, platform, exports, contacts, sales, purchases, treasury
     test/              tests d'intégration
   web/                 interface Next.js (espace entreprise + console éditeur)
 infra/db/              création des rôles et des bases PostgreSQL, PostgreSQL local (dev-postgres.mjs)
@@ -106,7 +107,7 @@ scripts/dev.mjs        lancement de tout l'environnement en une commande
 
 ## Reste à faire
 
-- **Phase 3 — gestion commerciale (suite)** : stocks et mouvements (réception des commandes, sorties sur facture), bons de livraison, avoirs fournisseurs, caisse (dont remboursement des trop-perçus), facture normalisée électronique de la DGI (dès réception des spécifications), envoi des documents par e-mail.
+- **Phase 3 — gestion commerciale (suite)** : stocks et mouvements (réception des commandes, sorties sur facture), bons de livraison, avoirs fournisseurs, rapprochement bancaire (import des relevés), facture normalisée électronique de la DGI (dès réception des spécifications), envoi des documents par e-mail.
 - **Phase 4 — finance** : plan comptable SYSCOHADA révisé, journaux et écritures générées automatiquement, banque et rapprochement, grand livre, balance, états financiers, déclarations TVA.
 - **Phase 5 — RH et paie** : employés, congés, paie ivoirienne (ITS, CNPS, CMU), bulletins, espace employé.
 - **Socle** : envoi réel des e-mails (invitations, rappels), prestataire de paiement réel, téléversement du logo, verrou du cycle de facturation si plusieurs instances de l'API.

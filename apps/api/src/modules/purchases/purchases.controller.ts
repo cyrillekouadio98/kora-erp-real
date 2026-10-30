@@ -6,7 +6,7 @@ import { AllowWhenReadOnly, Permission, Tenant } from '../../common/decorators';
 import type { TenantInfo } from '../../common/request-context';
 import { parse } from '../../common/validation';
 import { toCsv } from '../exports/export.controller';
-import { isoDate, LineSchema } from '../sales/sales.controller';
+import { isoDate, LineSchema, PaymentSchema } from '../sales/sales.controller';
 import { PurchasesService } from './purchases.service';
 
 const type = z.enum(['order', 'invoice'], { message: 'Type de document : bon de commande ou facture fournisseur' });
@@ -86,11 +86,6 @@ export class PurchasesController {
   @Permission('cash.create')
   @Post('documents/:id/payments')
   pay(@Tenant() t: TenantInfo, @Param('id') id: string, @Body() body: unknown) {
-    return this.purchases.addPayment(t, id, parse(z.object({
-      amount: z.coerce.number().positive({ message: 'Le montant doit être positif' }).max(1e13).transform((v) => Math.round(v)),
-      paidOn: isoDate.optional(),
-      method: z.enum(['cash', 'mobile_money', 'bank_transfer', 'cheque', 'card'], { message: 'Mode de paiement invalide' }),
-      reference: z.string().trim().max(100).transform((v) => v || null).nullable().optional(),
-    }).strict(), body));
+    return this.purchases.addPayment(t, id, parse(PaymentSchema, body));
   }
 }

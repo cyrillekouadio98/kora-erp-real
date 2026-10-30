@@ -13,6 +13,15 @@ export const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'Date 
 const type = z.enum(['quote', 'invoice'], { message: 'Type de document : devis ou facture' });
 const anyType = z.enum(['quote', 'invoice', 'credit_note'], { message: 'Type de document : devis, facture ou avoir' });
 
+/** Paiement reçu ou versé : le compte de trésorerie est facultatif (compte par défaut du mode de paiement). */
+export const PaymentSchema = z.object({
+  amount: z.coerce.number().positive({ message: 'Le montant doit être positif' }).max(1e13).transform((v) => Math.round(v)),
+  paidOn: isoDate.optional(),
+  method: z.enum(['cash', 'mobile_money', 'bank_transfer', 'cheque', 'card'], { message: 'Mode de paiement invalide' }),
+  reference: z.string().trim().max(100).transform((v) => v || null).nullable().optional(),
+  accountId: z.string().uuid({ message: 'Compte de trésorerie invalide' }).nullable().optional(),
+}).strict();
+
 export const LineSchema = z.object({
   productId: z.string().uuid({ message: 'Article invalide' }).nullable().optional(),
   description: z.string().trim().min(1, { message: 'Chaque ligne doit avoir une désignation' }).max(500),
@@ -113,15 +122,17 @@ export class SalesController {
     }).strict(), body));
   }
 
+  /** Remboursement au client du trop-perçu d'une facture (après avoir). */
+  @Permission('cash.create')
+  @Post('documents/:id/refunds')
+  refund(@Tenant() t: TenantInfo, @Param('id') id: string, @Body() body: unknown) {
+    return this.sales.refund(t, id, parse(PaymentSchema, body));
+  }
+
   /** Encaissement d'une facture : réservé aux personnes autorisées à saisir en caisse. */
   @Permission('cash.create')
   @Post('documents/:id/payments')
   pay(@Tenant() t: TenantInfo, @Param('id') id: string, @Body() body: unknown) {
-    return this.sales.addPayment(t, id, parse(z.object({
-      amount: z.coerce.number().positive({ message: 'Le montant doit être positif' }).max(1e13).transform((v) => Math.round(v)),
-      paidOn: isoDate.optional(),
-      method: z.enum(['cash', 'mobile_money', 'bank_transfer', 'cheque', 'card'], { message: 'Mode de paiement invalide' }),
-      reference: z.string().trim().max(100).transform((v) => v || null).nullable().optional(),
-    }).strict(), body));
+    return this.sales.addPayment(t, id, parse(PaymentSchema, body));
   }
 }

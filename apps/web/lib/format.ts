@@ -33,6 +33,10 @@ export const ACTION_LABELS: Record<string, string> = {
   'purchase_order.exported': 'Bons de commande exportés', 'purchase_invoice.created': 'Facture fournisseur saisie', 'purchase_invoice.updated': 'Facture fournisseur modifiée',
   'purchase_invoice.deleted': 'Brouillon de facture fournisseur supprimé', 'purchase_invoice.validated': 'Facture fournisseur validée',
   'purchase_invoice.payment_recorded': 'Règlement fournisseur enregistré', 'purchase_invoice.exported': 'Factures fournisseurs exportées',
+  'invoice.refund_recorded': 'Trop-perçu remboursé au client', 'treasury_account.created': 'Compte de trésorerie créé', 'treasury_account.updated': 'Compte de trésorerie modifié',
+  'treasury_account.archived': 'Compte de trésorerie archivé', 'treasury_account.restored': 'Compte de trésorerie restauré', 'treasury.expense_recorded': 'Dépense enregistrée',
+  'treasury.income_recorded': 'Recette enregistrée', 'treasury.transfer_recorded': 'Virement interne', 'treasury.cash_counted': 'Arrêté de caisse',
+  'treasury.movement_reversed': 'Mouvement contre-passé',
 };
 
 export const DOC_STATUS: Record<string, [string, 'ok' | 'warn' | 'crit' | 'mute']> = {
@@ -52,4 +56,18 @@ export const PURCHASE_LABEL = { order: 'Bon de commande', invoice: 'Facture four
 export const PURCHASE_STATUS: Record<string, [string, 'ok' | 'warn' | 'crit' | 'mute']> = {
   draft: ['Brouillon', 'mute'], sent: ['Envoyé', 'warn'], cancelled: ['Annulé', 'mute'], invoiced: ['Facturé', 'ok'],
   to_pay: ['À payer', 'warn'], partially_paid: ['Payée en partie', 'warn'], paid: ['Payée', 'ok'],
+};
+
+export const ACCOUNT_KINDS: Record<string, string> = { cash: 'Caisse', bank: 'Banque', mobile_money: 'Mobile money' };
+/** Compte proposé par défaut pour un mode de paiement (même règle que l'API). */
+export const KIND_FOR_METHOD: Record<string, string> = { cash: 'cash', mobile_money: 'mobile_money', bank_transfer: 'bank', cheque: 'bank', card: 'bank' };
+export const EXPENSE_CATEGORIES: Record<string, string> = {
+  rent: 'Loyer', electricity: 'Électricité (CIE)', water: 'Eau (SODECI)', fuel: 'Carburant', transport: 'Transport et déplacements', telecom: 'Téléphone et internet',
+  supplies: 'Fournitures de bureau', maintenance: 'Entretien et réparations', salaries: 'Salaires et avances', taxes: 'Impôts et taxes', bank_fees: 'Frais bancaires',
+  owner_withdrawal: 'Retrait de l’exploitant', other_expense: 'Autre dépense',
+};
+export const INCOME_CATEGORIES: Record<string, string> = { capital: 'Apport (capital, exploitant)', loan: 'Emprunt reçu', other_income: 'Autre recette' };
+export const MOVEMENT_CATEGORIES: Record<string, string> = {
+  ...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES, customer_payment: 'Encaissement client', supplier_payment: 'Règlement fournisseur', customer_refund: 'Remboursement client',
+  transfer: 'Virement interne', cash_difference: 'Écart de caisse',
 };

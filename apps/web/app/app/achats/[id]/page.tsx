@@ -7,6 +7,7 @@ import { date, money, PAYMENT_METHODS, PURCHASE_LABEL, PURCHASE_STATUS } from '@
 import { useSession } from '@/components/session';
 import { SalesEditor } from '@/components/sales-editor';
 import { Alert, Field, Pill, useAction } from '@/components/ui';
+import { AccountSelect } from '@/components/account-select';
 
 export default function PurchaseDocumentPage() {
   const { id } = useParams<{ id: string }>();
@@ -100,7 +101,7 @@ export default function PurchaseDocumentPage() {
       {isInvoice && doc.payments.length > 0 && (
         <div className="card no-print"><header><h2>Règlements</h2></header>
           <div className="table-wrap"><table><tbody>{doc.payments.map((p: any) => (
-            <tr key={p.id}><td>{date(p.paidOn)}</td><td>{PAYMENT_METHODS[p.method]}</td><td className="small muted">{p.reference}</td><td className="n">{money(p.amount)}</td></tr>))}</tbody></table></div>
+            <tr key={p.id}><td>{date(p.paidOn)}</td><td>{PAYMENT_METHODS[p.method]}{p.accountName && <div className="small muted">{p.accountName}</div>}</td><td className="small muted">{p.reference}</td><td className="n">{money(p.amount)}</td></tr>))}</tbody></table></div>
         </div>
       )}
 
@@ -108,7 +109,7 @@ export default function PurchaseDocumentPage() {
         <div className="modal-back" onClick={() => setPay(null)}>
           <form className="modal" style={{ width: 'min(460px, 100%)' }} onClick={(e) => e.stopPropagation()} onSubmit={(e) => {
             e.preventDefault();
-            run(async () => { setDoc(await api(`/company/purchases/documents/${id}/payments`, { body: { ...pay, amount: Number(pay.amount), reference: pay.reference || null } })); setPay(null); });
+            run(async () => { setDoc(await api(`/company/purchases/documents/${id}/payments`, { body: { ...pay, amount: Number(pay.amount), reference: pay.reference || null, accountId: pay.accountId || null } })); setPay(null); });
           }}>
             <h2>Règlement — {doc.number}</h2>
             <p className="small muted" style={{ margin: 0 }}>{doc.supplier.name} · reste à payer : <b>{money(doc.remaining)}</b></p>
@@ -117,6 +118,7 @@ export default function PurchaseDocumentPage() {
             <label className="field">Mode de paiement
               <select className="input" value={pay.method} onChange={(e) => setPay({ ...pay, method: e.target.value })}>{Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
             </label>
+            <AccountSelect method={pay.method} value={pay.accountId ?? ''} onChange={(v) => setPay({ ...pay, accountId: v })} />
             <Field label="Date" type="date" required max={new Date().toISOString().slice(0, 10)} value={pay.paidOn} onChange={(e) => setPay({ ...pay, paidOn: e.target.value })} />
             <Field label="Référence (n° de virement, de chèque…)" value={pay.reference} onChange={(e) => setPay({ ...pay, reference: e.target.value })} />
             <div className="row"><button className="btn primary" disabled={busy}>Enregistrer</button><button type="button" className="btn" onClick={() => setPay(null)}>Annuler</button></div>

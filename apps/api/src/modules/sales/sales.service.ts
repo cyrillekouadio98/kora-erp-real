@@ -6,6 +6,7 @@ import type { TenantInfo } from '../../common/request-context';
 import { DatabaseService, TenantTrx } from '../../db/database.service';
 import type { PaymentMethod, ReminderChannel, SalesDocStatus, SalesDocType } from '../../db/schema';
 import { AuditService } from '../audit/audit.service';
+import { TreasuryService } from '../treasury/treasury.service';
 
 export interface LineInput { productId?: string | null; description: string; quantity: number; unit?: string | null; unitPrice: number; discountPct?: number; vatRate: number }
 export interface DocInput { contactId: string; issueDate?: string; dueDate?: string | null; validUntil?: string | null; notes?: string | null; lines: LineInput[] }
@@ -30,8 +31,8 @@ export function invoiceStatus(total: number, paid: number, credited: number): Sa
   return paid > 0 || credited > 0 ? 'partially_paid' : 'issued';
 }
 /** Reste à payer et trop-perçu (le client a payé plus que ce qui reste dû après avoir). */
-export const balance = (d: { total_ttc: string; paid_amount: string; credited_amount: string }) => {
-  const due = Number(d.total_ttc) - Number(d.paid_amount) - Number(d.credited_amount);
+export const balance = (d: { total_ttc: string; paid_amount: string; credited_amount: string; refunded_amount?: string }) => {
+  const due = Number(d.total_ttc) - Number(d.paid_amount) - Number(d.credited_amount) + Number(d.refunded_amount ?? 0);
   return { remaining: Math.max(0, due), refundDue: Math.max(0, -due) };
 };
 
@@ -44,7 +45,7 @@ export function computeTotals(lines: LineInput[]) {
 
 @Injectable()
 export class SalesService {
-  constructor(private readonly db: DatabaseService, private readonly audit: AuditService) {}
+  constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly treasury: TreasuryService) {}
 
   private async doc(trx: TenantTrx, id: string, lock = false) {
     if (!isUuid(id)) throw notFound('Document');
@@ -83,7 +84,7 @@ export class SalesService {
     return this.db.tenant(t.ctx, async (trx) => {
       let q = trx.selectFrom('sales_document as d').innerJoin('contact as c', (j) => j.onRef('c.id', '=', 'd.contact_id').onRef('c.company_id', '=', 'd.company_id'))
         .select(['d.id', 'd.type', 'd.status', 'd.number', 'd.issue_date as issueDate', 'd.due_date as dueDate', 'd.valid_until as validUntil',
-          'd.total_ht as totalHt', 'd.total_vat as totalVat', 'd.total_ttc as totalTtc', 'd.paid_amount as paidAmount', 'd.credited_amount as creditedAmount', 'd.currency',
+          'd.total_ht as totalHt', 'd.total_vat as totalVat', 'd.total_ttc as totalTtc', 'd.paid_amount as paidAmount', 'd.credited_amount as creditedAmount', 'd.refunded_amount as refundedAmount', 'd.currency',
           'c.id as contactId', 'c.name as contactName', 'c.code as contactCode'])
         .where('d.type', '=', f.type).orderBy('d.created_at', 'desc').limit(1000);
       if (f.status) q = q.where('d.status', '=', f.status as any);
@@ -95,7 +96,7 @@ export class SalesService {
       const now = today();
       return rows.map((r) => ({
         ...r, totalHt: Number(r.totalHt), totalVat: Number(r.totalVat), totalTtc: Number(r.totalTtc), paidAmount: Number(r.paidAmount), creditedAmount: Number(r.creditedAmount),
-        remaining: r.type === 'invoice' && r.status !== 'draft' ? balance({ total_ttc: r.totalTtc, paid_amount: r.paidAmount, credited_amount: r.creditedAmount }).remaining : 0,
+        remaining: r.type === 'invoice' && r.status !== 'draft' ? balance({ total_ttc: r.totalTtc, paid_amount: r.paidAmount, credited_amount: r.creditedAmount, refunded_amount: r.refundedAmount }).remaining : 0,
         overdue: r.type === 'invoice' && OPEN_INVOICE.includes(r.status) && !!r.dueDate && r.dueDate < now,
       }));
     });
@@ -107,8 +108,14 @@ export class SalesService {
       const contact = await trx.selectFrom('contact').select(['id', 'code', 'name', 'tax_id as taxId', 'rccm', 'email', 'phone', 'address', 'city', 'payment_terms_days as paymentTermsDays'])
         .where('id', '=', d.contact_id).executeTakeFirstOrThrow();
       const lines = await trx.selectFrom('sales_document_line').selectAll().where('document_id', '=', id).orderBy('position').execute();
-      const payments = await trx.selectFrom('sales_payment').select(['id', 'amount', 'paid_on as paidOn', 'method', 'reference', 'created_at as createdAt'])
-        .where('document_id', '=', id).orderBy('paid_on').orderBy('created_at').execute();
+      const payments = await trx.selectFrom('sales_payment as p')
+        .leftJoin('treasury_movement as m', (j) => j.onRef('m.source_id', '=', 'p.id').onRef('m.company_id', '=', 'p.company_id'))
+        .leftJoin('treasury_account as a', (j) => j.onRef('a.id', '=', 'm.account_id').onRef('a.company_id', '=', 'm.company_id'))
+        .select(['p.id', 'p.amount', 'p.paid_on as paidOn', 'p.method', 'p.reference', 'p.created_at as createdAt', 'a.name as accountName'])
+        .where('p.document_id', '=', id).orderBy('p.paid_on').orderBy('p.created_at').execute();
+      const refunds = await trx.selectFrom('treasury_movement as m')
+        .innerJoin('treasury_account as a', (j) => j.onRef('a.id', '=', 'm.account_id').onRef('a.company_id', '=', 'm.company_id'))
+        .select(['m.id', 'm.amount', 'm.date', 'm.reference', 'a.name as accountName']).where('m.source_type', '=', 'sales_refund').where('m.source_id', '=', id).orderBy('m.date').execute();
       const source = d.source_quote_id ?? d.source_invoice_id ?? id;
       const related = await trx.selectFrom('sales_document').select(['id', 'type', 'number', 'status', 'total_ttc as totalTtc'])
         .where((eb) => eb.or([eb('id', '=', source), eb('source_quote_id', '=', id), eb('source_invoice_id', '=', id)])).where('id', '!=', id).orderBy('created_at').execute();
@@ -125,7 +132,8 @@ export class SalesService {
         id: d.id, type: d.type, status: d.status, number: d.number, issueDate: d.issue_date, dueDate: d.due_date, validUntil: d.valid_until,
         currency: d.currency, notes: d.notes, validatedAt: d.validated_at, sourceQuoteId: d.source_quote_id,
         customer: d.status === 'draft' ? contact : { ...contact, ...(d.customer as object) }, contact,
-        totalHt: Number(d.total_ht), totalVat: Number(d.total_vat), totalTtc: Number(d.total_ttc), paidAmount: Number(d.paid_amount), creditedAmount: Number(d.credited_amount),
+        totalHt: Number(d.total_ht), totalVat: Number(d.total_vat), totalTtc: Number(d.total_ttc), paidAmount: Number(d.paid_amount), creditedAmount: Number(d.credited_amount), refundedAmount: Number(d.refunded_amount),
+        refunds: refunds.map((r) => ({ ...r, amount: Number(r.amount) })),
         ...(d.type === 'invoice' ? balance(d) : { remaining: 0, refundDue: 0 }), sourceInvoiceId: d.source_invoice_id, vatBreakdown, reminders,
         related: related.map((r) => ({ ...r, totalTtc: Number(r.totalTtc) })),
         lines: lines.map((l) => ({ id: l.id, productId: l.product_id, description: l.description, quantity: Number(l.quantity), unit: l.unit,
@@ -235,7 +243,7 @@ export class SalesService {
     return this.get(t, invoiceId);
   }
 
-  async addPayment(t: TenantInfo, id: string, p: { amount: number; paidOn?: string; method: PaymentMethod; reference?: string | null }) {
+  async addPayment(t: TenantInfo, id: string, p: { amount: number; paidOn?: string; method: PaymentMethod; reference?: string | null; accountId?: string | null }) {
     await this.db.tenant(t.ctx, async (trx) => {
       const d = await this.doc(trx, id, true);
       if (d.type !== 'invoice' || !OPEN_INVOICE.includes(d.status)) throw conflict("Un encaissement s'enregistre sur une facture émise et non soldée.", 'invalid_state');
@@ -243,10 +251,31 @@ export class SalesService {
       if (p.amount > remaining) throw badRequest(`Le montant dépasse le reste à payer (${remaining.toLocaleString('fr-FR')} FCFA).`, undefined, 'amount_too_high');
       const paidOn = p.paidOn ?? today();
       if (paidOn > today()) throw badRequest("La date d'encaissement ne peut pas être dans le futur.", undefined, 'future_date');
-      await trx.insertInto('sales_payment').values({ company_id: t.companyId, document_id: id, amount: p.amount, paid_on: paidOn, method: p.method, reference: p.reference ?? null, created_by: t.ctx.userId }).execute();
+      const account = await this.treasury.resolveAccount(trx, p.accountId, p.method);
+      const pay = await trx.insertInto('sales_payment').values({ company_id: t.companyId, document_id: id, amount: p.amount, paid_on: paidOn, method: p.method, reference: p.reference ?? null, created_by: t.ctx.userId })
+        .returning('id').executeTakeFirstOrThrow();
+      await this.treasury.record(trx, t, { accountId: account.id, date: paidOn, direction: 'in', amount: p.amount, category: 'customer_payment', label: `Encaissement ${d.number}`,
+        contactId: d.contact_id, sourceType: 'sales_payment', sourceId: pay.id, reference: p.reference });
       const paid = Number(d.paid_amount) + p.amount;
       await trx.updateTable('sales_document').set({ paid_amount: paid, status: invoiceStatus(Number(d.total_ttc), paid, Number(d.credited_amount)) }).where('id', '=', id).execute();
       await this.audit.tenant(trx, t.ctx, { action: 'invoice.payment_recorded', entityType: 'sales_document', entityId: id, data: { number: d.number, amount: p.amount, method: p.method } });
+    });
+    return this.get(t, id);
+  }
+
+  /** Rembourse au client tout ou partie du trop-perçu d'une facture (après avoir). */
+  async refund(t: TenantInfo, id: string, r: { amount: number; method: PaymentMethod; accountId?: string | null; paidOn?: string; reference?: string | null }) {
+    await this.db.tenant(t.ctx, async (trx) => {
+      const d = await this.doc(trx, id, true);
+      if (d.type !== 'invoice' || d.status === 'draft') throw conflict('Un remboursement se rattache à une facture émise.', 'invalid_state');
+      const { refundDue } = balance(d);
+      if (refundDue <= 0) throw conflict(`La facture ${d.number} n'a pas de trop-perçu à rembourser.`, 'nothing_to_refund');
+      if (r.amount > refundDue) throw badRequest(`Le remboursement dépasse le trop-perçu (${refundDue.toLocaleString('fr-FR')} FCFA).`, undefined, 'amount_too_high');
+      const account = await this.treasury.resolveAccount(trx, r.accountId, r.method);
+      await this.treasury.record(trx, t, { accountId: account.id, date: r.paidOn ?? today(), direction: 'out', amount: r.amount, category: 'customer_refund',
+        label: `Remboursement du trop-perçu ${d.number}`, contactId: d.contact_id, sourceType: 'sales_refund', sourceId: d.id, reference: r.reference });
+      await trx.updateTable('sales_document').set({ refunded_amount: Number(d.refunded_amount) + r.amount }).where('id', '=', id).execute();
+      await this.audit.tenant(trx, t.ctx, { action: 'invoice.refund_recorded', entityType: 'sales_document', entityId: id, data: { number: d.number, amount: r.amount, account: account.name } });
     });
     return this.get(t, id);
   }
@@ -298,7 +327,7 @@ export class SalesService {
     return this.db.tenant(t.ctx, async (trx) => {
       const now = today();
       const rows = await trx.selectFrom('sales_document as d').innerJoin('contact as c', (j) => j.onRef('c.id', '=', 'd.contact_id').onRef('c.company_id', '=', 'd.company_id'))
-        .select((eb) => ['d.id', 'd.number', 'd.issue_date', 'd.due_date', 'd.total_ttc', 'd.paid_amount', 'd.credited_amount', 'c.id as contactId', 'c.code as contactCode', 'c.name as contactName', 'c.phone', 'c.email',
+        .select((eb) => ['d.id', 'd.number', 'd.issue_date', 'd.due_date', 'd.total_ttc', 'd.paid_amount', 'd.credited_amount', 'd.refunded_amount', 'c.id as contactId', 'c.code as contactCode', 'c.name as contactName', 'c.phone', 'c.email',
           eb.selectFrom('sales_reminder as r').whereRef('r.document_id', '=', 'd.id').select(eb.fn.countAll<string>().as('n')).as('reminderCount'),
           eb.selectFrom('sales_reminder as r').whereRef('r.document_id', '=', 'd.id').select((e) => e.fn.max('r.created_at').as('m')).as('lastReminderAt'),
           eb.selectFrom('sales_reminder as r').whereRef('r.document_id', '=', 'd.id').where('r.promised_on', 'is not', null).orderBy('r.created_at', 'desc').limit(1).select('r.promised_on').as('promisedOn')])
@@ -323,7 +352,7 @@ export class SalesService {
     return this.db.tenant(t.ctx, async (trx) => {
       const now = today();
       const monthStart = `${now.slice(0, 7)}-01`;
-      const inv = await trx.selectFrom('sales_document').select(['status', 'issue_date', 'due_date', 'total_ht', 'total_ttc', 'paid_amount', 'credited_amount'])
+      const inv = await trx.selectFrom('sales_document').select(['status', 'issue_date', 'due_date', 'total_ht', 'total_ttc', 'paid_amount', 'credited_amount', 'refunded_amount'])
         .where('type', '=', 'invoice').where('status', '!=', 'draft').execute();
       const credits = await trx.selectFrom('sales_document').select('total_ht').where('type', '=', 'credit_note').where('status', '=', 'issued').where('issue_date', '>=', monthStart).execute();
       const pay = await trx.selectFrom('sales_payment').select('amount').where('paid_on', '>=', monthStart).execute();

@@ -95,7 +95,7 @@ type NumDefault = ColumnType<string, number | string | undefined, number | strin
 export interface SalesDocumentTable {
   company_id: string; id: Generated<string>; type: SalesDocType; status: Generated<SalesDocStatus>; number: string | null; contact_id: string;
   customer: JsonDefault<Record<string, unknown>>; issue_date: DateCol; due_date: DateNullable; valid_until: DateNullable; currency: Generated<string>; notes: string | null;
-  total_ht: NumDefault; total_vat: NumDefault; total_ttc: NumDefault; paid_amount: NumDefault; credited_amount: NumDefault; source_quote_id: string | null; source_invoice_id: string | null;
+  total_ht: NumDefault; total_vat: NumDefault; total_ttc: NumDefault; paid_amount: NumDefault; credited_amount: NumDefault; refunded_amount: NumDefault; source_quote_id: string | null; source_invoice_id: string | null;
   validated_at: TsNullable; validated_by: string | null; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 export interface SalesDocumentLineTable {
@@ -125,6 +125,18 @@ export interface PurchaseDocumentTable {
 export type PurchaseDocumentLineTable = SalesDocumentLineTable;
 export type PurchasePaymentTable = SalesPaymentTable;
 
+export type TreasuryKind = 'cash' | 'bank' | 'mobile_money';
+export interface TreasuryAccountTable {
+  company_id: string; id: Generated<string>; kind: TreasuryKind; name: string; bank_name: string | null; account_number: string | null;
+  opening_balance: NumDefault; opening_date: ColumnType<string, string | undefined, string>; archived_at: TsNullable; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export type MovementSource = 'sales_payment' | 'purchase_payment' | 'sales_refund' | 'expense' | 'income' | 'transfer' | 'cash_count' | 'reversal';
+export interface TreasuryMovementTable {
+  company_id: string; id: Generated<string>; account_id: string; date: DateCol; direction: 'in' | 'out'; amount: Num; category: string; label: string;
+  contact_id: string | null; source_type: MovementSource; source_id: string | null; transfer_id: string | null; reversal_of: string | null; reversed_by: string | null;
+  reference: string | null; created_by: string | null; created_at: Generated<Date>;
+}
+
 export interface DB {
   user_account: UserAccountTable; platform_role_assignment: PlatformRoleAssignmentTable; user_session: UserSessionTable;
   company: CompanyTable; company_membership: CompanyMembershipTable; role: RoleTable; membership_role: MembershipRoleTable;
@@ -134,4 +146,5 @@ export interface DB {
   audit_log: AuditLogTable; numbering_sequence: NumberingSequenceTable; outbox_event: OutboxEventTable; contact: ContactTable;
   product: ProductTable; sales_document: SalesDocumentTable; sales_document_line: SalesDocumentLineTable; sales_payment: SalesPaymentTable; sales_reminder: SalesReminderTable;
   purchase_document: PurchaseDocumentTable; purchase_document_line: PurchaseDocumentLineTable; purchase_payment: PurchasePaymentTable;
+  treasury_account: TreasuryAccountTable; treasury_movement: TreasuryMovementTable;
 }

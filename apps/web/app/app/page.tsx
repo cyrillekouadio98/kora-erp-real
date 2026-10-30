@@ -13,12 +13,14 @@ export default function Dashboard() {
   const [sub, setSub] = useState<any>(null);
   const [sales, setSales] = useState<any>(null);
   const [purchases, setPurchases] = useState<any>(null);
+  const [treasury, setTreasury] = useState<any>(null);
   const [name, setName] = useState('');
   const { busy, error, run } = useAction();
   useEffect(() => {
     if (ctx && can('billing.read')) api('/company/subscription').then(setSub, () => {});
     if (ctx && can('sales.read') && ctx.entitlements.modules.includes('sales')) api('/company/sales/summary').then(setSales, () => {});
     if (ctx && can('purchases.read') && ctx.entitlements.modules.includes('purchases')) api('/company/purchases/summary').then(setPurchases, () => {});
+    if (ctx && can('cash.read') && ctx.entitlements.modules.includes('cash')) api('/company/treasury/summary').then(setTreasury, () => {});
   }, [ctx]); // eslint-disable-line
 
   if (!ctx) {
@@ -39,6 +41,12 @@ export default function Dashboard() {
     <>
       <div className="page-head"><h1>{ctx.company.name}</h1>
         {can('sales.create') && !ctx.readOnly && <div className="row"><Link className="btn" href="/app/ventes/nouveau?type=quote">Nouveau devis</Link><Link className="btn primary" href="/app/ventes/nouveau?type=invoice">Nouvelle facture</Link></div>}</div>
+      {treasury && (
+        <div className="kpis">
+          <div className="card kpi"><div className="l">Trésorerie disponible</div><div className="v">{money(treasury.total)}</div><div className="small muted"><Link href="/app/tresorerie">caisse et banque</Link></div></div>
+          {treasury.accounts.map((a: any) => <div key={a.id} className="card kpi"><div className="l">{a.name}</div><div className="v" style={{ color: a.balance < 0 ? 'var(--crit)' : undefined }}>{money(a.balance)}</div></div>)}
+        </div>
+      )}
       {sales && (
         <div className="kpis">
           <div className="card kpi"><div className="l">Chiffre d'affaires du mois</div><div className="v">{money(sales.revenueMonthHt)}</div><div className="small muted">hors taxes, factures émises</div></div>
@@ -69,7 +77,7 @@ export default function Dashboard() {
         <div className="row">
           {Object.entries(MODULE_LABELS).map(([k, l]) => <Pill key={k} tone={ctx.entitlements.modules.includes(k) ? 'ok' : 'mute'}>{l}{ctx.entitlements.modules.includes(k) ? '' : ' · non inclus'}</Pill>)}
         </div>
-        <p className="small muted" style={{ marginBottom: 0 }}>Disponibles : clients et fournisseurs, articles, ventes (devis, factures, avoirs, encaissements, relances) et achats (bons de commande, factures et règlements fournisseurs, échéancier). La caisse, la banque, la comptabilité et la paie arrivent avec les prochains lots.</p>
+        <p className="small muted" style={{ marginBottom: 0 }}>Disponibles : clients et fournisseurs, articles, ventes (devis, factures, avoirs, encaissements, relances) achats (bons de commande, factures et règlements fournisseurs, échéancier) et trésorerie (caisse, banque, mobile money). Les stocks, la comptabilité et la paie arrivent avec les prochains lots.</p>
       </div>
       <div className="card">
         <header><h2>Pour bien démarrer</h2></header>
