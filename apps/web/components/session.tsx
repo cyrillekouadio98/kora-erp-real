@@ -23,6 +23,7 @@ export const useSession = () => useContext(Ctx)!;
 const NAV: { href: string; label: string; perm?: string; group: string }[] = [
   { href: '/app', label: 'Tableau de bord', group: 'Entreprise' },
   { href: '/app/entreprise', label: 'Fiche entreprise', group: 'Entreprise' },
+  { href: '/app/contacts', label: 'Clients et fournisseurs', perm: 'contacts.read', group: 'Gestion' },
   { href: '/app/utilisateurs', label: 'Utilisateurs', perm: 'users.read', group: 'Administration' },
   { href: '/app/roles', label: 'Rôles et permissions', perm: 'users.read', group: 'Administration' },
   { href: '/app/abonnement', label: 'Abonnement', perm: 'billing.read', group: 'Administration' },

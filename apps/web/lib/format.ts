@@ -19,4 +19,6 @@ export const ACTION_LABELS: Record<string, string> = {
   'subscription.cancel_withdrawn': 'Résiliation annulée', 'support_access.requested': 'Le support demande un accès',
   'support_access.approved': 'Accès support accordé', 'support_access.denied': 'Accès support refusé', 'support_access.revoked': 'Accès support révoqué',
   'support.viewed': 'Consultation par le support', 'data.exported': 'Export complet des données',
+  'contact.created': 'Contact créé', 'contact.updated': 'Contact modifié', 'contact.archived': 'Contact archivé',
+  'contact.restored': 'Contact restauré', 'contact.exported': 'Contacts exportés',
 };

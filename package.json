@@ -3,8 +3,12 @@
   "private": true,
   "version": "0.1.0",
   "description": "Kora ERP — ERP SaaS multi-entreprises (SYSCOHADA, Côte d'Ivoire)",
-  "workspaces": ["apps/*"],
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:db": "node infra/db/dev-postgres.mjs",
     "dev:api": "npm run start:dev -w apps/api",
     "dev:web": "npm run dev -w apps/web",
     "db:migrate": "npm run db:migrate -w apps/api",
@@ -13,5 +17,10 @@
     "lint": "npm run lint -w apps/api",
     "build": "npm run build -w apps/api && npm run build -w apps/web"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "embedded-postgres": "^16.13.0-beta.17"
+  }
 }

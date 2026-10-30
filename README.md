@@ -2,7 +2,7 @@
 
 ERP SaaS multi-entreprises pour les PME d'Afrique de l'Ouest : gestion commerciale, comptabilité SYSCOHADA révisé, trésorerie, ressources humaines et paie. Marché initial : Côte d'Ivoire.
 
-> Nom provisoire. Ce dépôt contient la **phase 2 — socle SaaS** du dossier de conception validé : comptes, entreprises, rôles et permissions, abonnements, journal d'audit, accès exceptionnel du support et isolation des données. Les modules métier (ventes, comptabilité, caisse, banque, paie) arrivent aux phases 3 à 5.
+> Nom provisoire. Ce dépôt contient la **phase 2 — socle SaaS** du dossier de conception validé : comptes, entreprises, rôles et permissions, abonnements, journal d'audit, accès exceptionnel du support et isolation des données. Le premier module métier de la phase 3, **clients et fournisseurs**, est disponible ; les autres (ventes, comptabilité, caisse, banque, paie) arrivent aux phases 3 à 5.
 
 ## Ce que fait le socle
 
@@ -16,6 +16,7 @@ ERP SaaS multi-entreprises pour les PME d'Afrique de l'Ouest : gestion commercia
 | Paiements | Interface commune aux prestataires, prestataire de test signé (HMAC), notifications traitées une seule fois, virements saisis par l'éditeur |
 | Console éditeur | Clients, indicateurs (revenu récurrent estimé, facturé, encaissé, impayés), suspension motivée, gestion des formules |
 | Support | Accès aux données d'un client uniquement après son accord, pour une durée et un périmètre limités, chaque consultation étant inscrite dans son journal |
+| Clients et fournisseurs | Fiche tiers (client, fournisseur ou les deux, NCC, RCCM, délai de paiement), numérotation automatique CLI-/FRS-/TIE-, recherche, archivage au lieu de suppression, export CSV, journal d'audit |
 | Réversibilité | Export complet des données de l'entreprise (JSON + CSV), toujours possible même en cas de suspension |
 
 ## Sécurité et isolation des données
@@ -30,6 +31,18 @@ L'isolation entre entreprises repose sur quatre verrous indépendants :
 La suite `apps/api/test/isolation.spec.ts` le prouve à chaque modification : elle appelle **toutes les routes de l'API** en tant qu'utilisateur d'une entreprise A avec les identifiants de l'entreprise B, et échoue au moindre accès ou à la moindre fuite. Elle vérifie aussi qu'aucune table métier n'échappe à la RLS et que chaque route déclare son niveau d'accès.
 
 ## Démarrer
+
+### En une commande (sans Docker)
+
+Prérequis : Node.js 22 uniquement. PostgreSQL 16 est fourni par le paquet `embedded-postgres` (données dans `.pgdata/`).
+
+```bash
+npm install
+npm run dev        # PostgreSQL + migrations + données de référence + API + interface
+```
+
+Ouvrez http://localhost:3000 et créez votre entreprise via « Créer un compte ». Ctrl+C arrête tout.
+`npm run dev:db` lance uniquement PostgreSQL (utile pour `npm test` ou pour lancer l'API et l'interface séparément).
 
 ### Avec Docker
 
@@ -68,7 +81,7 @@ Le super administrateur doit activer la double authentification (menu « Ma séc
 npm test
 ```
 
-41 tests d'intégration sur une vraie base PostgreSQL (`kora_test`, recréée à chaque fichier) : authentification, rôles et quotas, abonnements et paiements, console éditeur et support, isolation multi-entreprises.
+46 tests d'intégration sur une vraie base PostgreSQL (`kora_test`, recréée à chaque fichier ; PostgreSQL doit tourner, par exemple via `npm run dev:db`) : authentification, rôles et quotas, abonnements et paiements, console éditeur et support, contacts, isolation multi-entreprises. Par sécurité, les tests refusent de s'exécuter sur une base dont le nom ne se termine pas par `_test`.
 
 ## Organisation du code
 
@@ -77,12 +90,20 @@ apps/
   api/                 API NestJS (TypeScript)
     src/common/        garde d'accès, erreurs, validation, chiffrement
     src/db/            migrations SQL versionnées, accès PostgreSQL (Kysely), contexte RLS
-    src/modules/       auth, companies, rbac, billing, audit, support, platform, exports
+    src/modules/       auth, companies, rbac, billing, audit, support, platform, exports, contacts
     test/              tests d'intégration
   web/                 interface Next.js (espace entreprise + console éditeur)
-infra/db/              création des rôles et des bases PostgreSQL
+infra/db/              création des rôles et des bases PostgreSQL, PostgreSQL local (dev-postgres.mjs)
+scripts/dev.mjs        lancement de tout l'environnement en une commande
 .github/workflows/     intégration continue (types, tests, construction)
 ```
+
+## Reste à faire
+
+- **Phase 3 — gestion commerciale** : articles et stocks, devis → commandes → factures clients (facture normalisée DGI), achats et factures fournisseurs, caisse, règlements et relances. Les contacts servent de base à tous ces documents.
+- **Phase 4 — finance** : plan comptable SYSCOHADA révisé, journaux et écritures générées automatiquement, banque et rapprochement, grand livre, balance, états financiers, déclarations TVA.
+- **Phase 5 — RH et paie** : employés, congés, paie ivoirienne (ITS, CNPS, CMU), bulletins, espace employé.
+- **Socle** : envoi réel des e-mails (invitations, rappels), prestataire de paiement réel, téléversement du logo, verrou du cycle de facturation si plusieurs instances de l'API.
 
 ## Décisions encore ouvertes
 

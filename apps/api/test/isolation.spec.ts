@@ -35,6 +35,7 @@ describe('Isolation des données entre entreprises', () => {
     const role = await B.agent.post('/company/roles').send({ name: 'Rôle secret Bêta', permissions: ['contacts.read'] });
     const inv = await B.agent.post('/company/invitations').send({ email: 'invite.beta@test.ci', roleIds: [role.body.id] });
     const members = await B.agent.get('/company/members');
+    const contact = await B.agent.post('/company/contacts').send({ kind: 'customer', name: 'Client secret Bêta', email: 'client.beta@test.ci' });
     const sessions = await B.agent.get('/auth/sessions');
     const support = await platformUser(app, 'support');
     const grant = await support.agent.post('/platform/support-access').send({ companyId: B.companyId, reason: 'Diagnostic de test isolation', scope: ['users'] });
@@ -45,9 +46,9 @@ describe('Isolation des données entre entreprises', () => {
     await c.end();
     Object.assign(bIds, {
       company: B.companyId, role: role.body.id, invitation: inv.body.id, membership: members.body[0].id,
-      session: sessions.body[0].id, grant: grant.body.id, invoice: invB.rows[0].id,
+      session: sessions.body[0].id, grant: grant.body.id, invoice: invB.rows[0].id, contact: contact.body.id,
     });
-    bSecrets = [...Object.values(bIds), B.email, 'Entreprise Bêta', 'Rôle secret Bêta', 'invite.beta@test.ci'];
+    bSecrets = [...Object.values(bIds), B.email, 'Entreprise Bêta', 'Rôle secret Bêta', 'invite.beta@test.ci', 'Client secret Bêta', 'client.beta@test.ci'];
   });
 
   afterAll(async () => { await app.close(); });

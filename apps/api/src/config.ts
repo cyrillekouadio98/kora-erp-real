@@ -1,3 +1,12 @@
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+// Fichier .env local (racine du dépôt ou dossier courant), sans écraser les variables déjà définies. Jamais en test.
+if (process.env.NODE_ENV !== 'test') {
+  const file = ['.env', '../../.env'].map((p) => resolve(process.cwd(), p)).find(existsSync);
+  if (file) process.loadEnvFile(file);
+}
+
 /** Configuration lue une fois au démarrage depuis les variables d'environnement. */
 function req(name: string, fallback?: string): string {
   const v = process.env[name] ?? fallback;

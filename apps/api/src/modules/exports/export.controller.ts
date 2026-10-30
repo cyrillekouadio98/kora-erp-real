@@ -7,7 +7,7 @@ import type { TenantInfo } from '../../common/request-context';
 import { DatabaseService } from '../../db/database.service';
 import { AuditService } from '../audit/audit.service';
 
-function toCsv(rows: Record<string, unknown>[]): string {
+export function toCsv(rows: Record<string, unknown>[]): string {
   if (!rows.length) return '﻿';
   const cols = Object.keys(rows[0]);
   const cell = (v: unknown) => {
@@ -39,6 +39,7 @@ export class ExportController {
         invitations: await trx.selectFrom('invitation').select(['id', 'email', 'role_ids', 'expires_at', 'accepted_at', 'revoked_at', 'created_at']).execute(),
         subscription: await trx.selectFrom('subscription').selectAll().execute(),
         invoices: await trx.selectFrom('platform_invoice').selectAll().execute(),
+        contacts: await trx.selectFrom('contact').selectAll().orderBy('code').execute(),
         audit_log: await trx.selectFrom('audit_log').selectAll().orderBy('id').execute(),
       };
       await this.audit.tenant(trx, t.ctx, { action: 'data.exported', data: { tables: Object.keys(out) } });
@@ -51,7 +52,7 @@ export class ExportController {
     zip.pipe(res);
     zip.append(JSON.stringify(data, null, 2), { name: 'donnees-completes.json' });
     for (const [name, rows] of Object.entries(data)) zip.append(toCsv(rows as Record<string, unknown>[]), { name: `csv/${name}.csv` });
-    zip.append(`Export Kora ERP du ${stamp}\nEntreprise : ${t.companyId}\nFichiers CSV séparés par des points-virgules, encodés en UTF-8.\nLes modules métier (ventes, comptabilité, paie) seront ajoutés à cet export au fil des phases.\n`, { name: 'LISEZ-MOI.txt' });
+    zip.append(`Export Kora ERP du ${stamp}\nEntreprise : ${t.companyId}\nFichiers CSV séparés par des points-virgules, encodés en UTF-8.\nLes autres modules métier (ventes, comptabilité, paie) seront ajoutés à cet export au fil des phases.\n`, { name: 'LISEZ-MOI.txt' });
     await zip.finalize();
   }
 }

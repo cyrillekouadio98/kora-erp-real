@@ -21,6 +21,10 @@ export async function ownerClient() {
 
 /** Base de test vierge : schéma recréé, migrations et données de référence appliquées. */
 export async function resetDb() {
+  // Garde-fou : ce reset supprime tout le schéma, il ne doit jamais toucher la base de développement.
+  if (!new URL(config.db.ownerUrl).pathname.endsWith('_test')) {
+    throw new Error(`Les tests refusent de s'exécuter hors d'une base *_test (reçu : ${config.db.ownerUrl}).`);
+  }
   const c = await ownerClient();
   await c.query('DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;');
   await c.end();

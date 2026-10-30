@@ -44,12 +44,13 @@ export default function Dashboard() {
         <div className="row">
           {Object.entries(MODULE_LABELS).map(([k, l]) => <Pill key={k} tone={ctx.entitlements.modules.includes(k) ? 'ok' : 'mute'}>{l}{ctx.entitlements.modules.includes(k) ? '' : ' · non inclus'}</Pill>)}
         </div>
-        <p className="small muted" style={{ marginBottom: 0 }}>Les modules métier (contacts, ventes, caisse, banque, comptabilité, paie) arrivent avec les phases 3 à 5 du projet. Ce socle gère déjà les accès, les rôles et l'abonnement.</p>
+        <p className="small muted" style={{ marginBottom: 0 }}>Disponible : {can('contacts.read') ? <Link href="/app/contacts">clients et fournisseurs</Link> : 'clients et fournisseurs'}. Les autres modules (ventes, caisse, banque, comptabilité, paie) arrivent avec les phases 3 à 5 du projet.</p>
       </div>
       <div className="card">
         <header><h2>Pour bien démarrer</h2></header>
         <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 6 }}>
           <li><Link href="/app/entreprise">Compléter la fiche de l'entreprise</Link> (RCCM, compte contribuable, adresse).</li>
+          {can('contacts.create') && <li><Link href="/app/contacts">Enregistrer vos clients et fournisseurs</Link>.</li>}
           {can('users.admin') && <li><Link href="/app/utilisateurs">Inviter vos collaborateurs</Link> et leur attribuer un rôle.</li>}
           <li><Link href="/app/securite">Activer la double authentification</Link>{me.user.mfaEnabled ? ' — déjà activée.' : ' pour protéger votre compte.'}</li>
         </ul>

@@ -74,11 +74,18 @@ export interface AuditLogTable {
 export interface NumberingSequenceTable { company_id: string; doc_type: string; year: number; prefix: string; next_value: Generated<string>; }
 export interface OutboxEventTable { company_id: string; id: Generated<string>; type: string; payload: Json; dedupe_key: string; created_at: Generated<Date>; processed_at: TsNullable; }
 
+export interface ContactTable {
+  company_id: string; id: Generated<string>; code: string; kind: 'customer' | 'supplier' | 'both'; legal_type: Generated<'company' | 'individual'>;
+  name: string; tax_id: string | null; rccm: string | null; email: string | null; phone: string | null; address: string | null; city: string | null;
+  country_code: Generated<string>; payment_terms_days: Generated<number>; notes: string | null; archived_at: TsNullable;
+  created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+
 export interface DB {
   user_account: UserAccountTable; platform_role_assignment: PlatformRoleAssignmentTable; user_session: UserSessionTable;
   company: CompanyTable; company_membership: CompanyMembershipTable; role: RoleTable; membership_role: MembershipRoleTable;
   invitation: InvitationTable; plan: PlanTable; plan_version: PlanVersionTable; subscription: SubscriptionTable;
   subscription_event: SubscriptionEventTable; platform_invoice: PlatformInvoiceTable; platform_payment: PlatformPaymentTable;
   payment_webhook_event: PaymentWebhookEventTable; notification: NotificationTable; support_access_grant: SupportAccessGrantTable;
-  audit_log: AuditLogTable; numbering_sequence: NumberingSequenceTable; outbox_event: OutboxEventTable;
+  audit_log: AuditLogTable; numbering_sequence: NumberingSequenceTable; outbox_event: OutboxEventTable; contact: ContactTable;
 }
