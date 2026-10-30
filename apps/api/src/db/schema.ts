@@ -89,13 +89,13 @@ export interface ProductTable {
   unit: Generated<string>; sale_price: ColumnType<string, number | string | undefined, number | string>; purchase_price: ColumnType<string | null, number | string | null | undefined, number | string | null>;
   vat_rate: ColumnType<string, number | string | undefined, number | string>; archived_at: TsNullable; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
-export type SalesDocType = 'quote' | 'invoice';
-export type SalesDocStatus = 'draft' | 'sent' | 'accepted' | 'refused' | 'invoiced' | 'issued' | 'partially_paid' | 'paid';
+export type SalesDocType = 'quote' | 'invoice' | 'credit_note';
+export type SalesDocStatus = 'draft' | 'sent' | 'accepted' | 'refused' | 'invoiced' | 'issued' | 'partially_paid' | 'paid' | 'credited';
 type NumDefault = ColumnType<string, number | string | undefined, number | string>;
 export interface SalesDocumentTable {
   company_id: string; id: Generated<string>; type: SalesDocType; status: Generated<SalesDocStatus>; number: string | null; contact_id: string;
   customer: JsonDefault<Record<string, unknown>>; issue_date: DateCol; due_date: DateNullable; valid_until: DateNullable; currency: Generated<string>; notes: string | null;
-  total_ht: NumDefault; total_vat: NumDefault; total_ttc: NumDefault; paid_amount: NumDefault; source_quote_id: string | null;
+  total_ht: NumDefault; total_vat: NumDefault; total_ttc: NumDefault; paid_amount: NumDefault; credited_amount: NumDefault; source_quote_id: string | null; source_invoice_id: string | null;
   validated_at: TsNullable; validated_by: string | null; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 export interface SalesDocumentLineTable {
@@ -108,6 +108,12 @@ export interface SalesPaymentTable {
   created_by: string | null; created_at: Generated<Date>;
 }
 
+export type ReminderChannel = 'phone' | 'whatsapp' | 'sms' | 'email' | 'letter' | 'visit';
+export interface SalesReminderTable {
+  company_id: string; id: Generated<string>; document_id: string; channel: ReminderChannel; note: string | null; promised_on: DateNullable;
+  created_by: string | null; created_at: Generated<Date>;
+}
+
 export interface DB {
   user_account: UserAccountTable; platform_role_assignment: PlatformRoleAssignmentTable; user_session: UserSessionTable;
   company: CompanyTable; company_membership: CompanyMembershipTable; role: RoleTable; membership_role: MembershipRoleTable;
@@ -115,5 +121,5 @@ export interface DB {
   subscription_event: SubscriptionEventTable; platform_invoice: PlatformInvoiceTable; platform_payment: PlatformPaymentTable;
   payment_webhook_event: PaymentWebhookEventTable; notification: NotificationTable; support_access_grant: SupportAccessGrantTable;
   audit_log: AuditLogTable; numbering_sequence: NumberingSequenceTable; outbox_event: OutboxEventTable; contact: ContactTable;
-  product: ProductTable; sales_document: SalesDocumentTable; sales_document_line: SalesDocumentLineTable; sales_payment: SalesPaymentTable;
+  product: ProductTable; sales_document: SalesDocumentTable; sales_document_line: SalesDocumentLineTable; sales_payment: SalesPaymentTable; sales_reminder: SalesReminderTable;
 }

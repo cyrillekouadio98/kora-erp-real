@@ -4,14 +4,15 @@ import { isUuid } from '../../common/ids';
 import { nextNumber } from '../../common/numbering';
 import type { TenantInfo } from '../../common/request-context';
 import { DatabaseService, TenantTrx } from '../../db/database.service';
-import type { PaymentMethod, SalesDocType } from '../../db/schema';
+import type { PaymentMethod, ReminderChannel, SalesDocStatus, SalesDocType } from '../../db/schema';
 import { AuditService } from '../audit/audit.service';
 
 export interface LineInput { productId?: string | null; description: string; quantity: number; unit?: string | null; unitPrice: number; discountPct?: number; vatRate: number }
 export interface DocInput { contactId: string; issueDate?: string; dueDate?: string | null; validUntil?: string | null; notes?: string | null; lines: LineInput[] }
 
-const PREFIX: Record<SalesDocType, string> = { quote: 'DEV', invoice: 'FAC' };
-const LABEL: Record<SalesDocType, string> = { quote: 'Devis', invoice: 'Facture' };
+const PREFIX: Record<SalesDocType, string> = { quote: 'DEV', invoice: 'FAC', credit_note: 'AV' };
+const LABEL: Record<SalesDocType, string> = { quote: 'Devis', invoice: 'Facture', credit_note: 'Avoir' };
+const OPEN_INVOICE: SalesDocStatus[] = ['issued', 'partially_paid'];
 const QUOTE_VALIDITY_DAYS = 30;
 
 export const today = () => new Date().toISOString().slice(0, 10);
@@ -22,6 +23,18 @@ export function computeLine(l: Pick<LineInput, 'quantity' | 'unitPrice' | 'disco
   const ht = Math.round(l.quantity * l.unitPrice * (1 - (l.discountPct ?? 0) / 100));
   return { ht, vat: Math.round((ht * l.vatRate) / 100) };
 }
+/** Statut d'une facture émise d'après ce qui a été encaissé et crédité par avoir. */
+export function invoiceStatus(total: number, paid: number, credited: number): SalesDocStatus {
+  if (credited >= total) return 'credited';
+  if (paid + credited >= total) return 'paid';
+  return paid > 0 || credited > 0 ? 'partially_paid' : 'issued';
+}
+/** Reste à payer et trop-perçu (le client a payé plus que ce qui reste dû après avoir). */
+export const balance = (d: { total_ttc: string; paid_amount: string; credited_amount: string }) => {
+  const due = Number(d.total_ttc) - Number(d.paid_amount) - Number(d.credited_amount);
+  return { remaining: Math.max(0, due), refundDue: Math.max(0, -due) };
+};
+
 export function computeTotals(lines: LineInput[]) {
   const totals = lines.map(computeLine);
   const ht = totals.reduce((s, x) => s + x.ht, 0);
@@ -70,7 +83,8 @@ export class SalesService {
     return this.db.tenant(t.ctx, async (trx) => {
       let q = trx.selectFrom('sales_document as d').innerJoin('contact as c', (j) => j.onRef('c.id', '=', 'd.contact_id').onRef('c.company_id', '=', 'd.company_id'))
         .select(['d.id', 'd.type', 'd.status', 'd.number', 'd.issue_date as issueDate', 'd.due_date as dueDate', 'd.valid_until as validUntil',
-          'd.total_ht as totalHt', 'd.total_vat as totalVat', 'd.total_ttc as totalTtc', 'd.paid_amount as paidAmount', 'd.currency', 'c.id as contactId', 'c.name as contactName', 'c.code as contactCode'])
+          'd.total_ht as totalHt', 'd.total_vat as totalVat', 'd.total_ttc as totalTtc', 'd.paid_amount as paidAmount', 'd.credited_amount as creditedAmount', 'd.currency',
+          'c.id as contactId', 'c.name as contactName', 'c.code as contactCode'])
         .where('d.type', '=', f.type).orderBy('d.created_at', 'desc').limit(1000);
       if (f.status) q = q.where('d.status', '=', f.status as any);
       if (f.q) {
@@ -80,8 +94,9 @@ export class SalesService {
       const rows = await q.execute();
       const now = today();
       return rows.map((r) => ({
-        ...r, totalHt: Number(r.totalHt), totalVat: Number(r.totalVat), totalTtc: Number(r.totalTtc), paidAmount: Number(r.paidAmount),
-        overdue: r.type === 'invoice' && ['issued', 'partially_paid'].includes(r.status) && !!r.dueDate && r.dueDate < now,
+        ...r, totalHt: Number(r.totalHt), totalVat: Number(r.totalVat), totalTtc: Number(r.totalTtc), paidAmount: Number(r.paidAmount), creditedAmount: Number(r.creditedAmount),
+        remaining: r.type === 'invoice' && r.status !== 'draft' ? balance({ total_ttc: r.totalTtc, paid_amount: r.paidAmount, credited_amount: r.creditedAmount }).remaining : 0,
+        overdue: r.type === 'invoice' && OPEN_INVOICE.includes(r.status) && !!r.dueDate && r.dueDate < now,
       }));
     });
   }
@@ -94,8 +109,12 @@ export class SalesService {
       const lines = await trx.selectFrom('sales_document_line').selectAll().where('document_id', '=', id).orderBy('position').execute();
       const payments = await trx.selectFrom('sales_payment').select(['id', 'amount', 'paid_on as paidOn', 'method', 'reference', 'created_at as createdAt'])
         .where('document_id', '=', id).orderBy('paid_on').orderBy('created_at').execute();
-      const related = await trx.selectFrom('sales_document').select(['id', 'type', 'number', 'status'])
-        .where((eb) => eb.or([eb('id', '=', d.source_quote_id ?? id), eb('source_quote_id', '=', id)])).where('id', '!=', id).execute();
+      const source = d.source_quote_id ?? d.source_invoice_id ?? id;
+      const related = await trx.selectFrom('sales_document').select(['id', 'type', 'number', 'status', 'total_ttc as totalTtc'])
+        .where((eb) => eb.or([eb('id', '=', source), eb('source_quote_id', '=', id), eb('source_invoice_id', '=', id)])).where('id', '!=', id).orderBy('created_at').execute();
+      const reminders = await trx.selectFrom('sales_reminder as r').leftJoin('user_account as u', 'u.id', 'r.created_by')
+        .select(['r.id', 'r.channel', 'r.note', 'r.promised_on as promisedOn', 'r.created_at as createdAt', 'u.full_name as by'])
+        .where('r.document_id', '=', id).orderBy('r.created_at', 'desc').execute();
       const vatBreakdown = Object.values(lines.reduce<Record<string, { rate: number; base: number; vat: number }>>((acc, l) => {
         const k = String(Number(l.vat_rate));
         acc[k] ??= { rate: Number(l.vat_rate), base: 0, vat: 0 };
@@ -106,8 +125,9 @@ export class SalesService {
         id: d.id, type: d.type, status: d.status, number: d.number, issueDate: d.issue_date, dueDate: d.due_date, validUntil: d.valid_until,
         currency: d.currency, notes: d.notes, validatedAt: d.validated_at, sourceQuoteId: d.source_quote_id,
         customer: d.status === 'draft' ? contact : { ...contact, ...(d.customer as object) }, contact,
-        totalHt: Number(d.total_ht), totalVat: Number(d.total_vat), totalTtc: Number(d.total_ttc), paidAmount: Number(d.paid_amount),
-        remaining: Number(d.total_ttc) - Number(d.paid_amount), vatBreakdown, related,
+        totalHt: Number(d.total_ht), totalVat: Number(d.total_vat), totalTtc: Number(d.total_ttc), paidAmount: Number(d.paid_amount), creditedAmount: Number(d.credited_amount),
+        ...(d.type === 'invoice' ? balance(d) : { remaining: 0, refundDue: 0 }), sourceInvoiceId: d.source_invoice_id, vatBreakdown, reminders,
+        related: related.map((r) => ({ ...r, totalTtc: Number(r.totalTtc) })),
         lines: lines.map((l) => ({ id: l.id, productId: l.product_id, description: l.description, quantity: Number(l.quantity), unit: l.unit,
           unitPrice: Number(l.unit_price), discountPct: Number(l.discount_pct), vatRate: Number(l.vat_rate), totalHt: Number(l.total_ht), totalVat: Number(l.total_vat) })),
         payments: payments.map((p) => ({ ...p, amount: Number(p.amount) })),
@@ -134,6 +154,7 @@ export class SalesService {
     await this.db.tenant(t.ctx, async (trx) => {
       const d = await this.doc(trx, id, true);
       if (d.status !== 'draft') throw conflict(`${LABEL[d.type]} ${d.number} est validé(e) : il n'est plus modifiable.`, 'document_locked');
+      if (d.type === 'credit_note' && input.contactId && input.contactId !== d.contact_id) throw badRequest("Le client d'un avoir est celui de la facture d'origine.", undefined, 'credit_note_contact');
       if (input.contactId) await this.customer(trx, input.contactId);
       const patch: Record<string, unknown> = {};
       if (input.contactId) patch.contact_id = input.contactId;
@@ -168,15 +189,17 @@ export class SalesService {
       if (d.status !== 'draft') throw conflict('Ce document est déjà validé.', 'already_validated');
       const lines = await trx.selectFrom('sales_document_line').select('id').where('document_id', '=', id).execute();
       if (!lines.length) throw badRequest('Ajoutez au moins une ligne avant de valider.', undefined, 'no_lines');
-      const c = await this.customer(trx, d.contact_id);
+      const c = d.type === 'credit_note'
+        ? await trx.selectFrom('contact').selectAll().where('id', '=', d.contact_id).executeTakeFirstOrThrow()
+        : await this.customer(trx, d.contact_id);
+      if (d.type === 'credit_note') await this.applyCreditNote(trx, d);
       const issue = today();
       const number = await nextNumber(trx, t.companyId, d.type, PREFIX[d.type], Number(issue.slice(0, 4)));
       const customer = { code: c.code, name: c.name, taxId: c.tax_id, rccm: c.rccm, address: c.address, city: c.city, email: c.email, phone: c.phone };
-      const dates = d.type === 'invoice'
-        ? { due_date: d.due_date && d.due_date >= issue ? d.due_date : addDays(issue, c.payment_terms_days) }
-        : { valid_until: d.valid_until && d.valid_until >= issue ? d.valid_until : addDays(issue, QUOTE_VALIDITY_DAYS) };
+      const dates = d.type === 'invoice' ? { due_date: d.due_date && d.due_date >= issue ? d.due_date : addDays(issue, c.payment_terms_days) }
+        : d.type === 'quote' ? { valid_until: d.valid_until && d.valid_until >= issue ? d.valid_until : addDays(issue, QUOTE_VALIDITY_DAYS) } : {};
       await trx.updateTable('sales_document').set({
-        status: d.type === 'invoice' ? 'issued' : 'sent', number, issue_date: issue, customer: JSON.stringify(customer), validated_at: new Date(), validated_by: t.ctx.userId, ...dates,
+        status: d.type === 'quote' ? 'sent' : 'issued', number, issue_date: issue, customer: JSON.stringify(customer), validated_at: new Date(), validated_by: t.ctx.userId, ...dates,
       }).where('id', '=', id).execute();
       await this.audit.tenant(trx, t.ctx, { action: `${d.type}.validated`, entityType: 'sales_document', entityId: id, data: { number, customer: c.name, totalTtc: Number(d.total_ttc) } });
     });
@@ -215,17 +238,84 @@ export class SalesService {
   async addPayment(t: TenantInfo, id: string, p: { amount: number; paidOn?: string; method: PaymentMethod; reference?: string | null }) {
     await this.db.tenant(t.ctx, async (trx) => {
       const d = await this.doc(trx, id, true);
-      if (d.type !== 'invoice' || !['issued', 'partially_paid'].includes(d.status)) throw conflict("Un encaissement s'enregistre sur une facture émise et non soldée.", 'invalid_state');
-      const remaining = Number(d.total_ttc) - Number(d.paid_amount);
+      if (d.type !== 'invoice' || !OPEN_INVOICE.includes(d.status)) throw conflict("Un encaissement s'enregistre sur une facture émise et non soldée.", 'invalid_state');
+      const { remaining } = balance(d);
       if (p.amount > remaining) throw badRequest(`Le montant dépasse le reste à payer (${remaining.toLocaleString('fr-FR')} FCFA).`, undefined, 'amount_too_high');
       const paidOn = p.paidOn ?? today();
       if (paidOn > today()) throw badRequest("La date d'encaissement ne peut pas être dans le futur.", undefined, 'future_date');
       await trx.insertInto('sales_payment').values({ company_id: t.companyId, document_id: id, amount: p.amount, paid_on: paidOn, method: p.method, reference: p.reference ?? null, created_by: t.ctx.userId }).execute();
       const paid = Number(d.paid_amount) + p.amount;
-      await trx.updateTable('sales_document').set({ paid_amount: paid, status: paid >= Number(d.total_ttc) ? 'paid' : 'partially_paid' }).where('id', '=', id).execute();
+      await trx.updateTable('sales_document').set({ paid_amount: paid, status: invoiceStatus(Number(d.total_ttc), paid, Number(d.credited_amount)) }).where('id', '=', id).execute();
       await this.audit.tenant(trx, t.ctx, { action: 'invoice.payment_recorded', entityType: 'sales_document', entityId: id, data: { number: d.number, amount: p.amount, method: p.method } });
     });
     return this.get(t, id);
+  }
+
+  /** L'avoir validé diminue le reste à payer de sa facture ; il ne peut pas dépasser ce qui n'a pas encore été crédité. */
+  private async applyCreditNote(trx: TenantTrx, cn: { source_invoice_id: string | null; total_ttc: string }) {
+    const inv = await this.doc(trx, cn.source_invoice_id!, true);
+    const creditable = Number(inv.total_ttc) - Number(inv.credited_amount);
+    if (Number(cn.total_ttc) > creditable) {
+      throw badRequest(`L'avoir (${Number(cn.total_ttc).toLocaleString('fr-FR')} FCFA) dépasse le montant encore créditable de la facture ${inv.number} (${creditable.toLocaleString('fr-FR')} FCFA).`, undefined, 'credit_too_high');
+    }
+    const credited = Number(inv.credited_amount) + Number(cn.total_ttc);
+    await trx.updateTable('sales_document').set({ credited_amount: credited, status: invoiceStatus(Number(inv.total_ttc), Number(inv.paid_amount), credited) }).where('id', '=', inv.id).execute();
+  }
+
+  /** Prépare un avoir reprenant les lignes de la facture (à réduire pour un avoir partiel). */
+  async createCreditNote(t: TenantInfo, invoiceId: string) {
+    const id = await this.db.tenant(t.ctx, async (trx) => {
+      const inv = await this.doc(trx, invoiceId, true);
+      if (inv.type !== 'invoice' || inv.status === 'draft') throw conflict("Un avoir s'établit sur une facture émise. Un brouillon se modifie ou se supprime.", 'invalid_state');
+      if (Number(inv.credited_amount) >= Number(inv.total_ttc)) throw conflict(`La facture ${inv.number} est déjà entièrement annulée par avoir.`, 'already_credited');
+      const pending = await trx.selectFrom('sales_document').select('id').where('source_invoice_id', '=', inv.id).where('status', '=', 'draft').executeTakeFirst();
+      if (pending) return pending.id;
+      const cn = await trx.insertInto('sales_document').values({
+        company_id: t.companyId, type: 'credit_note', contact_id: inv.contact_id, issue_date: today(), source_invoice_id: inv.id, notes: `Avoir sur la facture ${inv.number}`,
+        total_ht: inv.total_ht, total_vat: inv.total_vat, total_ttc: inv.total_ttc, number: null, due_date: null, valid_until: null, source_quote_id: null, validated_by: null, created_by: t.ctx.userId,
+      }).returning('id').executeTakeFirstOrThrow();
+      const lines = await trx.selectFrom('sales_document_line').selectAll().where('document_id', '=', inv.id).orderBy('position').execute();
+      await trx.insertInto('sales_document_line').values(lines.map(({ id: _id, document_id: _d, ...l }) => ({ ...l, document_id: cn.id }))).execute();
+      await this.audit.tenant(trx, t.ctx, { action: 'credit_note.created', entityType: 'sales_document', entityId: cn.id, data: { invoice: inv.number } });
+      return cn.id;
+    });
+    return this.get(t, id);
+  }
+
+  async addReminder(t: TenantInfo, id: string, r: { channel: ReminderChannel; note?: string | null; promisedOn?: string | null }) {
+    await this.db.tenant(t.ctx, async (trx) => {
+      const d = await this.doc(trx, id);
+      if (d.type !== 'invoice' || !OPEN_INVOICE.includes(d.status)) throw conflict('Seule une facture émise et non soldée peut être relancée.', 'invalid_state');
+      if (r.promisedOn && r.promisedOn < today()) throw badRequest('La date de paiement promise ne peut pas être passée.', undefined, 'past_date');
+      await trx.insertInto('sales_reminder').values({ company_id: t.companyId, document_id: id, channel: r.channel, note: r.note ?? null, promised_on: r.promisedOn ?? null, created_by: t.ctx.userId }).execute();
+      await this.audit.tenant(trx, t.ctx, { action: 'invoice.reminder_recorded', entityType: 'sales_document', entityId: id, data: { number: d.number, channel: r.channel } });
+    });
+    return this.get(t, id);
+  }
+
+  /** Créances clients : factures non soldées, ancienneté du retard et dernière relance. */
+  async receivables(t: TenantInfo) {
+    return this.db.tenant(t.ctx, async (trx) => {
+      const now = today();
+      const rows = await trx.selectFrom('sales_document as d').innerJoin('contact as c', (j) => j.onRef('c.id', '=', 'd.contact_id').onRef('c.company_id', '=', 'd.company_id'))
+        .select((eb) => ['d.id', 'd.number', 'd.issue_date', 'd.due_date', 'd.total_ttc', 'd.paid_amount', 'd.credited_amount', 'c.id as contactId', 'c.code as contactCode', 'c.name as contactName', 'c.phone', 'c.email',
+          eb.selectFrom('sales_reminder as r').whereRef('r.document_id', '=', 'd.id').select(eb.fn.countAll<string>().as('n')).as('reminderCount'),
+          eb.selectFrom('sales_reminder as r').whereRef('r.document_id', '=', 'd.id').select((e) => e.fn.max('r.created_at').as('m')).as('lastReminderAt'),
+          eb.selectFrom('sales_reminder as r').whereRef('r.document_id', '=', 'd.id').where('r.promised_on', 'is not', null).orderBy('r.created_at', 'desc').limit(1).select('r.promised_on').as('promisedOn')])
+        .where('d.type', '=', 'invoice').where('d.status', 'in', OPEN_INVOICE).orderBy('d.due_date').execute();
+      const invoices = rows.map((r) => {
+        const daysLate = r.due_date ? Math.floor((Date.parse(now) - Date.parse(r.due_date)) / 86400_000) : 0;
+        return {
+          id: r.id, number: r.number, issueDate: r.issue_date, dueDate: r.due_date, daysLate, remaining: balance(r).remaining,
+          bucket: daysLate <= 0 ? 'not_due' : daysLate <= 30 ? 'd30' : daysLate <= 60 ? 'd60' : daysLate <= 90 ? 'd90' : 'over90',
+          contact: { id: r.contactId, code: r.contactCode, name: r.contactName, phone: r.phone, email: r.email },
+          reminderCount: Number(r.reminderCount), lastReminderAt: r.lastReminderAt, promisedOn: r.promisedOn,
+        };
+      });
+      const totals = { not_due: 0, d30: 0, d60: 0, d90: 0, over90: 0 } as Record<string, number>;
+      for (const i of invoices) totals[i.bucket] += i.remaining;
+      return { invoices, totals, total: invoices.reduce((s, i) => s + i.remaining, 0) };
+    });
   }
 
   /** Indicateurs du tableau de bord : chiffre d'affaires, encaissements et créances. */
@@ -233,15 +323,17 @@ export class SalesService {
     return this.db.tenant(t.ctx, async (trx) => {
       const now = today();
       const monthStart = `${now.slice(0, 7)}-01`;
-      const inv = await trx.selectFrom('sales_document').select(['status', 'issue_date', 'due_date', 'total_ht', 'total_ttc', 'paid_amount'])
+      const inv = await trx.selectFrom('sales_document').select(['status', 'issue_date', 'due_date', 'total_ht', 'total_ttc', 'paid_amount', 'credited_amount'])
         .where('type', '=', 'invoice').where('status', '!=', 'draft').execute();
+      const credits = await trx.selectFrom('sales_document').select('total_ht').where('type', '=', 'credit_note').where('status', '=', 'issued').where('issue_date', '>=', monthStart).execute();
       const pay = await trx.selectFrom('sales_payment').select('amount').where('paid_on', '>=', monthStart).execute();
       const quotes = await trx.selectFrom('sales_document').select((eb) => eb.fn.countAll<string>().as('c')).where('type', '=', 'quote').where('status', 'in', ['sent', 'accepted']).executeTakeFirstOrThrow();
-      const open = inv.filter((i) => i.status === 'issued' || i.status === 'partially_paid');
+      const open = inv.filter((i) => OPEN_INVOICE.includes(i.status));
       const overdue = open.filter((i) => i.due_date && i.due_date < now);
-      const due = (rows: typeof inv) => rows.reduce((s, i) => s + Number(i.total_ttc) - Number(i.paid_amount), 0);
+      const due = (rows: typeof inv) => rows.reduce((s, i) => s + balance(i).remaining, 0);
       return {
-        revenueMonthHt: inv.filter((i) => i.issue_date >= monthStart).reduce((s, i) => s + Number(i.total_ht), 0),
+        // Chiffre d'affaires net : factures émises dans le mois moins avoirs émis dans le mois.
+        revenueMonthHt: inv.filter((i) => i.issue_date >= monthStart).reduce((s, i) => s + Number(i.total_ht), 0) - credits.reduce((s, c) => s + Number(c.total_ht), 0),
         collectedMonth: pay.reduce((s, p) => s + Number(p.amount), 0), outstanding: due(open), overdueAmount: due(overdue), overdueCount: overdue.length, openQuotes: Number(quotes.c),
       };
     });
@@ -251,8 +343,9 @@ export class SalesService {
     const rows = await this.list(t, { type });
     await this.db.tenant(t.ctx, (trx) => this.audit.tenant(trx, t.ctx, { action: `${type}.exported`, data: { count: rows.length } }));
     return rows.filter((r) => r.number).map((r) => ({
-      numero: r.number, date: r.issueDate, echeance: r.type === 'invoice' ? r.dueDate : r.validUntil, client_code: r.contactCode, client: r.contactName,
-      statut: r.status, total_ht: r.totalHt, tva: r.totalVat, total_ttc: r.totalTtc, ...(r.type === 'invoice' ? { encaisse: r.paidAmount, reste_a_payer: r.totalTtc - r.paidAmount } : {}),
+      numero: r.number, date: r.issueDate, ...(r.type === 'credit_note' ? {} : { echeance: r.type === 'invoice' ? r.dueDate : r.validUntil }), client_code: r.contactCode, client: r.contactName,
+      statut: r.status, total_ht: r.totalHt, tva: r.totalVat, total_ttc: r.totalTtc,
+      ...(r.type === 'invoice' ? { encaisse: r.paidAmount, avoirs: r.creditedAmount, reste_a_payer: r.remaining } : {}),
     }));
   }
 }

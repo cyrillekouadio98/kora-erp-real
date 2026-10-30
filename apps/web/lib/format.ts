@@ -25,13 +25,20 @@ export const ACTION_LABELS: Record<string, string> = {
   'quote.created': 'Devis créé', 'quote.updated': 'Devis modifié', 'quote.deleted': 'Brouillon de devis supprimé', 'quote.validated': 'Devis envoyé',
   'quote.accepted': 'Devis accepté', 'quote.refused': 'Devis refusé', 'quote.invoiced': 'Devis transformé en facture', 'quote.exported': 'Devis exportés',
   'invoice.created': 'Facture créée', 'invoice.updated': 'Facture modifiée', 'invoice.deleted': 'Brouillon de facture supprimé', 'invoice.validated': 'Facture émise',
-  'invoice.payment_recorded': 'Encaissement enregistré', 'invoice.exported': 'Factures exportées',
+  'invoice.payment_recorded': 'Encaissement enregistré', 'invoice.exported': 'Factures exportées', 'invoice.reminder_recorded': 'Relance client enregistrée',
+  'credit_note.created': 'Avoir créé', 'credit_note.updated': 'Avoir modifié', 'credit_note.deleted': 'Brouillon d’avoir supprimé', 'credit_note.validated': 'Avoir émis',
+  'credit_note.exported': 'Avoirs exportés',
 };
 
 export const DOC_STATUS: Record<string, [string, 'ok' | 'warn' | 'crit' | 'mute']> = {
   draft: ['Brouillon', 'mute'], sent: ['Envoyé', 'warn'], accepted: ['Accepté', 'ok'], refused: ['Refusé', 'crit'], invoiced: ['Facturé', 'ok'],
-  issued: ['À encaisser', 'warn'], partially_paid: ['Payée en partie', 'warn'], paid: ['Payée', 'ok'],
+  issued: ['À encaisser', 'warn'], partially_paid: ['Payée en partie', 'warn'], paid: ['Payée', 'ok'], credited: ['Annulée par avoir', 'mute'],
 };
+/** Libellé et ton d'un statut selon le type de document (« émis » n'a pas le même sens pour une facture et un avoir). */
+export const docStatus = (type: string, status: string): [string, 'ok' | 'warn' | 'crit' | 'mute'] =>
+  type === 'credit_note' && status === 'issued' ? ['Émis', 'ok'] : DOC_STATUS[status];
+export const REMINDER_CHANNELS: Record<string, string> = { phone: 'Appel téléphonique', whatsapp: 'WhatsApp', sms: 'SMS', email: 'E-mail', letter: 'Courrier', visit: 'Visite' };
 export const PAYMENT_METHODS: Record<string, string> = { cash: 'Espèces', mobile_money: 'Mobile money', bank_transfer: 'Virement', cheque: 'Chèque', card: 'Carte bancaire' };
-export const DOC_LABEL = { quote: 'Devis', invoice: 'Facture' } as const;
+export const DOC_LABEL = { quote: 'Devis', invoice: 'Facture', credit_note: 'Avoir' } as const;
+export type DocType = keyof typeof DOC_LABEL;
 export const VAT_RATES = [18, 9, 0];

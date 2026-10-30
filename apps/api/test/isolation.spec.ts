@@ -41,10 +41,12 @@ describe('Isolation des données entre entreprises', () => {
     const invoice = await B.agent.post('/company/sales/documents').send({ type: 'invoice', contactId: contact.body.id, lines: [{ description: 'Ligne secrète Bêta', quantity: 1, unitPrice: 5000, vatRate: 18 }] });
     await B.agent.post(`/company/sales/documents/${invoice.body.id}/validate`);
     await B.agent.post(`/company/sales/documents/${invoice.body.id}/payments`).send({ amount: 1000, method: 'cash', reference: 'PAIEMENT-SECRET-BETA' });
+    await B.agent.post(`/company/sales/documents/${invoice.body.id}/reminders`).send({ channel: 'phone', note: 'RELANCE-SECRETE-BETA' });
+    const creditNote = await B.agent.post(`/company/sales/documents/${invoice.body.id}/credit-note`);
     const sessions = await B.agent.get('/auth/sessions');
     const support = await platformUser(app, 'support');
     const grant = await support.agent.post('/platform/support-access').send({ companyId: B.companyId, reason: 'Diagnostic de test isolation', scope: ['users'] });
-    for (const r of [contact, product, quote, invoice]) if (r.status !== 201) throw new Error(`données de B : ${r.status} ${JSON.stringify(r.body)}`);
+    for (const r of [contact, product, quote, invoice, creditNote]) if (r.status >= 300) throw new Error(`données de B : ${r.status} ${JSON.stringify(r.body)}`);
     expect((await B.agent.get(`/company/sales/documents/${invoice.body.id}`)).body).toMatchObject({ status: 'partially_paid', paidAmount: 1000 });
     const c = await ownerClient();
     const sub = await c.query('SELECT id FROM subscription WHERE company_id = $1', [B.companyId]);
@@ -53,9 +55,9 @@ describe('Isolation des données entre entreprises', () => {
     await c.end();
     Object.assign(bIds, {
       company: B.companyId, role: role.body.id, invitation: inv.body.id, membership: members.body[0].id,
-      session: sessions.body[0].id, grant: grant.body.id, invoice: invB.rows[0].id, contact: contact.body.id, product: product.body.id, quote: quote.body.id, salesInvoice: invoice.body.id,
+      session: sessions.body[0].id, grant: grant.body.id, invoice: invB.rows[0].id, contact: contact.body.id, product: product.body.id, quote: quote.body.id, salesInvoice: invoice.body.id, creditNote: creditNote.body.id,
     });
-    bSecrets = [...Object.values(bIds), B.email, 'Entreprise Bêta', 'Rôle secret Bêta', 'invite.beta@test.ci', 'Client secret Bêta', 'client.beta@test.ci', 'Article secret Bêta', 'Ligne secrète Bêta', 'PAIEMENT-SECRET-BETA'];
+    bSecrets = [...Object.values(bIds), B.email, 'Entreprise Bêta', 'Rôle secret Bêta', 'invite.beta@test.ci', 'Client secret Bêta', 'client.beta@test.ci', 'Article secret Bêta', 'Ligne secrète Bêta', 'PAIEMENT-SECRET-BETA', 'RELANCE-SECRETE-BETA'];
   });
 
   afterAll(async () => { await app.close(); });

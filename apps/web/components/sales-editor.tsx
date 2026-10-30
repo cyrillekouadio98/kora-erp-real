@@ -2,11 +2,13 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { DOC_LABEL, money, VAT_RATES } from '@/lib/format';
+import { DOC_LABEL, DocType, money, VAT_RATES } from '@/lib/format';
 import { Alert, useAction } from '@/components/ui';
 
 interface Line { productId: string | null; description: string; quantity: number | string; unit: string | null; unitPrice: number | string; discountPct: number | string; vatRate: number }
 const EMPTY_LINE: Line = { productId: null, description: '', quantity: 1, unit: null, unitPrice: 0, discountPct: 0, vatRate: 18 };
+/** Ne garde que les champs saisissables d'une ligne (l'API refuse les champs calculés comme totalHt). */
+const toLine = (l: any): Line => ({ productId: l.productId ?? null, description: l.description ?? '', quantity: l.quantity ?? 1, unit: l.unit ?? null, unitPrice: l.unitPrice ?? 0, discountPct: l.discountPct ?? 0, vatRate: l.vatRate ?? 18 });
 
 /** Même règle que l'API : chaque ligne arrondie au franc, puis additionnée. */
 function lineTotals(l: Line) {
@@ -15,21 +17,25 @@ function lineTotals(l: Line) {
 }
 
 /** Saisie d'un brouillon de devis ou de facture (création ou modification). */
-export function SalesEditor({ type, doc, onSaved }: { type: 'quote' | 'invoice'; doc?: any; onSaved: (doc: any) => void }) {
+export function SalesEditor({ type, doc, onSaved, onDirtyChange }: { type: DocType; doc?: any; onSaved: (doc: any) => void; onDirtyChange?: (dirty: boolean) => void }) {
+  const isCredit = type === 'credit_note';
   const [contacts, setContacts] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [contactId, setContactId] = useState<string>(doc?.contact?.id ?? '');
   const [notes, setNotes] = useState<string>(doc?.notes ?? '');
   const [limitDate, setLimitDate] = useState<string>((type === 'invoice' ? doc?.dueDate : doc?.validUntil) ?? '');
-  const [lines, setLines] = useState<Line[]>(doc?.lines?.length ? doc.lines.map((l: any) => ({ ...EMPTY_LINE, ...l })) : [{ ...EMPTY_LINE }]);
+  const [lines, setLines] = useState<Line[]>(doc?.lines?.length ? doc.lines.map(toLine) : [{ ...EMPTY_LINE }]);
+  const [dirty, setDirty] = useState(false);
   const { busy, error, run } = useAction();
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty]); // eslint-disable-line
 
   useEffect(() => {
     api('/company/contacts').then((c) => setContacts(c.filter((x: any) => x.kind !== 'supplier')), () => {});
     api('/company/products').then(setProducts, () => {});
   }, []);
 
-  const setLine = (i: number, patch: Partial<Line>) => setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  const editLines = (next: Line[]) => { setDirty(true); setLines(next); };
+  const setLine = (i: number, patch: Partial<Line>) => editLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const pickProduct = (i: number, id: string) => {
     const p = products.find((x) => x.id === id);
     setLine(i, p ? { productId: p.id, description: p.name, unit: p.unit, unitPrice: p.salePrice, vatRate: p.vatRate } : { productId: null });
@@ -41,28 +47,30 @@ export function SalesEditor({ type, doc, onSaved }: { type: 'quote' | 'invoice';
   const save = () => run(async () => {
     const body: any = {
       contactId, notes: notes || null,
-      lines: lines.map((l) => ({ ...l, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), discountPct: Number(l.discountPct || 0), unit: l.unit || null })),
-      [type === 'invoice' ? 'dueDate' : 'validUntil']: limitDate || null,
+      lines: lines.map(toLine).map((l) => ({ ...l, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), discountPct: Number(l.discountPct || 0), unit: l.unit || null })),
+      ...(isCredit ? {} : { [type === 'invoice' ? 'dueDate' : 'validUntil']: limitDate || null }),
     };
-    onSaved(doc ? await api(`/company/sales/documents/${doc.id}`, { method: 'PATCH', body }) : await api('/company/sales/documents', { body: { ...body, type } }));
+    const saved = doc ? await api(`/company/sales/documents/${doc.id}`, { method: 'PATCH', body }) : await api('/company/sales/documents', { body: { ...body, type } });
+    setDirty(false);
+    onSaved(saved);
   });
 
   return (
-    <form className="card form" onSubmit={(e) => { e.preventDefault(); save(); }}>
+    <form className="card form" onChange={() => setDirty(true)} onSubmit={(e) => { e.preventDefault(); save(); }}>
       <header><h2>{doc ? `${DOC_LABEL[type]} — brouillon` : type === 'invoice' ? 'Nouvelle facture' : 'Nouveau devis'}</h2>
-        <span className="small muted">Le numéro définitif est attribué à la validation.</span></header>
+        <span className="small muted">{isCredit ? 'Réduisez les quantités ou les prix pour un avoir partiel.' : 'Le numéro définitif est attribué à la validation.'}</span></header>
       <Alert>{error}</Alert>
       <div className="grid2">
         <label className="field">Client
-          <select className="input" required value={contactId} onChange={(e) => setContactId(e.target.value)}>
+          <select className="input" required disabled={isCredit} value={contactId} onChange={(e) => setContactId(e.target.value)}>
             <option value="">— Choisir un client —</option>
             {contacts.map((c) => <option key={c.id} value={c.id}>{c.code} · {c.name}</option>)}
           </select>
           {!contacts.length && <span className="small muted" style={{ fontWeight: 400 }}>Aucun client : <Link href="/app/contacts">créez-en un d'abord</Link>.</span>}
         </label>
-        <label className="field">{type === 'invoice' ? 'Échéance (vide : selon le délai de paiement du client)' : 'Valable jusqu’au (vide : 30 jours)'}
+        {!isCredit && <label className="field">{type === 'invoice' ? 'Échéance (vide : selon le délai de paiement du client)' : 'Valable jusqu’au (vide : 30 jours)'}
           <input className="input" type="date" value={limitDate} onChange={(e) => setLimitDate(e.target.value)} />
-        </label>
+        </label>}
       </div>
 
       <div className="table-wrap"><table className="lines">
@@ -79,13 +87,13 @@ export function SalesEditor({ type, doc, onSaved }: { type: 'quote' | 'invoice';
               <td><input className="input n" type="number" min="0" max="100" step="any" value={l.discountPct} onChange={(e) => setLine(i, { discountPct: e.target.value })} aria-label={`Remise ligne ${i + 1}`} style={{ width: 70 }} /></td>
               <td><select className="input" value={l.vatRate} onChange={(e) => setLine(i, { vatRate: Number(e.target.value) })} aria-label={`TVA ligne ${i + 1}`} style={{ minWidth: 78 }}>{VAT_RATES.map((r) => <option key={r} value={r}>{r} %</option>)}</select></td>
               <td className="n" style={{ whiteSpace: 'nowrap' }}>{money(totals[i].ht)}</td>
-              <td>{lines.length > 1 && <button type="button" className="btn sm danger" onClick={() => setLines(lines.filter((_, j) => j !== i))} aria-label={`Supprimer la ligne ${i + 1}`}>✕</button>}</td>
+              <td>{lines.length > 1 && <button type="button" className="btn sm danger" onClick={() => editLines(lines.filter((_, j) => j !== i))} aria-label={`Supprimer la ligne ${i + 1}`}>✕</button>}</td>
             </tr>
           ))}
         </tbody>
       </table></div>
       <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <button type="button" className="btn" onClick={() => setLines([...lines, { ...EMPTY_LINE }])}>+ Ajouter une ligne</button>
+        <button type="button" className="btn" onClick={() => editLines([...lines, { ...EMPTY_LINE }])}>+ Ajouter une ligne</button>
         <dl className="totals"><dt>Total HT</dt><dd>{money(ht)}</dd><dt>TVA</dt><dd>{money(vat)}</dd><dt className="grand">Total TTC</dt><dd className="grand">{money(ht + vat)}</dd></dl>
       </div>
       <label className="field">Conditions, mentions (facultatif)<textarea className="input" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></label>

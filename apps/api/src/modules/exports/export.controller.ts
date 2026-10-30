@@ -44,6 +44,7 @@ export class ExportController {
         sales_documents: await trx.selectFrom('sales_document').selectAll().orderBy('created_at').execute(),
         sales_document_lines: await trx.selectFrom('sales_document_line').selectAll().orderBy('document_id').orderBy('position').execute(),
         sales_payments: await trx.selectFrom('sales_payment').selectAll().orderBy('paid_on').execute(),
+        sales_reminders: await trx.selectFrom('sales_reminder').selectAll().orderBy('created_at').execute(),
         audit_log: await trx.selectFrom('audit_log').selectAll().orderBy('id').execute(),
       };
       await this.audit.tenant(trx, t.ctx, { action: 'data.exported', data: { tables: Object.keys(out) } });

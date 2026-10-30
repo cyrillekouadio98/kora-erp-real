@@ -25,6 +25,8 @@ const NAV: { href: string; label: string; perm?: string; group: string }[] = [
   { href: '/app/entreprise', label: 'Fiche entreprise', group: 'Entreprise' },
   { href: '/app/ventes/devis', label: 'Devis', perm: 'sales.read', group: 'Ventes' },
   { href: '/app/ventes/factures', label: 'Factures', perm: 'sales.read', group: 'Ventes' },
+  { href: '/app/ventes/avoirs', label: 'Avoirs', perm: 'sales.read', group: 'Ventes' },
+  { href: '/app/ventes/relances', label: 'Relances clients', perm: 'sales.read', group: 'Ventes' },
   { href: '/app/contacts', label: 'Clients et fournisseurs', perm: 'contacts.read', group: 'Ventes' },
   { href: '/app/articles', label: 'Articles', perm: 'products.read', group: 'Ventes' },
   { href: '/app/utilisateurs', label: 'Utilisateurs', perm: 'users.read', group: 'Administration' },

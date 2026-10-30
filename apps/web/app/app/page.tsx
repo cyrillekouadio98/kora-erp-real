@@ -42,7 +42,7 @@ export default function Dashboard() {
           <div className="card kpi"><div className="l">Chiffre d'affaires du mois</div><div className="v">{money(sales.revenueMonthHt)}</div><div className="small muted">hors taxes, factures émises</div></div>
           <div className="card kpi"><div className="l">Encaissé ce mois</div><div className="v">{money(sales.collectedMonth)}</div><div className="small muted">tous modes de paiement</div></div>
           <div className="card kpi"><div className="l">À encaisser</div><div className="v">{money(sales.outstanding)}</div>
-            <div className="small">{sales.overdueCount ? <Link href="/app/ventes/factures" style={{ color: 'var(--crit)' }}>{sales.overdueCount} facture(s) en retard · {money(sales.overdueAmount)}</Link> : <span className="muted">aucune facture en retard</span>}</div></div>
+            <div className="small">{sales.overdueCount ? <Link href="/app/ventes/relances" style={{ color: 'var(--crit)' }}>{sales.overdueCount} facture(s) en retard · {money(sales.overdueAmount)}</Link> : <span className="muted">aucune facture en retard</span>}</div></div>
           <div className="card kpi"><div className="l">Devis en cours</div><div className="v">{sales.openQuotes}</div><div className="small muted"><Link href="/app/ventes/devis">voir les devis</Link></div></div>
         </div>
       )}
@@ -58,7 +58,7 @@ export default function Dashboard() {
         <div className="row">
           {Object.entries(MODULE_LABELS).map(([k, l]) => <Pill key={k} tone={ctx.entitlements.modules.includes(k) ? 'ok' : 'mute'}>{l}{ctx.entitlements.modules.includes(k) ? '' : ' · non inclus'}</Pill>)}
         </div>
-        <p className="small muted" style={{ marginBottom: 0 }}>Disponibles : clients et fournisseurs, articles, devis, factures et encaissements. Les achats, la caisse, la banque, la comptabilité et la paie arrivent avec les prochains lots.</p>
+        <p className="small muted" style={{ marginBottom: 0 }}>Disponibles : clients et fournisseurs, articles, devis, factures, avoirs, encaissements et relances. Les achats, la caisse, la banque, la comptabilité et la paie arrivent avec les prochains lots.</p>
       </div>
       <div className="card">
         <header><h2>Pour bien démarrer</h2></header>

@@ -11,6 +11,7 @@ import { SalesService } from './sales.service';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'Date attendue au format AAAA-MM-JJ' });
 const type = z.enum(['quote', 'invoice'], { message: 'Type de document : devis ou facture' });
+const anyType = z.enum(['quote', 'invoice', 'credit_note'], { message: 'Type de document : devis, facture ou avoir' });
 
 const LineSchema = z.object({
   productId: z.string().uuid({ message: 'Article invalide' }).nullable().optional(),
@@ -40,20 +41,25 @@ export class SalesController {
   @Get('summary')
   summary(@Tenant() t: TenantInfo) { return this.sales.summary(t); }
 
+  /** Créances clients par ancienneté (balance âgée), pour organiser les relances. */
+  @Permission('sales.read') @AllowWhenReadOnly()
+  @Get('receivables')
+  receivables(@Tenant() t: TenantInfo) { return this.sales.receivables(t); }
+
   @Permission('sales.read') @AllowWhenReadOnly()
   @Get('documents')
   list(@Tenant() t: TenantInfo, @Query() query: unknown) {
-    return this.sales.list(t, parse(z.object({ type, status: z.string().max(20).optional(), q: z.string().trim().max(100).optional() }), query));
+    return this.sales.list(t, parse(z.object({ type: anyType, status: z.string().max(20).optional(), q: z.string().trim().max(100).optional() }), query));
   }
 
   /** Journal des ventes au format CSV (point-virgule, UTF-8), ouvrable dans Excel. */
   @Permission('sales.export') @AllowWhenReadOnly()
   @Get('documents/export')
   async export(@Tenant() t: TenantInfo, @Query() query: unknown, @Res() res: Response) {
-    const q = parse(z.object({ type }), query);
+    const q = parse(z.object({ type: anyType }), query);
     const rows = await this.sales.exportRows(t, q.type);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${q.type === 'invoice' ? 'factures' : 'devis'}-${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${{ invoice: 'factures', quote: 'devis', credit_note: 'avoirs' }[q.type]}-${new Date().toISOString().slice(0, 10)}.csv"`);
     res.send(toCsv(rows));
   }
 
@@ -91,6 +97,21 @@ export class SalesController {
   @Permission('sales.create') @HttpCode(200)
   @Post('documents/:id/convert')
   convert(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.sales.convert(t, id); }
+
+  /** Avoir sur une facture émise : brouillon reprenant ses lignes, à valider ensuite. */
+  @Permission('sales.create') @HttpCode(200)
+  @Post('documents/:id/credit-note')
+  creditNote(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.sales.createCreditNote(t, id); }
+
+  @Permission('sales.update')
+  @Post('documents/:id/reminders')
+  remind(@Tenant() t: TenantInfo, @Param('id') id: string, @Body() body: unknown) {
+    return this.sales.addReminder(t, id, parse(z.object({
+      channel: z.enum(['phone', 'whatsapp', 'sms', 'email', 'letter', 'visit'], { message: 'Moyen de relance invalide' }),
+      note: z.string().trim().max(1000).transform((v) => v || null).nullable().optional(),
+      promisedOn: isoDate.nullable().optional(),
+    }).strict(), body));
+  }
 
   /** Encaissement d'une facture : réservé aux personnes autorisées à saisir en caisse. */
   @Permission('cash.create')

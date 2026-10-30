@@ -125,3 +125,83 @@ describe('Ventes : articles, devis, factures, encaissements', () => {
     expect(paid.body.status).toBe('paid');
   });
 });
+
+describe('Avoirs et relances clients', () => {
+  let app: INestApplication;
+  let owner: Awaited<ReturnType<typeof signup>>;
+  let customerId: string;
+  const year = today().slice(0, 4);
+  const line = (unitPrice: number) => [{ description: 'Prestation de maintenance', quantity: 1, unitPrice, vatRate: 18 }];
+  const issueInvoice = async (unitPrice: number) => {
+    const d = await owner.agent.post('/company/sales/documents').send({ type: 'invoice', contactId: customerId, lines: line(unitPrice) });
+    return (await owner.agent.post(`/company/sales/documents/${d.body.id}/validate`)).body;
+  };
+
+  beforeAll(async () => {
+    await resetDb();
+    app = await createApp();
+    owner = await signup(app);
+    customerId = (await owner.agent.post('/company/contacts').send({ kind: 'customer', name: 'Hôtel du Plateau', phone: '+225 07 00 00 00 01', paymentTermsDays: 15 })).body.id;
+  });
+  afterAll(async () => { await app.close(); });
+
+  it("un avoir partiel puis total annule la facture et fait apparaître le trop-perçu", async () => {
+    const inv = await issueInvoice(100000);
+    await owner.agent.post(`/company/sales/documents/${inv.id}/payments`).send({ amount: 50000, method: 'bank_transfer' });
+
+    const cn1 = await owner.agent.post(`/company/sales/documents/${inv.id}/credit-note`);
+    expect(cn1.body).toMatchObject({ type: 'credit_note', status: 'draft', totalTtc: 118000, sourceInvoiceId: inv.id });
+    expect((await owner.agent.post(`/company/sales/documents/${inv.id}/credit-note`)).body.id).toBe(cn1.body.id); // un seul brouillon à la fois
+    await owner.agent.patch(`/company/sales/documents/${cn1.body.id}`).send({ lines: line(20000) });
+    const v1 = await owner.agent.post(`/company/sales/documents/${cn1.body.id}/validate`);
+    expect(v1.body).toMatchObject({ status: 'issued', number: `AV-${year}-00001`, totalTtc: 23600 });
+    expect((await owner.agent.get(`/company/sales/documents/${inv.id}`)).body).toMatchObject({ status: 'partially_paid', creditedAmount: 23600, remaining: 44400, refundDue: 0 });
+
+    const cn2 = await owner.agent.post(`/company/sales/documents/${inv.id}/credit-note`);
+    const tooHigh = await owner.agent.post(`/company/sales/documents/${cn2.body.id}/validate`);
+    expect(tooHigh.status).toBe(400);
+    expect(tooHigh.body.error.code).toBe('credit_too_high');
+    await owner.agent.patch(`/company/sales/documents/${cn2.body.id}`).send({ lines: line(80000) });
+    await owner.agent.post(`/company/sales/documents/${cn2.body.id}/validate`);
+    const after = await owner.agent.get(`/company/sales/documents/${inv.id}`);
+    expect(after.body).toMatchObject({ status: 'credited', creditedAmount: 118000, remaining: 0, refundDue: 50000 });
+    expect(after.body.related.map((r: any) => r.number)).toEqual([`AV-${year}-00001`, `AV-${year}-00002`]);
+    expect((await owner.agent.post(`/company/sales/documents/${inv.id}/payments`).send({ amount: 1, method: 'cash' })).status).toBe(409);
+    expect((await owner.agent.post(`/company/sales/documents/${inv.id}/credit-note`)).status).toBe(409);
+
+    const summary = await owner.agent.get('/company/sales/summary');
+    expect(summary.body).toMatchObject({ revenueMonthHt: 0, collectedMonth: 50000, outstanding: 0 });
+  });
+
+  it("refuse un avoir sur un brouillon et un changement de client sur l'avoir", async () => {
+    const draft = await owner.agent.post('/company/sales/documents').send({ type: 'invoice', contactId: customerId, lines: line(1000) });
+    expect((await owner.agent.post(`/company/sales/documents/${draft.body.id}/credit-note`)).status).toBe(409);
+    const other = await owner.agent.post('/company/contacts').send({ kind: 'customer', name: 'Autre client' });
+    const inv = await issueInvoice(1000);
+    const cn = await owner.agent.post(`/company/sales/documents/${inv.id}/credit-note`);
+    expect((await owner.agent.patch(`/company/sales/documents/${cn.body.id}`).send({ contactId: other.body.id })).status).toBe(400);
+  });
+
+  it('classe les créances par ancienneté et trace les relances', async () => {
+    const late = await issueInvoice(50000);
+    const c = await ownerClient();
+    await c.query('ALTER TABLE sales_document DISABLE TRIGGER sales_document_lock');
+    await c.query(`UPDATE sales_document SET due_date = current_date - 10 WHERE id = $1`, [late.id]);
+    await c.query('ALTER TABLE sales_document ENABLE TRIGGER sales_document_lock');
+    await c.end();
+
+    const promised = addDays(today(), 5);
+    const r = await owner.agent.post(`/company/sales/documents/${late.id}/reminders`).send({ channel: 'whatsapp', note: 'Paiement promis par la comptable', promisedOn: promised });
+    expect(r.status).toBe(201);
+    expect(r.body.reminders[0]).toMatchObject({ channel: 'whatsapp', promisedOn: promised });
+    expect((await owner.agent.post(`/company/sales/documents/${late.id}/reminders`).send({ channel: 'pigeon' })).status).toBe(400);
+
+    const rec = await owner.agent.get('/company/sales/receivables');
+    const row = rec.body.invoices.find((i: any) => i.id === late.id);
+    expect(row).toMatchObject({ daysLate: 10, bucket: 'd30', remaining: 59000, reminderCount: 1, promisedOn: promised });
+    expect(row.contact.phone).toBe('+225 07 00 00 00 01');
+    expect(rec.body.totals.d30).toBe(59000);
+    expect(rec.body.total).toBe(rec.body.invoices.reduce((s: number, i: any) => s + i.remaining, 0));
+    expect((await owner.agent.get('/company/sales/summary')).body).toMatchObject({ overdueCount: 1, overdueAmount: 59000 });
+  });
+});
