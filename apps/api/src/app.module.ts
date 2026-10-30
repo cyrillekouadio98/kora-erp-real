@@ -14,6 +14,9 @@ import { BillingScheduler } from './modules/billing/billing.scheduler';
 import { BillingService } from './modules/billing/billing.service';
 import { EntitlementService } from './modules/billing/entitlement.service';
 import { QuotaService } from './modules/billing/quota.service';
+import { ProductsController } from './modules/sales/products.controller';
+import { SalesController } from './modules/sales/sales.controller';
+import { SalesService } from './modules/sales/sales.service';
 import { ContactsController } from './modules/contacts/contacts.controller';
 import { CompaniesController } from './modules/companies/companies.controller';
 import { ProvisioningService } from './modules/companies/provisioning.service';
@@ -32,10 +35,10 @@ import { PlatformSupportController, SupportAccessController } from './modules/su
   controllers: [
     HealthController, AuthController, CompaniesController, MembersController, RolesController, BillingController, WebhooksController,
     DevController, AuditController, SupportAccessController, PlatformSupportController, PlatformController, ExportController,
-    ContactsController,
+    ContactsController, ProductsController, SalesController,
   ],
   providers: [
-    AuditService, SessionService, AuthService, ProvisioningService, EntitlementService, QuotaService, BillingService, BillingScheduler,
+    AuditService, SessionService, AuthService, ProvisioningService, EntitlementService, QuotaService, BillingService, BillingScheduler, SalesService,
     { provide: APP_GUARD, useClass: AccessGuard },
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
   ],

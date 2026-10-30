@@ -96,3 +96,23 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
 .modal-back { position: fixed; inset: 0; background: rgba(5, 15, 10, .45); display: grid; place-items: center; padding: 16px; z-index: 20; }
 .modal { background: var(--surface); border-radius: 12px; box-shadow: var(--shadow); width: min(760px, 100%); max-height: 92vh; overflow: auto; padding: 22px; display: grid; gap: 14px; }
 code.k { background: var(--surface-2); padding: 1px 6px; border-radius: 5px; font-size: 12.5px; }
+
+/* Documents de vente */
+.input.n { text-align: right; font-variant-numeric: tabular-nums; }
+table.lines td { padding: 6px 6px; } table.lines .input { padding: 7px 8px; }
+dl.totals { display: grid; grid-template-columns: auto auto; gap: 4px 24px; margin: 0; min-width: 260px; font-variant-numeric: tabular-nums; }
+dl.totals dt { color: var(--muted); } dl.totals dd { margin: 0; text-align: right; }
+dl.totals .grand { font-weight: 700; color: var(--ink); font-size: 16px; border-top: 1px solid var(--line); padding-top: 4px; }
+table.vat { width: auto; font-size: 13px; } table.vat td, table.vat th { padding: 4px 10px; }
+.doc { display: grid; gap: 18px; }
+.doc-head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.doc-company { font-size: 18px; font-weight: 700; }
+.doc-title { font-size: 22px; font-weight: 800; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; }
+.doc-customer { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; max-width: 360px; justify-self: end; width: 100%; }
+
+@media print {
+  :root { --bg: #fff; --surface: #fff; --ink: #000; --muted: #444; --line: #bbb; --accent: #1f6b4f; color-scheme: light; }
+  .side, .no-print, .alert { display: none !important; }
+  .shell { display: block; } .main { padding: 0; } .main > .wrap { max-width: none; }
+  .card { border: 0; padding: 0; } .table-wrap { border: 0; overflow: visible; }
+}

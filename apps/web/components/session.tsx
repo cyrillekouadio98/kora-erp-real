@@ -23,7 +23,10 @@ export const useSession = () => useContext(Ctx)!;
 const NAV: { href: string; label: string; perm?: string; group: string }[] = [
   { href: '/app', label: 'Tableau de bord', group: 'Entreprise' },
   { href: '/app/entreprise', label: 'Fiche entreprise', group: 'Entreprise' },
-  { href: '/app/contacts', label: 'Clients et fournisseurs', perm: 'contacts.read', group: 'Gestion' },
+  { href: '/app/ventes/devis', label: 'Devis', perm: 'sales.read', group: 'Ventes' },
+  { href: '/app/ventes/factures', label: 'Factures', perm: 'sales.read', group: 'Ventes' },
+  { href: '/app/contacts', label: 'Clients et fournisseurs', perm: 'contacts.read', group: 'Ventes' },
+  { href: '/app/articles', label: 'Articles', perm: 'products.read', group: 'Ventes' },
   { href: '/app/utilisateurs', label: 'Utilisateurs', perm: 'users.read', group: 'Administration' },
   { href: '/app/roles', label: 'Rôles et permissions', perm: 'users.read', group: 'Administration' },
   { href: '/app/abonnement', label: 'Abonnement', perm: 'billing.read', group: 'Administration' },
@@ -71,7 +74,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <nav className="nav" aria-label="Navigation principale">
             {NAV.filter((n) => !n.perm || can(n.perm)).map((n) => {
               const head = n.group !== group ? <small key={`g-${n.group}`}>{(group = n.group)}</small> : null;
-              return [head, <Link key={n.href} href={n.href} className={path === n.href ? 'active' : ''}>{n.label}</Link>];
+              return [head, <Link key={n.href} href={n.href} className={path === n.href || (n.href !== '/app' && path.startsWith(n.href)) ? 'active' : ''}>{n.label}</Link>];
             })}
             {me.platformRoles.length > 0 && [<small key="g-p">Éditeur</small>, <Link key="console" href="/console">Console éditeur</Link>]}
           </nav>

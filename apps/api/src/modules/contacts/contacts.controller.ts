@@ -1,11 +1,11 @@
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
-import { sql } from 'kysely';
 import { z } from 'zod';
 import { AllowWhenReadOnly, Permission, Tenant } from '../../common/decorators';
 import { conflict, notFound } from '../../common/errors';
 import { isUuid } from '../../common/ids';
+import { nextNumber } from '../../common/numbering';
 import type { TenantInfo } from '../../common/request-context';
 import { parse } from '../../common/validation';
 import { DatabaseService, TenantTrx } from '../../db/database.service';
@@ -75,11 +75,7 @@ export class ContactsController {
       return code;
     }
     for (;;) {
-      const r = await sql<{ n: string }>`
-        INSERT INTO numbering_sequence (company_id, doc_type, year, prefix, next_value) VALUES (${t.companyId}, ${`contact_${kind}`}, 0, ${PREFIX[kind]}, 2)
-        ON CONFLICT (company_id, doc_type, year) DO UPDATE SET next_value = numbering_sequence.next_value + 1
-        RETURNING (next_value - 1)::text AS n`.execute(trx);
-      const next = `${PREFIX[kind]}-${r.rows[0].n.padStart(5, '0')}`;
+      const next = await nextNumber(trx, t.companyId, `contact_${kind}`, PREFIX[kind]);
       if (!(await taken(next))) return next;
     }
   }

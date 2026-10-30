@@ -81,6 +81,33 @@ export interface ContactTable {
   created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 
+type DateCol = ColumnType<string, string | undefined, string>;
+type DateNullable = ColumnType<string | null, string | null | undefined, string | null>;
+
+export interface ProductTable {
+  company_id: string; id: Generated<string>; code: string; kind: Generated<'good' | 'service'>; name: string; description: string | null;
+  unit: Generated<string>; sale_price: ColumnType<string, number | string | undefined, number | string>; purchase_price: ColumnType<string | null, number | string | null | undefined, number | string | null>;
+  vat_rate: ColumnType<string, number | string | undefined, number | string>; archived_at: TsNullable; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export type SalesDocType = 'quote' | 'invoice';
+export type SalesDocStatus = 'draft' | 'sent' | 'accepted' | 'refused' | 'invoiced' | 'issued' | 'partially_paid' | 'paid';
+type NumDefault = ColumnType<string, number | string | undefined, number | string>;
+export interface SalesDocumentTable {
+  company_id: string; id: Generated<string>; type: SalesDocType; status: Generated<SalesDocStatus>; number: string | null; contact_id: string;
+  customer: JsonDefault<Record<string, unknown>>; issue_date: DateCol; due_date: DateNullable; valid_until: DateNullable; currency: Generated<string>; notes: string | null;
+  total_ht: NumDefault; total_vat: NumDefault; total_ttc: NumDefault; paid_amount: NumDefault; source_quote_id: string | null;
+  validated_at: TsNullable; validated_by: string | null; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface SalesDocumentLineTable {
+  company_id: string; id: Generated<string>; document_id: string; position: number; product_id: string | null; description: string;
+  quantity: Num; unit: string | null; unit_price: Num; discount_pct: NumDefault; vat_rate: Num; total_ht: Num; total_vat: Num;
+}
+export type PaymentMethod = 'cash' | 'mobile_money' | 'bank_transfer' | 'cheque' | 'card';
+export interface SalesPaymentTable {
+  company_id: string; id: Generated<string>; document_id: string; amount: Num; paid_on: DateCol; method: PaymentMethod; reference: string | null;
+  created_by: string | null; created_at: Generated<Date>;
+}
+
 export interface DB {
   user_account: UserAccountTable; platform_role_assignment: PlatformRoleAssignmentTable; user_session: UserSessionTable;
   company: CompanyTable; company_membership: CompanyMembershipTable; role: RoleTable; membership_role: MembershipRoleTable;
@@ -88,4 +115,5 @@ export interface DB {
   subscription_event: SubscriptionEventTable; platform_invoice: PlatformInvoiceTable; platform_payment: PlatformPaymentTable;
   payment_webhook_event: PaymentWebhookEventTable; notification: NotificationTable; support_access_grant: SupportAccessGrantTable;
   audit_log: AuditLogTable; numbering_sequence: NumberingSequenceTable; outbox_event: OutboxEventTable; contact: ContactTable;
+  product: ProductTable; sales_document: SalesDocumentTable; sales_document_line: SalesDocumentLineTable; sales_payment: SalesPaymentTable;
 }

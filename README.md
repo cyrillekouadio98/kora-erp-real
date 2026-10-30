@@ -2,7 +2,7 @@
 
 ERP SaaS multi-entreprises pour les PME d'Afrique de l'Ouest : gestion commerciale, comptabilité SYSCOHADA révisé, trésorerie, ressources humaines et paie. Marché initial : Côte d'Ivoire.
 
-> Nom provisoire. Ce dépôt contient la **phase 2 — socle SaaS** du dossier de conception validé : comptes, entreprises, rôles et permissions, abonnements, journal d'audit, accès exceptionnel du support et isolation des données. Le premier module métier de la phase 3, **clients et fournisseurs**, est disponible ; les autres (ventes, comptabilité, caisse, banque, paie) arrivent aux phases 3 à 5.
+> Nom provisoire. Ce dépôt contient la **phase 2 — socle SaaS** du dossier de conception validé : comptes, entreprises, rôles et permissions, abonnements, journal d'audit, accès exceptionnel du support et isolation des données. Premiers modules métier de la phase 3 disponibles : **clients et fournisseurs, articles, devis, factures et encaissements**. Les achats, la caisse, la banque, la comptabilité et la paie arrivent aux lots suivants.
 
 ## Ce que fait le socle
 
@@ -17,6 +17,9 @@ ERP SaaS multi-entreprises pour les PME d'Afrique de l'Ouest : gestion commercia
 | Console éditeur | Clients, indicateurs (revenu récurrent estimé, facturé, encaissé, impayés), suspension motivée, gestion des formules |
 | Support | Accès aux données d'un client uniquement après son accord, pour une durée et un périmètre limités, chaque consultation étant inscrite dans son journal |
 | Clients et fournisseurs | Fiche tiers (client, fournisseur ou les deux, NCC, RCCM, délai de paiement), numérotation automatique CLI-/FRS-/TIE-, recherche, archivage au lieu de suppression, export CSV, journal d'audit |
+| Articles | Biens et services, prix de vente HT, TVA ivoirienne (18 %, 9 %, exonéré), unité, numérotation ART-, archivage |
+| Devis et factures | Brouillon modifiable, puis validation avec numéro annuel sans trou (DEV-2026-00001, FAC-2026-00001), coordonnées du client figées, échéance calculée selon le délai de paiement ; devis accepté ou refusé puis transformé en facture ; ventilation de la TVA ; impression / PDF ; export CSV. Un document validé est intangible : la base de données refuse toute modification ou suppression |
+| Encaissements | Paiements partiels ou complets (espèces, mobile money, virement, chèque, carte), statut payée en partie / payée, factures en retard, indicateurs du tableau de bord (chiffre d'affaires du mois, encaissé, à encaisser) |
 | Réversibilité | Export complet des données de l'entreprise (JSON + CSV), toujours possible même en cas de suspension |
 
 ## Sécurité et isolation des données
@@ -81,7 +84,7 @@ Le super administrateur doit activer la double authentification (menu « Ma séc
 npm test
 ```
 
-46 tests d'intégration sur une vraie base PostgreSQL (`kora_test`, recréée à chaque fichier ; PostgreSQL doit tourner, par exemple via `npm run dev:db`) : authentification, rôles et quotas, abonnements et paiements, console éditeur et support, contacts, isolation multi-entreprises. Par sécurité, les tests refusent de s'exécuter sur une base dont le nom ne se termine pas par `_test`.
+54 tests d'intégration sur une vraie base PostgreSQL (`kora_test`, recréée à chaque fichier ; PostgreSQL doit tourner, par exemple via `npm run dev:db`) : authentification, rôles et quotas, abonnements et paiements, console éditeur et support, contacts, ventes (calculs, cycle devis → facture → encaissement, intangibilité en base, droits par rôle), isolation multi-entreprises. Par sécurité, les tests refusent de s'exécuter sur une base dont le nom ne se termine pas par `_test`.
 
 ## Organisation du code
 
@@ -90,7 +93,7 @@ apps/
   api/                 API NestJS (TypeScript)
     src/common/        garde d'accès, erreurs, validation, chiffrement
     src/db/            migrations SQL versionnées, accès PostgreSQL (Kysely), contexte RLS
-    src/modules/       auth, companies, rbac, billing, audit, support, platform, exports, contacts
+    src/modules/       auth, companies, rbac, billing, audit, support, platform, exports, contacts, sales
     test/              tests d'intégration
   web/                 interface Next.js (espace entreprise + console éditeur)
 infra/db/              création des rôles et des bases PostgreSQL, PostgreSQL local (dev-postgres.mjs)
@@ -100,7 +103,7 @@ scripts/dev.mjs        lancement de tout l'environnement en une commande
 
 ## Reste à faire
 
-- **Phase 3 — gestion commerciale** : articles et stocks, devis → commandes → factures clients (facture normalisée DGI), achats et factures fournisseurs, caisse, règlements et relances. Les contacts servent de base à tous ces documents.
+- **Phase 3 — gestion commerciale (suite)** : avoirs, stocks et mouvements, bons de commande et de livraison, achats et factures fournisseurs, caisse, relances clients, facture normalisée électronique de la DGI (dès réception des spécifications), envoi des documents par e-mail.
 - **Phase 4 — finance** : plan comptable SYSCOHADA révisé, journaux et écritures générées automatiquement, banque et rapprochement, grand livre, balance, états financiers, déclarations TVA.
 - **Phase 5 — RH et paie** : employés, congés, paie ivoirienne (ITS, CNPS, CMU), bulletins, espace employé.
 - **Socle** : envoi réel des e-mails (invitations, rappels), prestataire de paiement réel, téléversement du logo, verrou du cycle de facturation si plusieurs instances de l'API.

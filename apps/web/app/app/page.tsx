@@ -11,9 +11,13 @@ const MODULE_LABELS: Record<string, string> = { contacts: 'Contacts', sales: 'De
 export default function Dashboard() {
   const { me, ctx, can, refresh } = useSession();
   const [sub, setSub] = useState<any>(null);
+  const [sales, setSales] = useState<any>(null);
   const [name, setName] = useState('');
   const { busy, error, run } = useAction();
-  useEffect(() => { if (ctx && can('billing.read')) api('/company/subscription').then(setSub, () => {}); }, [ctx]); // eslint-disable-line
+  useEffect(() => {
+    if (ctx && can('billing.read')) api('/company/subscription').then(setSub, () => {});
+    if (ctx && can('sales.read') && ctx.entitlements.modules.includes('sales')) api('/company/sales/summary').then(setSales, () => {});
+  }, [ctx]); // eslint-disable-line
 
   if (!ctx) {
     return (
@@ -31,7 +35,17 @@ export default function Dashboard() {
   const st = sub ? SUB_STATUS[sub.status] : null;
   return (
     <>
-      <div className="page-head"><h1>{ctx.company.name}</h1></div>
+      <div className="page-head"><h1>{ctx.company.name}</h1>
+        {can('sales.create') && !ctx.readOnly && <div className="row"><Link className="btn" href="/app/ventes/nouveau?type=quote">Nouveau devis</Link><Link className="btn primary" href="/app/ventes/nouveau?type=invoice">Nouvelle facture</Link></div>}</div>
+      {sales && (
+        <div className="kpis">
+          <div className="card kpi"><div className="l">Chiffre d'affaires du mois</div><div className="v">{money(sales.revenueMonthHt)}</div><div className="small muted">hors taxes, factures émises</div></div>
+          <div className="card kpi"><div className="l">Encaissé ce mois</div><div className="v">{money(sales.collectedMonth)}</div><div className="small muted">tous modes de paiement</div></div>
+          <div className="card kpi"><div className="l">À encaisser</div><div className="v">{money(sales.outstanding)}</div>
+            <div className="small">{sales.overdueCount ? <Link href="/app/ventes/factures" style={{ color: 'var(--crit)' }}>{sales.overdueCount} facture(s) en retard · {money(sales.overdueAmount)}</Link> : <span className="muted">aucune facture en retard</span>}</div></div>
+          <div className="card kpi"><div className="l">Devis en cours</div><div className="v">{sales.openQuotes}</div><div className="small muted"><Link href="/app/ventes/devis">voir les devis</Link></div></div>
+        </div>
+      )}
       {sub && (
         <div className="kpis">
           <div className="card kpi"><div className="l">Formule</div><div className="v">{sub.plan.name}</div><div className="small muted">{money(sub.billingCycle === 'yearly' ? sub.plan.priceYearly : sub.plan.priceMonthly)} / {sub.billingCycle === 'yearly' ? 'an' : 'mois'}</div></div>
@@ -44,13 +58,14 @@ export default function Dashboard() {
         <div className="row">
           {Object.entries(MODULE_LABELS).map(([k, l]) => <Pill key={k} tone={ctx.entitlements.modules.includes(k) ? 'ok' : 'mute'}>{l}{ctx.entitlements.modules.includes(k) ? '' : ' · non inclus'}</Pill>)}
         </div>
-        <p className="small muted" style={{ marginBottom: 0 }}>Disponible : {can('contacts.read') ? <Link href="/app/contacts">clients et fournisseurs</Link> : 'clients et fournisseurs'}. Les autres modules (ventes, caisse, banque, comptabilité, paie) arrivent avec les phases 3 à 5 du projet.</p>
+        <p className="small muted" style={{ marginBottom: 0 }}>Disponibles : clients et fournisseurs, articles, devis, factures et encaissements. Les achats, la caisse, la banque, la comptabilité et la paie arrivent avec les prochains lots.</p>
       </div>
       <div className="card">
         <header><h2>Pour bien démarrer</h2></header>
         <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 6 }}>
           <li><Link href="/app/entreprise">Compléter la fiche de l'entreprise</Link> (RCCM, compte contribuable, adresse).</li>
-          {can('contacts.create') && <li><Link href="/app/contacts">Enregistrer vos clients et fournisseurs</Link>.</li>}
+          {can('contacts.create') && <li><Link href="/app/contacts">Enregistrer vos clients et fournisseurs</Link>, puis <Link href="/app/articles">vos articles</Link>.</li>}
+          {can('sales.create') && <li><Link href="/app/ventes/nouveau?type=quote">Établir votre premier devis</Link> et le transformer en facture.</li>}
           {can('users.admin') && <li><Link href="/app/utilisateurs">Inviter vos collaborateurs</Link> et leur attribuer un rôle.</li>}
           <li><Link href="/app/securite">Activer la double authentification</Link>{me.user.mfaEnabled ? ' — déjà activée.' : ' pour protéger votre compte.'}</li>
         </ul>

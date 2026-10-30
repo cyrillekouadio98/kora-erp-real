@@ -21,4 +21,17 @@ export const ACTION_LABELS: Record<string, string> = {
   'support.viewed': 'Consultation par le support', 'data.exported': 'Export complet des données',
   'contact.created': 'Contact créé', 'contact.updated': 'Contact modifié', 'contact.archived': 'Contact archivé',
   'contact.restored': 'Contact restauré', 'contact.exported': 'Contacts exportés',
+  'product.created': 'Article créé', 'product.updated': 'Article modifié', 'product.archived': 'Article archivé', 'product.restored': 'Article restauré',
+  'quote.created': 'Devis créé', 'quote.updated': 'Devis modifié', 'quote.deleted': 'Brouillon de devis supprimé', 'quote.validated': 'Devis envoyé',
+  'quote.accepted': 'Devis accepté', 'quote.refused': 'Devis refusé', 'quote.invoiced': 'Devis transformé en facture', 'quote.exported': 'Devis exportés',
+  'invoice.created': 'Facture créée', 'invoice.updated': 'Facture modifiée', 'invoice.deleted': 'Brouillon de facture supprimé', 'invoice.validated': 'Facture émise',
+  'invoice.payment_recorded': 'Encaissement enregistré', 'invoice.exported': 'Factures exportées',
 };
+
+export const DOC_STATUS: Record<string, [string, 'ok' | 'warn' | 'crit' | 'mute']> = {
+  draft: ['Brouillon', 'mute'], sent: ['Envoyé', 'warn'], accepted: ['Accepté', 'ok'], refused: ['Refusé', 'crit'], invoiced: ['Facturé', 'ok'],
+  issued: ['À encaisser', 'warn'], partially_paid: ['Payée en partie', 'warn'], paid: ['Payée', 'ok'],
+};
+export const PAYMENT_METHODS: Record<string, string> = { cash: 'Espèces', mobile_money: 'Mobile money', bank_transfer: 'Virement', cheque: 'Chèque', card: 'Carte bancaire' };
+export const DOC_LABEL = { quote: 'Devis', invoice: 'Facture' } as const;
+export const VAT_RATES = [18, 9, 0];
