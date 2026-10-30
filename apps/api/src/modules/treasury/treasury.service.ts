@@ -166,7 +166,7 @@ export class TreasuryService {
   }
 
   // ------------------------------------------------------------------ mouvements
-  async movements(t: TenantInfo, f: { accountId?: string; from?: string; to?: string; category?: string; q?: string }) {
+  async movements(t: TenantInfo, f: { accountId?: string; kind?: TreasuryKind; from?: string; to?: string; category?: string; q?: string }) {
     return this.db.tenant(t.ctx, async (trx) => {
       let q = trx.selectFrom('treasury_movement as m')
         .innerJoin('treasury_account as a', (j) => j.onRef('a.id', '=', 'm.account_id').onRef('a.company_id', '=', 'm.company_id'))
@@ -177,6 +177,7 @@ export class TreasuryService {
           'a.id as accountId', 'a.name as accountName', 'a.kind as accountKind', 'c.id as contactId', 'c.name as contactName', 'u.full_name as by'])
         .orderBy('m.date').orderBy('m.created_at').limit(5000);
       if (f.accountId) q = q.where('m.account_id', '=', f.accountId);
+      if (f.kind) q = q.where('a.kind', '=', f.kind);
       if (f.from) q = q.where('m.date', '>=', f.from);
       if (f.to) q = q.where('m.date', '<=', f.to);
       if (f.category) q = q.where('m.category', '=', f.category);

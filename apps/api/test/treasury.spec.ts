@@ -61,6 +61,18 @@ describe('Trésorerie : caisse, banque, mobile money', () => {
     expect((await owner.agent.get('/company/treasury/summary')).body).toMatchObject({ total: 1_838_000, cash: 20000, bank: 1_750_000, mobileMoney: 68000 });
   });
 
+  it('sépare le journal de la caisse, de la banque et du mobile money', async () => {
+    const kinds = async (kind: string) => new Set((await owner.agent.get('/company/treasury/movements').query({ kind })).body.movements.map((m: any) => m.accountKind));
+    expect([...await kinds('cash')]).toEqual(['cash']);
+    expect([...await kinds('bank')]).toEqual(['bank']);
+    const mobile = (await owner.agent.get('/company/treasury/movements').query({ kind: 'mobile_money' })).body.movements;
+    expect(mobile.map((m: any) => [m.accountName, m.amount])).toEqual([['Mobile money', 68000]]);
+    const csv = await owner.agent.get('/company/treasury/movements/export').query({ kind: 'bank' });
+    expect(csv.text).toContain('Loyer');
+    expect(csv.text).not.toContain('Facture CIE');
+    expect((await owner.agent.get('/company/treasury/movements').query({ kind: 'coffre' })).status).toBe(400);
+  });
+
   it('contre-passe au lieu de supprimer, et un virement en entier', async () => {
     const rent = (await owner.agent.get('/company/treasury/movements').query({ category: 'rent' })).body.movements[0];
     expect((await owner.agent.post(`/company/treasury/movements/${rent.id}/reverse`).send({ reason: 'saisi sur le mauvais compte' })).status).toBe(200);

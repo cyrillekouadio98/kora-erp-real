@@ -31,7 +31,10 @@ const NAV: { href: string; label: string; perm?: string; module?: string; group:
   { href: '/app/achats/commandes', label: 'Bons de commande', perm: 'purchases.read', module: 'purchases', group: 'Achats' },
   { href: '/app/achats/factures', label: 'Factures fournisseurs', perm: 'purchases.read', module: 'purchases', group: 'Achats' },
   { href: '/app/achats/echeancier', label: 'Échéancier', perm: 'purchases.read', module: 'purchases', group: 'Achats' },
-  { href: '/app/tresorerie', label: 'Caisse et banque', perm: 'cash.read', module: 'cash', group: 'Finance' },
+  { href: '/app/tresorerie', label: 'Trésorerie', perm: 'cash.read', module: 'cash', group: 'Finance' },
+  { href: '/app/tresorerie/caisse', label: 'Caisse', perm: 'cash.read', module: 'cash', group: 'Finance' },
+  { href: '/app/tresorerie/banque', label: 'Banque', perm: 'cash.read', module: 'cash', group: 'Finance' },
+  { href: '/app/tresorerie/mobile-money', label: 'Mobile money', perm: 'cash.read', module: 'cash', group: 'Finance' },
   { href: '/app/comptabilite', label: 'Comptabilité', perm: 'accounting.read', module: 'accounting', group: 'Finance' },
   { href: '/app/employes', label: 'Employés', perm: 'employees.read', module: 'hr', group: 'Ressources humaines' },
   { href: '/app/conges', label: 'Congés', perm: 'leave.read', module: 'hr', group: 'Ressources humaines' },
@@ -73,6 +76,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const switchTo = async (companyId: string) => { await api('/auth/switch-company', { body: { companyId } }); await refresh(); router.push('/app'); };
   const logout = async () => { await api('/auth/logout', { method: 'POST', body: {} }); router.replace('/connexion'); };
   const status = ctx?.subscriptionStatus ? SUB_STATUS[ctx.subscriptionStatus] : null;
+  // L'entrée la plus précise : sur /app/tresorerie/caisse, « Caisse » et pas « Trésorerie ».
+  const activeHref = NAV.map((n) => n.href).filter((h) => path === h || (h !== '/app' && path.startsWith(`${h}/`))).sort((x, y) => y.length - x.length)[0];
   let group = '';
 
   return (
@@ -90,7 +95,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <nav className="nav" aria-label="Navigation principale">
             {NAV.filter((n) => (!n.perm || can(n.perm)) && (!n.module || ctx?.entitlements.modules.includes(n.module))).map((n) => {
               const head = n.group !== group ? <small key={`g-${n.group}`}>{(group = n.group)}</small> : null;
-              return [head, <Link key={n.href} href={n.href} className={path === n.href || (n.href !== '/app' && path.startsWith(n.href)) ? 'active' : ''}>{n.label}</Link>];
+              return [head, <Link key={n.href} href={n.href} className={n.href === activeHref ? 'active' : ''}>{n.label}</Link>];
             })}
             {me.platformRoles.length > 0 && [<small key="g-p">Éditeur</small>, <Link key="console" href="/console">Console éditeur</Link>]}
           </nav>

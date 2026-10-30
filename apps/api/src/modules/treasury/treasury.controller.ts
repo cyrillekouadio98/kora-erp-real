@@ -19,7 +19,7 @@ const AccountSchema = z.object({
   openingDate: isoDate.optional(),
 }).strict();
 const MovementsQuery = z.object({
-  accountId: z.string().uuid().optional(), from: isoDate.optional(), to: isoDate.optional(), category: z.string().max(40).optional(), q: z.string().trim().max(100).optional(),
+  accountId: z.string().uuid().optional(), kind: z.enum(['cash', 'bank', 'mobile_money']).optional(), from: isoDate.optional(), to: isoDate.optional(), category: z.string().max(40).optional(), q: z.string().trim().max(100).optional(),
 });
 
 @ApiTags('Trésorerie')

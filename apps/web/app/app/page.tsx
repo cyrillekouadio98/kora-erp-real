@@ -66,7 +66,7 @@ export default function Dashboard() {
         <div className="kpis" style={{ opacity: loading ? 0.6 : 1 }}>
           {dash.sections.sales && <Kpi label="Chiffre d'affaires du mois" value={cur?.revenueHt ?? 0} previous={prev?.revenueHt} hint="hors taxes, avoirs déduits" />}
           {dash.sections.sales && <Kpi label="Encaissé ce mois" value={cur?.collected ?? 0} previous={prev?.collected} hint="tous modes de paiement" />}
-          {dash.sections.cash && <Kpi label="Trésorerie disponible" value={cur?.cashEnd ?? 0} previous={prev?.cashEnd ?? undefined} hint={<Link href="/app/tresorerie">caisse et banque</Link>} />}
+          {dash.sections.cash && <Kpi label="Trésorerie disponible" value={cur?.cashEnd ?? 0} previous={prev?.cashEnd ?? undefined} hint={<Link href="/app/tresorerie">caisse, banque et mobile money</Link>} />}
           {sales && <div className="card kpi"><div className="l">À encaisser</div><div className="v">{money(sales.outstanding)}</div>
             <div className="small">{sales.overdueCount ? <Link href="/app/ventes/relances" style={{ color: 'var(--crit)' }}>{sales.overdueCount} en retard · {money(sales.overdueAmount)}</Link> : <span className="muted">aucune facture en retard</span>}</div></div>}
           {purchases && <div className="card kpi"><div className="l">À payer aux fournisseurs</div><div className="v">{money(purchases.payable)}</div>
