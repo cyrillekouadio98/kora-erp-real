@@ -54,7 +54,7 @@ export const ACTION_LABELS: Record<string, string> = {
 export const DOC_STATUS: Record<string, [string, 'ok' | 'warn' | 'crit' | 'mute']> = {
   draft: ['Brouillon', 'mute'], sent: ['Envoyé', 'warn'], accepted: ['Accepté', 'ok'], refused: ['Refusé', 'crit'], invoiced: ['Facturé', 'ok'],
   ordered: ['Commandé', 'ok'], confirmed: ['À facturer', 'warn'], cancelled: ['Annulé', 'mute'],
-  issued: ['À encaisser', 'warn'], partially_paid: ['Payée en partie', 'warn'], paid: ['Payée', 'ok'], credited: ['Annulée par avoir', 'mute'],
+  issued: ['À encaisser', 'warn'], partially_paid: ['Partiellement réglée', 'warn'], paid: ['Payée', 'ok'], credited: ['Annulée par avoir', 'mute'],
 };
 /** Libellé et ton d'un statut selon le type de document (« émis » n'a pas le même sens pour une facture et un avoir). */
 export const docStatus = (type: string, status: string): [string, 'ok' | 'warn' | 'crit' | 'mute'] =>
@@ -100,3 +100,11 @@ export const LEAVE_TYPES: Record<string, string> = {
 export const LEAVE_STATUS: Record<string, [string, 'ok' | 'warn' | 'crit' | 'mute']> = {
   pending: ['En attente', 'warn'], approved: ['Validé', 'ok'], refused: ['Refusé', 'crit'], cancelled: ['Annulé', 'mute'],
 };
+
+/** Mention apposée sur une facture émise selon ses encaissements : « Payée » ou « Partiellement réglée ». */
+export function paymentStamp(doc: { type: string; status: string; paidAmount: number; remaining: number; lastPaidOn?: string | null }) {
+  if (doc.type !== 'invoice') return null;
+  if (doc.status === 'paid') return { tone: 'ok', label: 'Payée', detail: doc.lastPaidOn ? `le ${date(doc.lastPaidOn)}` : null };
+  if (doc.status === 'partially_paid' && doc.paidAmount > 0) return { tone: 'warn', label: 'Partiellement réglée', detail: `${money(doc.paidAmount)} réglés · reste ${money(doc.remaining)}` };
+  return null;
+}

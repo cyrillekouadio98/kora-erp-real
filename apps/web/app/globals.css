@@ -228,3 +228,11 @@ a.chain-step:hover { border-color: var(--accent); }
   .fiche th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .fiche-scroll { overflow: visible; }
 }
+
+/* Tampon d'encaissement sur la facture : « Payée » ou « Partiellement réglée » */
+.stamp { display: inline-grid; justify-items: center; gap: 1px; margin: 8px 0 6px; padding: 5px 14px; border: 2.5px solid currentColor; border-radius: 6px; transform: rotate(-3deg); line-height: 1.2; }
+.stamp b { font-size: 15px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.stamp span { font-size: 11px; font-weight: 600; }
+.stamp.ok { color: var(--ok); background: var(--ok-bg); }
+.stamp.warn { color: var(--warn); background: var(--warn-bg); }
+@media print { .stamp { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }

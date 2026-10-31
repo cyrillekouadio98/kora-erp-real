@@ -158,6 +158,7 @@ export class SalesService {
       lines: lines.map((l) => ({ id: l.id, productId: l.product_id, description: l.description, quantity: Number(l.quantity), unit: l.unit,
         unitPrice: Number(l.unit_price), discountPct: Number(l.discount_pct), vatRate: Number(l.vat_rate), totalHt: Number(l.total_ht), totalVat: Number(l.total_vat) })),
       payments: payments.map((p) => ({ ...p, amount: Number(p.amount) })),
+      lastPaidOn: payments.at(-1)?.paidOn ?? null,
     };
   }
 
@@ -451,7 +452,7 @@ export class SalesService {
       return {
         company, type: v.type, number: v.number, status: v.status, issueDate: v.issueDate, dueDate: v.dueDate, validUntil: v.validUntil, deliveryDate: v.deliveryDate, customerRef: v.customerRef, customer: v.customer, notes: v.notes,
         lines: v.lines, vatBreakdown: v.vatBreakdown, totalHt: v.totalHt, totalVat: v.totalVat, totalTtc: v.totalTtc, paidAmount: v.paidAmount,
-        creditedAmount: v.creditedAmount, remaining: v.remaining,
+        creditedAmount: v.creditedAmount, remaining: v.remaining, lastPaidOn: v.lastPaidOn,
       };
     });
   }

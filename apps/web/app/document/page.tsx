@@ -2,7 +2,7 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { api, errorMessage } from '@/lib/api';
-import { date, DOC_LABEL, money } from '@/lib/format';
+import { date, DOC_LABEL, money, paymentStamp } from '@/lib/format';
 
 /** Document consulté par son destinataire (lien reçu par e-mail), sans compte Kora. */
 function PublicDocument() {
@@ -14,6 +14,7 @@ function PublicDocument() {
   if (!doc) return <main className="auth"><p className="muted">Chargement…</p></main>;
   const c = doc.company;
   const isInvoice = doc.type === 'invoice';
+  const stamp = paymentStamp(doc);
   return (
     <main style={{ maxWidth: 900, margin: '0 auto', padding: '24px 16px', display: 'grid', gap: 16 }}>
       <div className="row no-print" style={{ justifyContent: 'flex-end' }}><button className="btn" onClick={() => window.print()}>Imprimer / enregistrer en PDF</button></div>
@@ -22,7 +23,9 @@ function PublicDocument() {
           <div><div className="doc-company">{c.name}</div>
             <div className="small muted">{[c.address, c.city].filter(Boolean).join(', ')}{c.phone ? ` · ${c.phone}` : ''}{c.email ? ` · ${c.email}` : ''}</div>
             <div className="small muted">{[c.rccm && `RCCM ${c.rccm}`, c.taxId && `NCC ${c.taxId}`, c.taxRegime].filter(Boolean).join(' · ')}</div></div>
-          <div style={{ textAlign: 'right' }}><div className="doc-title">{DOC_LABEL[doc.type as 'invoice']}</div><div><b>{doc.number}</b></div><div className="small">du {date(doc.issueDate)}</div>
+          <div style={{ textAlign: 'right' }}><div className="doc-title">{DOC_LABEL[doc.type as 'invoice']}</div><div><b>{doc.number}</b></div>
+            {stamp && <div className={`stamp ${stamp.tone}`}><b>{stamp.label}</b>{stamp.detail && <span>{stamp.detail}</span>}</div>}
+            <div className="small">du {date(doc.issueDate)}</div>
             {isInvoice && <div className="small">Échéance : {date(doc.dueDate)}</div>}{doc.type === 'quote' && <div className="small">Valable jusqu'au {date(doc.validUntil)}</div>}
             {doc.type === 'order' && doc.deliveryDate && <div className="small">Livraison prévue le {date(doc.deliveryDate)}</div>}
             {doc.type === 'order' && doc.customerRef && <div className="small">Votre référence : {doc.customerRef}</div>}</div>

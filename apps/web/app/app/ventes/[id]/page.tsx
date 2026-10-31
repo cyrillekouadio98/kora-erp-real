@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
-import { CHAIN_ORDER, date, dateTime, DOC_LABEL, docStatus, DocType, money, PAYMENT_METHODS, REMINDER_CHANNELS } from '@/lib/format';
+import { CHAIN_ORDER, date, dateTime, DOC_LABEL, docStatus, DocType, money, PAYMENT_METHODS, paymentStamp, REMINDER_CHANNELS } from '@/lib/format';
 import { useSession } from '@/components/session';
 import { SalesEditor } from '@/components/sales-editor';
 import { Alert, Field, Pill, useAction } from '@/components/ui';
@@ -74,6 +74,7 @@ export default function SalesDocumentPage() {
     });
   };
   const status = docStatus(type, doc.status);
+  const stamp = paymentStamp(doc);
   const validateText = { invoice: 'Émettre la facture ? Elle recevra son numéro définitif et ne pourra plus être modifiée.', quote: 'Valider le devis ? Il recevra son numéro et ne pourra plus être modifié.',
     order: 'Confirmer le bon de commande ? Il recevra son numéro et ne pourra plus être modifié ; il sera ensuite à facturer.',
     credit_note: "Émettre l'avoir ? Il diminuera le reste à payer de la facture d'origine et ne pourra plus être modifié." }[type];
@@ -125,7 +126,9 @@ export default function SalesDocumentPage() {
                 <div className="small muted">{[company?.address, company?.city].filter(Boolean).join(', ')}{company?.phone ? ` · ${company.phone}` : ''}</div>
                 <div className="small muted">{[company?.rccm && `RCCM ${company.rccm}`, company?.tax_id && `NCC ${company.tax_id}`, company?.tax_regime].filter(Boolean).join(' · ')}</div></div>
               <div style={{ textAlign: 'right' }}><div className="doc-title">{DOC_LABEL[type]}</div>
-                <div><b>{doc.number ?? 'Brouillon'}</b></div><div className="small">du {date(doc.issueDate)}</div>
+                <div><b>{doc.number ?? 'Brouillon'}</b></div>
+                {stamp && <div className={`stamp ${stamp.tone}`}><b>{stamp.label}</b>{stamp.detail && <span>{stamp.detail}</span>}</div>}
+                <div className="small">du {date(doc.issueDate)}</div>
                 {isInvoice && <div className="small">Échéance : {date(doc.dueDate)}</div>}
                 {type === 'quote' && <div className="small">Valable jusqu'au {date(doc.validUntil)}</div>}
                 {isOrder && doc.deliveryDate && <div className="small">Livraison prévue le {date(doc.deliveryDate)}</div>}
