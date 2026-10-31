@@ -53,8 +53,8 @@ describe('Isolation des données entre entreprises', () => {
     await B.agent.patch(`/company/treasury/accounts/${bCash.id}`).send({ name: 'Caisse secrète Bêta' });
     const expense = await B.agent.post('/company/treasury/movements').send({ kind: 'expense', accountId: bCash.id, amount: 100, category: 'fuel', label: 'Dépense secrète Bêta' });
     const od = await B.agent.post('/company/accounting/entries').send({ date: new Date().toISOString().slice(0, 10), label: 'Écriture secrète Bêta', lines: [
-      { account: '6222', label: 'Ligne comptable secrète Bêta', debit: 100 }, { account: '401', label: 'Ligne comptable secrète Bêta', credit: 100 }] });
-    await B.agent.post('/company/accounting/accounts').send({ code: '6229', name: 'Compte secret Bêta' });
+      { account: '622200', label: 'Ligne comptable secrète Bêta', debit: 100 }, { account: '401000', label: 'Ligne comptable secrète Bêta', credit: 100 }] });
+    await B.agent.post('/company/accounting/accounts').send({ code: '622900', name: 'Compte secret Bêta' });
     await B.agent.post(`/company/stock/${product.body.id}/opening`).send({ quantity: 7, unitCost: 100 });
     await B.agent.post(`/company/stock/${product.body.id}/count`).send({ counted: 6, reason: 'Inventaire secret Bêta' });
     await B.agent.post('/company/subscription/change').send({ planCode: 'premium', billingCycle: 'monthly' });

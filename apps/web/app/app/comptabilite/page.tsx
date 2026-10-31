@@ -198,7 +198,7 @@ function Entries({ period, version, onEdit, onReverse, changed }: { period: any;
 }
 
 function Ledger({ period, accounts, version }: { period: any; accounts: any[]; version: number }) {
-  const [account, setAccount] = useState('411');
+  const [account, setAccount] = useState('411000');
   const { data, error } = useLatest<any>(/^\d{2,}$/.test(account) ? `/company/accounting/ledger?account=${account}&from=${period.from}&to=${period.to}` : null, [version]);
   return (
     <div className="card">
@@ -207,7 +207,7 @@ function Ledger({ period, accounts, version }: { period: any; accounts: any[]; v
           <select className="input" value={account} onChange={(e) => setAccount(e.target.value)}>
             {accounts.filter((a) => a.used || a.code === account).map((a) => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
           </select></label>
-        <span className="small muted">Un compte inclut ses sous-comptes (ex. 571 regroupe toutes les caisses).</span>
+        <span className="small muted">Un compte inclut ses sous-comptes (ex. 571000 regroupe toutes les caisses : 571100, 571200…).</span>
       </div>
       <Alert>{error}</Alert>
       {data && <>
@@ -256,9 +256,9 @@ function Vat({ version }: { version: number }) {
       {data && <>
         <div className="kpis">
           <div className="card kpi"><div className="l">Chiffre d'affaires HT</div><div className="v">{money(data.revenueHt)}</div></div>
-          <div className="card kpi"><div className="l">TVA facturée (4431)</div><div className="v">{money(data.collected)}</div>
+          <div className="card kpi"><div className="l">TVA facturée (443100)</div><div className="v">{money(data.collected)}</div>
             <div className="small muted">{data.collectedByRate.map((r: any) => `${r.rate} % : ${money(r.amount)}`).join(' · ')}</div></div>
-          <div className="card kpi"><div className="l">TVA récupérable (445)</div><div className="v">{money(data.deductible)}</div></div>
+          <div className="card kpi"><div className="l">TVA récupérable (445…)</div><div className="v">{money(data.deductible)}</div></div>
           <div className="card kpi"><div className="l">{data.credit ? 'Crédit de TVA' : 'TVA à payer'}</div><div className="v" style={{ color: data.due ? 'var(--crit)' : 'var(--ok)' }}>{money(data.due || data.credit)}</div></div>
         </div>
         <p className="small muted" style={{ marginBottom: 0 }}>Montants issus des écritures validées du mois. À reporter sur la déclaration mensuelle de la DGI (e-impôts) ; un crédit de TVA se reporte sur le mois suivant.</p>
@@ -293,7 +293,7 @@ function Chart({ accounts, changed }: { accounts: any[]; changed: () => void }) 
     <div className="card">
       {can('accounting.admin') && !ctx?.readOnly && (
         <form className="row" style={{ marginBottom: 12 }} onSubmit={(e) => { e.preventDefault(); run(async () => { await api('/company/accounting/accounts', { body: form }); setForm({ code: '', name: '' }); changed(); }); }}>
-          <div style={{ width: 140 }}><Field label="Nouveau sous-compte" required placeholder="Ex. 6011" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} /></div>
+          <div style={{ width: 140 }}><Field label="Nouveau sous-compte" required inputMode="numeric" pattern="[1-9][0-9]{5}" maxLength={6} title="6 chiffres, ex. 601100" placeholder="Ex. 601100" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} /></div>
           <div style={{ flex: 1, minWidth: 220 }}><Field label="Intitulé" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
           <button className="btn" disabled={busy} style={{ alignSelf: 'flex-end' }}>Ajouter</button>
         </form>
@@ -385,8 +385,8 @@ function Closing({ version, changed }: { version: number; changed: () => void })
         <div className="card" style={{ flex: 1, minWidth: 320, display: 'grid', gap: 12 }}>
           <header><h2>Exercice {c.year}</h2><span className="small muted">du 01/01/{c.year} au 31/12/{c.year}</span></header>
           {c.closed ? <>
-            <Alert kind="ok">Exercice clôturé le {date(c.closed.closedAt)} — {c.closed.result >= 0 ? 'bénéfice' : 'perte'} de <b>{money(Math.abs(c.closed.result))}</b>, porté au compte {c.closed.result >= 0 ? '131' : '139'}.</Alert>
-            <p className="small muted" style={{ margin: 0 }}>Après l'assemblée qui approuve les comptes, passez l'affectation du résultat par une écriture d'OD (ex. 131 vers 111 réserve légale, 121 report à nouveau ou 465 dividendes).</p>
+            <Alert kind="ok">Exercice clôturé le {date(c.closed.closedAt)} — {c.closed.result >= 0 ? 'bénéfice' : 'perte'} de <b>{money(Math.abs(c.closed.result))}</b>, porté au compte {c.closed.result >= 0 ? '131000' : '139000'}.</Alert>
+            <p className="small muted" style={{ margin: 0 }}>Après l'assemblée qui approuve les comptes, passez l'affectation du résultat par une écriture d'OD (ex. 131000 vers 111000 réserve légale, 121000 report à nouveau ou 465000 dividendes).</p>
           </> : <>
             <div className="kpis"><div className="card kpi"><div className="l">Résultat provisoire</div><div className="v" style={{ color: c.result < 0 ? 'var(--crit)' : 'var(--ok)' }}>{money(c.result)}</div></div></div>
             {c.blocking.length > 0 && <Alert>{c.blocking.map((b: string) => <div key={b}>✕ {b}</div>)}</Alert>}
@@ -401,7 +401,7 @@ function Closing({ version, changed }: { version: number; changed: () => void })
                 }
               }}>Clôturer l'exercice {c.year}</button></div>
             </>}
-            <p className="small muted" style={{ margin: 0 }}>La clôture solde les comptes de charges et de produits (classes 6, 7 et 8) dans le résultat (131 ou 139), puis verrouille l'exercice. La comptabilité étant continue, les soldes de clôture deviennent les soldes d'ouverture de l'exercice suivant.</p>
+            <p className="small muted" style={{ margin: 0 }}>La clôture solde les comptes de charges et de produits (classes 6, 7 et 8) dans le résultat (131000 ou 139000), puis verrouille l'exercice. La comptabilité étant continue, les soldes de clôture deviennent les soldes d'ouverture de l'exercice suivant.</p>
           </>}
         </div>
       )}

@@ -35,7 +35,7 @@ describe('Stocks valorisés au CMUP', () => {
     expect(await stock()).toMatchObject({ stock_qty: 100, stock_value: 1_000_000, avg_cost: 10000 });
     expect((await owner.agent.post(`/company/stock/${rice}/opening`).send({ quantity: 1, unitCost: 1 })).body.error.code).toBe('already_has_movements');
     const an = (await owner.agent.get('/company/accounting/entries').query({ journal: 'AN' })).body[0];
-    expect(an.lines.map((l: any) => `${l.account} ${l.debit || -l.credit}`).sort()).toEqual(['311 1000000', '471 -1000000']);
+    expect(an.lines.map((l: any) => `${l.account} ${l.debit || -l.credit}`).sort()).toEqual(['311000 1000000', '471000 -1000000']);
   });
 
   it("recalcule le coût moyen à chaque achat (remise déduite)", async () => {
@@ -94,7 +94,7 @@ describe('Stocks valorisés au CMUP', () => {
     expect(v).toMatchObject({ stockValue: 4800, booked: 1_004_800, variation: -1_000_000 });
     expect((await owner.agent.post('/company/stock/variation').send({ date: today() })).body.variation).toBe(0);
     const tb = (await owner.agent.get('/company/accounting/trial-balance')).body;
-    expect(tb.accounts.find((a: any) => a.account === '311')).toMatchObject({ closingDebit: 4800 });
+    expect(tb.accounts.find((a: any) => a.account === '311000')).toMatchObject({ closingDebit: 4800 });
     expect(tb.balanced).toBe(true);
   });
 

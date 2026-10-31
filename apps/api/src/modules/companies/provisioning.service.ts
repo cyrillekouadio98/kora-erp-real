@@ -46,9 +46,9 @@ export class ProvisioningService {
     // Plan comptable SYSCOHADA, journaux, puis trois comptes de trésorerie avec leur sous-compte comptable.
     await sql`select seed_accounting(${companyId}::uuid), seed_accounting_extra(${companyId}::uuid)`.execute(t);
     const treasury = [
-      { kind: 'cash' as const, name: 'Caisse principale', ledger_code: '5711' },
-      { kind: 'bank' as const, name: 'Banque principale', ledger_code: '5211' },
-      { kind: 'mobile_money' as const, name: 'Mobile money', ledger_code: '5521' },
+      { kind: 'cash' as const, name: 'Caisse principale', ledger_code: '571100' },
+      { kind: 'bank' as const, name: 'Banque principale', ledger_code: '521100' },
+      { kind: 'mobile_money' as const, name: 'Mobile money', ledger_code: '552100' },
     ];
     await t.insertInto('ledger_account').values(treasury.map((a) => ({ company_id: companyId, code: a.ledger_code, name: a.name, is_system: true }))).execute();
     await t.insertInto('treasury_account').values(treasury.map((a) => ({ ...a, company_id: companyId, bank_name: null, account_number: null }))).execute();

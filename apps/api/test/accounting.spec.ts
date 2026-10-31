@@ -30,9 +30,21 @@ describe('Comptabilité SYSCOHADA', () => {
 
   it('installe le plan comptable SYSCOHADA et un sous-compte par compte de trésorerie', async () => {
     const accounts = (await owner.agent.get('/company/accounting/accounts')).body.map((a: any) => a.code);
-    for (const c of ['101', '401', '411', '4431', '4452', '521', '552', '571', '585', '601', '6222', '701', '706', '5711', '5211', '5521']) expect(accounts).toContain(c);
-    expect((await owner.agent.post('/company/accounting/accounts').send({ code: '6011', name: 'Achats de ciment' })).status).toBe(201);
-    expect((await owner.agent.post('/company/accounting/accounts').send({ code: '999', name: 'Sans parent' })).body.error.code).toBe('no_parent_account');
+    for (const c of ['101000', '401000', '411000', '443100', '445200', '521000', '552000', '571000', '585000', '601000', '622200', '701000', '706000', '571100', '521100', '552100']) expect(accounts).toContain(c);
+    expect((await owner.agent.post('/company/accounting/accounts').send({ code: '601100', name: 'Achats de ciment' })).status).toBe(201);
+    expect((await owner.agent.post('/company/accounting/accounts').send({ code: '999000', name: 'Sans parent' })).body.error.code).toBe('no_parent_account');
+  });
+
+  it('numérote tous les comptes sur 6 chiffres', async () => {
+    const accounts = (await owner.agent.get('/company/accounting/accounts')).body.map((a: any) => a.code);
+    expect(accounts.filter((c: string) => !/^[1-9]\d{5}$/.test(c))).toEqual([]);
+    // Un numéro plus court est complété par des zéros ; plus de 6 chiffres est refusé.
+    expect((await owner.agent.post('/company/accounting/accounts').send({ code: '6012', name: 'Achats de fer' })).body.code).toBe('601200');
+    expect((await owner.agent.post('/company/accounting/accounts').send({ code: '6011001', name: 'Trop long' })).status).toBe(400);
+    expect((await owner.agent.get('/company/accounting/ledger').query({ account: '601' })).body.account.code).toBe('601000');
+    const cash2 = await owner.agent.post('/company/treasury/accounts').send({ kind: 'cash', name: 'Caisse dépôt' });
+    expect(cash2.status).toBe(201);
+    expect((await owner.agent.get('/company/accounting/accounts')).body.find((a: any) => a.name === 'Caisse dépôt').code).toBe('571200');
   });
 
   it('comptabilise une facture de vente, son encaissement et un avoir', async () => {
@@ -43,15 +55,15 @@ describe('Comptabilité SYSCOHADA', () => {
     await owner.agent.post(`/company/sales/documents/${inv.body.id}/validate`);
     const vt = await entryOf(`FAC-${year}-00001`);
     expect(vt).toMatchObject({ journal: 'VT', number: `VT-${year}-00001`, status: 'posted', total: 177000 });
-    expect(shape(vt)).toEqual(['411 D 177000', '4431 C 27000', '701 C 100000', '706 C 50000'].sort());
+    expect(shape(vt)).toEqual(['411000 D 177000', '443100 C 27000', '701000 C 100000', '706000 C 50000'].sort());
 
     await owner.agent.post(`/company/sales/documents/${inv.body.id}/payments`).send({ amount: 77000, method: 'cash' });
-    expect(shape(await entryOf(`Encaissement FAC-${year}-00001`))).toEqual(['411 C 77000', '5711 D 77000']);
+    expect(shape(await entryOf(`Encaissement FAC-${year}-00001`))).toEqual(['411000 C 77000', '571100 D 77000']);
 
     const cn = await owner.agent.post(`/company/sales/documents/${inv.body.id}/credit-note`);
     await owner.agent.patch(`/company/sales/documents/${cn.body.id}`).send({ lines: [{ description: 'Retour ciment', quantity: 1, unitPrice: 10000, vatRate: 18 }] });
     await owner.agent.post(`/company/sales/documents/${cn.body.id}/validate`);
-    expect(shape(await entryOf(`Avoir AV-${year}-00001`))).toEqual(['411 C 11800', '4431 D 1800', '701 D 10000'].sort());
+    expect(shape(await entryOf(`Avoir AV-${year}-00001`))).toEqual(['411000 C 11800', '443100 D 1800', '701000 D 10000'].sort());
   });
 
   it('comptabilise une facture fournisseur à la date du fournisseur et son règlement', async () => {
@@ -61,35 +73,35 @@ describe('Comptabilité SYSCOHADA', () => {
     await owner.agent.post(`/company/purchases/documents/${bill.body.id}/validate`);
     const ac = await entryOf('FF-77');
     expect(ac).toMatchObject({ journal: 'AC', date: issued });
-    expect(shape(ac)).toEqual(['401 C 47200', '4452 D 7200', '601 D 40000'].sort());
+    expect(shape(ac)).toEqual(['401000 C 47200', '445200 D 7200', '601000 D 40000'].sort());
     await owner.agent.patch(`/company/treasury/accounts/${bank}`).send({ openingBalance: 1_000_000, openingDate: addDays(today(), -30) });
     await owner.agent.post(`/company/purchases/documents/${bill.body.id}/payments`).send({ amount: 47200, method: 'bank_transfer' });
-    expect(shape(await entryOf(`Règlement ACH-${year}-00001`))).toEqual(['401 D 47200', '5211 C 47200']);
+    expect(shape(await entryOf(`Règlement ACH-${year}-00001`))).toEqual(['401000 D 47200', '521100 C 47200']);
   });
 
   it('comptabilise dépenses, virements internes (via 585) et écarts de caisse', async () => {
     await owner.agent.post('/company/treasury/movements').send({ kind: 'expense', accountId: cash, amount: 12000, category: 'electricity', label: 'Facture CIE' });
-    expect(shape(await entryOf('Facture CIE'))).toEqual(['5711 C 12000', '6052 D 12000']);
+    expect(shape(await entryOf('Facture CIE'))).toEqual(['571100 C 12000', '605200 D 12000']);
     await owner.agent.post('/company/treasury/transfers').send({ fromAccountId: cash, toAccountId: bank, amount: 50000, label: 'Dépôt banque' });
     const legs = (await owner.agent.get('/company/accounting/entries').query({ q: 'Dépôt banque' })).body.map(shape).flat().sort();
-    expect(legs).toEqual(['5211 D 50000', '5711 C 50000', '585 C 50000', '585 D 50000'].sort());
+    expect(legs).toEqual(['521100 D 50000', '571100 C 50000', '585000 C 50000', '585000 D 50000'].sort());
     await owner.agent.post(`/company/treasury/accounts/${cash}/count`).send({ counted: 14000 });
-    expect(shape(await entryOf("Écart d'arrêté"))).toEqual(['5711 C 1000', '658 D 1000']);
+    expect(shape(await entryOf("Écart d'arrêté"))).toEqual(['571100 C 1000', '658000 D 1000']);
   });
 
   it('produit une balance équilibrée, la TVA de la période et le résultat', async () => {
     const tb = (await owner.agent.get('/company/accounting/trial-balance')).body;
     expect(tb.balanced).toBe(true);
     const row = (code: string) => tb.accounts.find((a: any) => a.account === code);
-    expect(row('411')).toMatchObject({ debit: 177000, credit: 88800, closingDebit: 88200 });
-    expect(row('585')).toMatchObject({ closingDebit: 0, closingCredit: 0 });
-    expect(row('5711')).toMatchObject({ closingDebit: 14000 });
+    expect(row('411000')).toMatchObject({ debit: 177000, credit: 88800, closingDebit: 88200 });
+    expect(row('585000')).toMatchObject({ closingDebit: 0, closingCredit: 0 });
+    expect(row('571100')).toMatchObject({ closingDebit: 14000 });
     // Concordance : chaque compte de trésorerie a le même solde en trésorerie et en comptabilité (solde d'ouverture compris).
     for (const acc of (await owner.agent.get('/company/treasury/accounts')).body) {
       const r = row(acc.ledgerCode);
       expect({ name: acc.name, balance: r ? r.closingDebit - r.closingCredit : 0 }).toEqual({ name: acc.name, balance: acc.balance });
     }
-    expect(row('471')).toMatchObject({ closingCredit: 1_000_000 }); // contrepartie du solde d'ouverture de la banque, à solder par le comptable
+    expect(row('471000')).toMatchObject({ closingCredit: 1_000_000 }); // contrepartie du solde d'ouverture de la banque, à solder par le comptable
 
     const vat = (await owner.agent.get('/company/accounting/vat').query({ from: addDays(today(), -30), to: today() })).body;
     expect(vat).toMatchObject({ collected: 25200, deductible: 7200, due: 18000, credit: 0, revenueHt: 140000 });
@@ -101,17 +113,17 @@ describe('Comptabilité SYSCOHADA', () => {
 
   it("passe, valide et contre-passe une écriture d'OD ; refuse une écriture déséquilibrée", async () => {
     const unbalanced = await owner.agent.post('/company/accounting/entries').send({ date: today(), label: 'Essai', lines: [
-      { account: '6222', label: 'Loyer', debit: 1000 }, { account: '401', label: 'Loyer', credit: 900 }] });
+      { account: '622200', label: 'Loyer', debit: 1000 }, { account: '401000', label: 'Loyer', credit: 900 }] });
     expect((await owner.agent.post(`/company/accounting/entries/${unbalanced.body.id}/post`)).body.error.code).toBe('unbalanced_entry');
     await owner.agent.patch(`/company/accounting/entries/${unbalanced.body.id}`).send({ lines: [
-      { account: '6011', label: 'Reclassement achats ciment', debit: 40000 }, { account: '601', label: 'Reclassement achats ciment', credit: 40000 }] });
+      { account: '601100', label: 'Reclassement achats ciment', debit: 40000 }, { account: '601000', label: 'Reclassement achats ciment', credit: 40000 }] });
     const posted = await owner.agent.post(`/company/accounting/entries/${unbalanced.body.id}/post`);
     expect(posted.body).toMatchObject({ status: 'posted', number: `OD-${year}-00001` });
     expect((await owner.agent.delete(`/company/accounting/entries/${posted.body.id}`)).body.error.code).toBe('entry_posted');
 
     const rev = await owner.agent.post(`/company/accounting/entries/${posted.body.id}/reverse`).send({ reason: 'reclassement inutile' });
     expect(rev.body).toMatchObject({ number: `OD-${year}-00002`, reversalOf: posted.body.id });
-    expect(shape(rev.body)).toEqual(['601 D 40000', '6011 C 40000']);
+    expect(shape(rev.body)).toEqual(['601000 D 40000', '601100 C 40000']);
     const auto = await entryOf('Facture CIE');
     expect((await owner.agent.post(`/company/accounting/entries/${auto.id}/reverse`).send({ reason: 'non' })).body.error.code).toBe('not_reversible');
   });
@@ -130,7 +142,7 @@ describe('Comptabilité SYSCOHADA', () => {
   it('clôture une période : plus aucune écriture avant la date de clôture', async () => {
     const yesterday = addDays(today(), -1);
     const draft = await owner.agent.post('/company/accounting/entries').send({ date: addDays(today(), -2), label: 'Brouillon oublié', lines: [
-      { account: '6222', label: 'x', debit: 10 }, { account: '401', label: 'x', credit: 10 }] });
+      { account: '622200', label: 'x', debit: 10 }, { account: '401000', label: 'x', credit: 10 }] });
     expect((await owner.agent.post('/company/accounting/lock').send({ until: yesterday })).body.error.code).toBe('drafts_in_period');
     await owner.agent.delete(`/company/accounting/entries/${draft.body.id}`);
     expect((await owner.agent.post('/company/accounting/lock').send({ until: today() })).body.error.code).toBe('lock_in_future');

@@ -173,8 +173,8 @@ export class FinancialService {
     const totalDebitCredit = [...bal.values()].reduce((s, v) => s + v, 0);
     if (round(totalDebitCredit) !== 0) blocking.push('La balance n’est pas équilibrée.');
     const sumPrefix = (p: string) => round([...bal.entries()].filter(([c]) => c.startsWith(p)).reduce((s, [, v]) => s + v, 0));
-    if (sumPrefix('471')) warnings.push(`Le compte d'attente 471 n'est pas soldé (${sumPrefix('471').toLocaleString('fr-FR')} FCFA) : régularisez-le avec votre expert-comptable.`);
-    if (sumPrefix('585')) warnings.push(`Le compte de virements internes 585 n'est pas soldé (${sumPrefix('585').toLocaleString('fr-FR')} FCFA) : un virement n'a qu'une de ses deux jambes.`);
+    if (sumPrefix('471')) warnings.push(`Le compte d'attente 471000 n'est pas soldé (${sumPrefix('471').toLocaleString('fr-FR')} FCFA) : régularisez-le avec votre expert-comptable.`);
+    if (sumPrefix('585')) warnings.push(`Le compte de virements internes 585000 n'est pas soldé (${sumPrefix('585').toLocaleString('fr-FR')} FCFA) : un virement n'a qu'une de ses deux jambes.`);
     const stockValue = await this.stock.valueAt(trx, end);
     if (round(stockValue - sumPrefix('31')) !== 0) {
       warnings.push(`Le compte de stock 31 (${sumPrefix('31').toLocaleString('fr-FR')} FCFA) ne correspond pas à la valeur du stock au 31/12 (${stockValue.toLocaleString('fr-FR')} FCFA) : comptabilisez la variation de stock à cette date.`);
@@ -219,7 +219,7 @@ export class FinancialService {
         .map(([code, v]) => ({ account: code, label, ...(v > 0 ? { credit: v } : { debit: -v }) }));
       let entryId: string | null = null;
       if (lines.length) {
-        lines.push(c.result >= 0 ? { account: '131', label, credit: c.result } : { account: '139', label, debit: -c.result });
+        lines.push(c.result >= 0 ? { account: '131000', label, credit: c.result } : { account: '139000', label, debit: -c.result });
         entryId = (await this.accounting.postEntry(trx, t, { journal: 'OD', date: c.end, label, reference: `CLOTURE-${year}`, sourceType: 'year_closing', sourceId: null, lines })).id;
       }
       const company = await trx.selectFrom('company').select('accounting_locked_until').where('id', '=', t.companyId).executeTakeFirstOrThrow();

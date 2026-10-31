@@ -10,7 +10,8 @@ import { isoDate } from '../sales/sales.controller';
 import { AccountingService } from './accounting.service';
 import { FinancialService } from './financial.service';
 
-const accountCode = z.string().trim().regex(/^[1-9][0-9]{1,9}$/, { message: 'Numéro de compte invalide (chiffres uniquement)' });
+// Numéros sur 6 chiffres ; un numéro plus court est complété par des zéros (411 → 411000).
+const accountCode = z.string().trim().regex(/^[1-9][0-9]{1,5}$/, { message: 'Numéro de compte invalide : 6 chiffres au plus' }).transform((c) => c.padEnd(6, '0'));
 const LineSchema = z.object({
   account: accountCode,
   contactId: z.string().uuid().nullable().optional(),

@@ -285,14 +285,14 @@ export class PayrollService {
       const label = `Paie de ${run.label}`;
       const entry = await this.accounting.postEntry(trx, t, {
         journal: 'OD', date: periodEnd(run.period), label, sourceType: 'payroll_run', sourceId: runId, lines: [
-          { account: '661', label: `${label} — salaires bruts`, debit: run.totals.gross },
-          { account: '664', label: `${label} — charges sociales patronales`, debit: d.cnps.retirementEmployer + d.cnps.familyBenefits + d.cnps.workAccident + d.cmu.employer },
-          { account: '641', label: `${label} — taxes sur salaires`, debit: d.its.employerTax + d.its.apprenticeship + d.its.training },
-          { account: '422', label: `${label} — net à payer`, credit: run.totals.net },
-          { account: '431', label: `${label} — CNPS`, credit: d.cnps.total },
-          { account: '438', label: `${label} — CMU`, credit: d.cmu.total },
-          { account: '447', label: `${label} — ITS et taxes`, credit: d.its.total },
-          { account: '421', label: `${label} — avances et retenues`, credit: tot('advances') + tot('otherDeductions') },
+          { account: '661000', label: `${label} — salaires bruts`, debit: run.totals.gross },
+          { account: '664000', label: `${label} — charges sociales patronales`, debit: d.cnps.retirementEmployer + d.cnps.familyBenefits + d.cnps.workAccident + d.cmu.employer },
+          { account: '641000', label: `${label} — taxes sur salaires`, debit: d.its.employerTax + d.its.apprenticeship + d.its.training },
+          { account: '422000', label: `${label} — net à payer`, credit: run.totals.net },
+          { account: '431000', label: `${label} — CNPS`, credit: d.cnps.total },
+          { account: '438000', label: `${label} — CMU`, credit: d.cmu.total },
+          { account: '447000', label: `${label} — ITS et taxes`, credit: d.its.total },
+          { account: '421000', label: `${label} — avances et retenues`, credit: tot('advances') + tot('otherDeductions') },
         ],
       });
       await trx.updateTable('payroll_run').set({ status: 'validated', validated_at: new Date(), validated_by: t.ctx.userId }).where('id', '=', runId).execute();

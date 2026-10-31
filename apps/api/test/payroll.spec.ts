@@ -130,10 +130,10 @@ describe('Paie : employés, campagne mensuelle, comptabilité, paiement', () => 
 
     const entry = (await owner.agent.get('/company/accounting/entries').query({ q: 'Paie de' })).body[0];
     const by = (acc: string) => entry.lines.filter((l: any) => l.account === acc).reduce((s: number, l: any) => s + l.debit - l.credit, 0);
-    expect(by('661')).toBe(v.body.totals.gross);
-    expect(by('422')).toBe(-v.body.totals.net);
-    expect(by('431')).toBe(-v.body.declarations.cnps.total);
-    expect(by('421')).toBe(-15_000);
+    expect(by('661000')).toBe(v.body.totals.gross);
+    expect(by('422000')).toBe(-v.body.totals.net);
+    expect(by('431000')).toBe(-v.body.declarations.cnps.total);
+    expect(by('421000')).toBe(-15_000);
     expect(entry.lines.reduce((s: number, l: any) => s + l.debit - l.credit, 0)).toBe(0);
 
     const c = await ownerClient();
@@ -158,7 +158,7 @@ describe('Paie : employés, campagne mensuelle, comptabilité, paiement', () => 
     expect(paid.body.totals.paid).toBe(2);
     expect((await owner.agent.post(`/company/payroll/runs/${runId}/pay`).send({ accountId: bank })).body.error.code).toBe('already_paid');
     const tb = (await owner.agent.get('/company/accounting/trial-balance')).body;
-    const acc422 = tb.accounts.find((a: any) => a.account === '422');
+    const acc422 = tb.accounts.find((a: any) => a.account === '422000');
     expect(acc422.closingDebit + acc422.closingCredit).toBe(0);
     expect(tb.balanced).toBe(true);
     const bal = (await owner.agent.get('/company/treasury/accounts')).body.find((a: any) => a.id === bank).balance;

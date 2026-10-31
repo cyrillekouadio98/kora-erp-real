@@ -33,7 +33,7 @@ export default function StockPage() {
     if (m.type === 'threshold') await api(`/company/stock/${m.item.id}`, { method: 'PATCH', body: { minStock: m.minStock === '' ? null : Number(m.minStock) } });
     if (m.type === 'variation') {
       const r = await api('/company/stock/variation', { body: { date: m.date } });
-      setNotice(r.variation ? `Variation de stock comptabilisée (${r.entry}) : ${money(r.variation)} — stock valorisé à ${money(r.stockValue)}.` : `Le compte 311 est déjà égal à la valeur du stock (${money(r.stockValue)}) : aucune écriture nécessaire.`);
+      setNotice(r.variation ? `Variation de stock comptabilisée (${r.entry}) : ${money(r.variation)} — stock valorisé à ${money(r.stockValue)}.` : `Le compte 311000 est déjà égal à la valeur du stock (${money(r.stockValue)}) : aucune écriture nécessaire.`);
     }
     setModal(null); await load();
   });
@@ -102,7 +102,7 @@ export default function StockPage() {
             </>}
             {modal.type === 'opening' && <>
               <h2>Stock initial — {modal.item.name}</h2>
-              <p className="small muted" style={{ margin: 0 }}>Quantité présente avant l'utilisation de Kora, et son coût d'achat unitaire. Elle sera passée en comptabilité en à-nouveaux (311 / 471).</p>
+              <p className="small muted" style={{ margin: 0 }}>Quantité présente avant l'utilisation de Kora, et son coût d'achat unitaire. Elle sera passée en comptabilité en à-nouveaux (311000 / 471000).</p>
               <Alert>{error}</Alert>
               <div className="grid2">
                 <Field label={`Quantité (${modal.item.unit})`} type="number" min="0.001" step="any" required value={modal.quantity} onChange={set('quantity')} />
@@ -126,7 +126,7 @@ export default function StockPage() {
             </>}
             {modal.type === 'variation' && <>
               <h2>Variation de stock</h2>
-              <p className="small" style={{ margin: 0 }}>Les achats sont comptés en charges (601). À chaque clôture (mois, exercice), cette écriture ajuste le compte de stock 311 à la valeur réelle du stock, en contrepartie de 6031 : votre résultat devient exact.</p>
+              <p className="small" style={{ margin: 0 }}>Les achats sont comptés en charges (601000). À chaque clôture (mois, exercice), cette écriture ajuste le compte de stock 311000 à la valeur réelle du stock, en contrepartie de 603100 : votre résultat devient exact.</p>
               <Alert>{error}</Alert>
               <Field label="Valeur du stock arrêtée au" type="date" required max={today()} value={modal.date} onChange={set('date')} />
             </>}

@@ -13,13 +13,13 @@ import { AuditService } from '../audit/audit.service';
  * Biens et lignes libres → 701 / 601 ; services → 706 / 605. Un reclassement se fait par écriture d'OD.
  */
 export const ACCOUNTS = {
-  customer: '411', supplier: '401', suspense: '471', vatCollected: '4431', vatDeductible: '4452', transfer: '585', otherCharges: '658', otherIncome: '758',
-  salesGoods: '701', salesServices: '706', purchaseGoods: '601', purchaseServices: '605',
+  customer: '411000', supplier: '401000', suspense: '471000', vatCollected: '443100', vatDeductible: '445200', transfer: '585000', otherCharges: '658000', otherIncome: '758000',
+  salesGoods: '701000', salesServices: '706000', purchaseGoods: '601000', purchaseServices: '605000',
 };
 const MOVEMENT_COUNTERPART: Record<string, string> = {
-  rent: '6222', electricity: '6052', water: '6051', fuel: '6053', transport: '618', telecom: '628', supplies: '6055', maintenance: '624',
-  salaries: '661', taxes: '641', bank_fees: '631', owner_withdrawal: '104', other_expense: '658', capital: '101', loan: '162', other_income: '758',
-  transfer: ACCOUNTS.transfer, net_salary: '422',
+  rent: '622200', electricity: '605200', water: '605100', fuel: '605300', transport: '618000', telecom: '628000', supplies: '605500', maintenance: '624000',
+  salaries: '661000', taxes: '641000', bank_fees: '631000', owner_withdrawal: '104000', other_expense: '658000', capital: '101000', loan: '162000', other_income: '758000',
+  transfer: ACCOUNTS.transfer, net_salary: '422000',
 };
 
 /** Rubriques du compte de résultat (deux premiers chiffres du compte). */
@@ -331,8 +331,8 @@ export class AccountingService {
   async addAccount(t: TenantInfo, input: { code: string; name: string }) {
     return this.db.tenant(t.ctx, async (trx) => {
       // Un sous-compte doit se rattacher à un compte existant du plan (ex. 6011 sous 601).
-      const parents = await trx.selectFrom('ledger_account').select('code').where(sql<boolean>`${input.code} like code || '%'`).where('code', '!=', input.code).execute();
-      if (!parents.length) throw badRequest(`Le compte ${input.code} doit être un sous-compte d'un compte existant du plan SYSCOHADA (par exemple 6011 sous 601).`, undefined, 'no_parent_account');
+      const parents = await trx.selectFrom('ledger_account').select('code').where(sql<boolean>`${input.code} like rtrim(code, '0') || '%'`).where('code', '!=', input.code).execute();
+      if (!parents.length) throw badRequest(`Le compte ${input.code} doit être un sous-compte d'un compte existant du plan SYSCOHADA (par exemple 601100 sous 601000).`, undefined, 'no_parent_account');
       const exists = await trx.selectFrom('ledger_account').select('code').where('code', '=', input.code).executeTakeFirst();
       if (exists) throw conflict(`Le compte ${input.code} existe déjà.`, 'account_exists');
       await trx.insertInto('ledger_account').values({ company_id: t.companyId, code: input.code, name: input.name, is_system: false }).execute();
@@ -393,7 +393,7 @@ export class AccountingService {
     return this.db.tenant(t.ctx, async (trx) => {
       const acc = await trx.selectFrom('ledger_account').select(['code', 'name']).where('code', '=', f.account).executeTakeFirst();
       if (!acc) throw notFound('Compte');
-      const base = () => this.linesQuery(trx, f.to).where((eb) => eb.or([eb('l.account_code', '=', f.account), eb('l.account_code', 'like', `${f.account}%`)]))
+      const base = () => this.linesQuery(trx, f.to).where((eb) => eb.or([eb('l.account_code', '=', f.account), eb('l.account_code', 'like', `${f.account.replace(/0+$/, '')}%`)]))
         .$if(!!f.contactId, (q) => q.where('l.contact_id', '=', f.contactId!));
       const before = f.from ? await base().where('e.date', '<', f.from).select((eb) => [eb.fn.sum<string>('l.debit').as('d'), eb.fn.sum<string>('l.credit').as('c')]).executeTakeFirst() : null;
       const rows = await base().$if(!!f.from, (q) => q.where('e.date', '>=', f.from!))

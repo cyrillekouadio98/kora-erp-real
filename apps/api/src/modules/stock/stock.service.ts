@@ -143,7 +143,7 @@ export class StockService {
       if (value > 0) {
         const label = `Stock initial — ${p.name}`;
         await this.accounting.postEntry(trx, t, { journal: 'AN', date, label, sourceType: 'stock_opening', sourceId: m!.id, lines: [
-          { account: '311', label, debit: value }, { account: '471', label, credit: value }] });
+          { account: '311000', label, debit: value }, { account: '471000', label, credit: value }] });
       }
       await this.audit.tenant(trx, t.ctx, { action: 'stock.opening_recorded', entityType: 'product', entityId: productId, data: { name: p.name, quantity: input.quantity, value } });
       return { ok: true };
@@ -206,8 +206,8 @@ export class StockService {
       const label = `Variation des stocks de marchandises au ${date}`;
       const amount = Math.abs(diff);
       const e = await this.accounting.postEntry(trx, t, { journal: 'OD', date, label, sourceType: 'stock_variation', sourceId: null, lines: diff > 0
-        ? [{ account: '311', label, debit: amount }, { account: '6031', label, credit: amount }]
-        : [{ account: '6031', label, debit: amount }, { account: '311', label, credit: amount }] });
+        ? [{ account: '311000', label, debit: amount }, { account: '603100', label, credit: amount }]
+        : [{ account: '603100', label, debit: amount }, { account: '311000', label, credit: amount }] });
       await this.audit.tenant(trx, t.ctx, { action: 'stock.variation_posted', entityType: 'journal_entry', entityId: e.id, data: { date, stockValue, booked, variation: diff } });
       return { stockValue, booked, variation: diff, entry: e.number };
     });

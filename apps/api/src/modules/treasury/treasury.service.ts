@@ -102,12 +102,12 @@ export class TreasuryService {
     return this.db.tenant(t.ctx, async (trx) => {
       const exists = await trx.selectFrom('treasury_account').select('id').where('name', '=', input.name).executeTakeFirst();
       if (exists) throw conflict(`Un compte s'appelle déjà « ${input.name} ».`, 'account_name_taken');
-      // Sous-compte comptable suivant : 5711, 5712… (caisse), 5211… (banque), 5521… (mobile money)
+      // Sous-compte comptable suivant, sur 6 chiffres : 571100, 571200… (caisse), 521100… (banque), 552100… (mobile money)
       const root = { cash: '571', bank: '521', mobile_money: '552' }[input.kind];
-      const used = await trx.selectFrom('ledger_account').select('code').where('code', 'like', `${root}_%`).execute();
-      let n = 1;
-      while (used.some((u) => u.code === `${root}${n}`)) n++;
-      const ledgerCode = `${root}${n}`;
+      const used = new Set((await trx.selectFrom('ledger_account').select('code').where('code', 'like', `${root}%`).execute()).map((u) => u.code));
+      const suffixes = [...Array.from({ length: 9 }, (_, i) => (i + 1) * 100), ...Array.from({ length: 999 }, (_, i) => i + 1)];
+      const ledgerCode = suffixes.map((n) => `${root}${String(n).padStart(3, '0')}`).find((c) => !used.has(c) && c !== `${root}000`);
+      if (!ledgerCode) throw conflict(`Plus aucun sous-compte ${root} disponible.`, 'no_ledger_code');
       await trx.insertInto('ledger_account').values({ company_id: t.companyId, code: ledgerCode, name: input.name, is_system: true }).execute();
       const a = await trx.insertInto('treasury_account').values({
         company_id: t.companyId, kind: input.kind, name: input.name, bank_name: input.bankName ?? null, account_number: input.accountNumber ?? null, ledger_code: ledgerCode,
