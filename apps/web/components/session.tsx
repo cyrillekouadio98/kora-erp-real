@@ -22,7 +22,8 @@ export const useSession = () => useContext(Ctx)!;
 
 /** module : entrée masquée si le module n'est pas inclus dans la formule. */
 const NAV: { href: string; label: string; perm?: string; module?: string; group: string }[] = [
-  { href: '/app', label: 'Tableau de bord', group: 'Entreprise' },
+  { href: '/app', label: 'Applications', group: 'Entreprise' },
+  { href: '/app/tableau-de-bord', label: 'Tableau de bord', group: 'Entreprise' },
   { href: '/app/entreprise', label: 'Fiche entreprise', perm: 'settings.read', group: 'Entreprise' },
   { href: '/app/ventes/devis', label: 'Devis', perm: 'sales.read', group: 'Ventes' },
   { href: '/app/ventes/factures', label: 'Factures', perm: 'sales.read', group: 'Ventes' },
@@ -79,19 +80,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // L'entrée la plus précise : sur /app/tresorerie/caisse, « Caisse » et pas « Trésorerie ».
   const activeHref = NAV.map((n) => n.href).filter((h) => path === h || (h !== '/app' && path.startsWith(`${h}/`))).sort((x, y) => y.length - x.length)[0];
   let group = '';
+  const home = path === '/app';
+  const companySelect = me.companies.length > 0 && (
+    <select className="input" value={me.activeCompanyId ?? ''} onChange={(e) => switchTo(e.target.value)} aria-label="Changer d'entreprise">
+      {me.companies.map((c) => <option key={c.companyId} value={c.companyId}>{c.name}</option>)}
+    </select>
+  );
 
   return (
     <Ctx.Provider value={{ me, ctx, can, refresh }}>
-      <div className="shell">
-        <aside className="side">
-          <div className="brand">Kora<span> ERP</span></div>
-          {me.companies.length > 0 && (
-            <label className="field" style={{ padding: '0 8px' }}>Entreprise active
-              <select className="input" value={me.activeCompanyId ?? ''} onChange={(e) => switchTo(e.target.value)} aria-label="Changer d'entreprise">
-                {me.companies.map((c) => <option key={c.companyId} value={c.companyId}>{c.name}</option>)}
-              </select>
-            </label>
-          )}
+      <div className={home ? 'shell home' : 'shell'}>
+        {home && (
+          <header className="topbar">
+            <div className="brand">Kora<span> ERP</span></div>
+            <div className="row" style={{ marginLeft: 'auto' }}>
+              {status && <Pill tone={status[1]}>{status[0]}</Pill>}
+              {companySelect && <div style={{ minWidth: 200 }}>{companySelect}</div>}
+              {me.platformRoles.length > 0 && <Link className="btn sm" href="/console">Console éditeur</Link>}
+              <span className="small muted">{me.user.fullName}</span>
+              <button className="btn sm" onClick={logout}>Se déconnecter</button>
+            </div>
+          </header>
+        )}
+        {!home && <aside className="side">
+          <Link href="/app" className="brand" style={{ textDecoration: 'none', color: 'inherit' }} title="Toutes les applications">Kora<span> ERP</span></Link>
+          {companySelect && <label className="field" style={{ padding: '0 8px' }}>Entreprise active{companySelect}</label>}
           <nav className="nav" aria-label="Navigation principale">
             {NAV.filter((n) => (!n.perm || can(n.perm)) && (!n.module || ctx?.entitlements.modules.includes(n.module))).map((n) => {
               const head = n.group !== group ? <small key={`g-${n.group}`}>{(group = n.group)}</small> : null;
@@ -104,7 +117,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="muted">{me.user.fullName}<br />{me.user.email}</div>
             <button className="btn sm" onClick={logout}>Se déconnecter</button>
           </div>
-        </aside>
+        </aside>}
         <main className="main"><div className="wrap">
           {ctx?.readOnly && (
             <div className="alert warn">Votre espace est en <b>lecture seule</b> ({status?.[0].toLowerCase() ?? 'compte suspendu'}). Vous pouvez consulter et exporter vos données. {can('billing.admin') && <Link href="/app/abonnement">Régler l'abonnement</Link>}</div>

@@ -154,3 +154,30 @@ table.vat { width: auto; font-size: 13px; } table.vat td, table.vat th { padding
 @media (max-width: 900px) { .dash-grid { grid-template-columns: minmax(0, 1fr); } }
 .delta { font-size: 12px; font-weight: 600; }
 .delta.up { color: var(--ok); } .delta.down { color: var(--crit); } .delta.flat { color: var(--muted); }
+
+/* Écran d'accueil : grille des applications */
+:root { --launcher-bg: linear-gradient(135deg, #e9e8f1 0%, #f3f3ee 45%, #e4ece9 100%); --tile-shadow: 0 1px 2px rgba(20, 20, 40, .08), 0 4px 12px rgba(20, 20, 40, .08); }
+@media (prefers-color-scheme: dark) {
+  :root { --launcher-bg: linear-gradient(135deg, #141a1f 0%, #0f1412 50%, #121a17 100%); --tile-shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 12px rgba(0, 0, 0, .3); }
+}
+.shell.home { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; background: var(--launcher-bg); }
+.shell.home .main { background: transparent; }
+.topbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 24px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.launcher { width: 100%; max-width: 1040px; margin: 0 auto; padding: 24px 0 48px; display: grid; gap: 32px; }
+.launcher-head { display: grid; gap: 6px; justify-items: center; text-align: center; }
+.launcher-head .input { width: min(420px, 100%); margin-top: 12px; }
+.apps { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 28px 12px; }
+.app { display: grid; justify-items: center; gap: 10px; text-decoration: none; color: var(--ink); border-radius: 14px; padding: 6px 4px; }
+.app-ico { display: grid; place-items: center; width: 96px; height: 96px; border-radius: 16px; background: var(--surface); box-shadow: var(--tile-shadow); transition: transform .15s, box-shadow .15s; }
+.app:hover .app-ico, .app:focus-visible .app-ico { transform: translateY(-3px); box-shadow: var(--shadow); }
+.app:focus-visible { outline: none; }
+.app:focus-visible .app-ico { outline: 2px solid var(--accent); outline-offset: 3px; }
+.app-name { font-size: 15px; text-align: center; line-height: 1.25; }
+@media (max-width: 560px) {
+  .apps { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px 6px; }
+  .app-ico { width: 72px; height: 72px; border-radius: 14px; }
+  .app-ico svg { width: 42px; height: 42px; }
+  .app-name { font-size: 13px; }
+  .topbar { padding: 10px 16px; }
+}
+@media (prefers-reduced-motion: reduce) { .app-ico { transition: none; } }
