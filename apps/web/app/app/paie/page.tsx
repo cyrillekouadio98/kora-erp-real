@@ -12,7 +12,7 @@ const PARAM_LABELS: [string, string, string][] = [
   ['familyBenefitsRate', 'Prestations familiales (employeur)', '%'], ['workAccidentRate', 'Accident du travail (employeur)', '%'], ['smallBenefitsCeiling', 'Plafond PF / AT', 'FCFA'],
   ['cmuPerPerson', 'CMU par bénéficiaire', 'FCFA'], ['cmuEmployerShare', 'CMU prise en charge par l’employeur', 'FCFA'],
   ['employerTaxRate', 'Contribution employeur sur salaires', '%'], ['apprenticeshipTaxRate', "Taxe d'apprentissage", '%'], ['trainingTaxRate', 'Taxe formation continue', '%'],
-  ['transportExemptCap', 'Transport exonéré par mois', 'FCFA'], ['workingDays', 'Jours de référence (absences)', 'j'],
+  ['transportExemptCap', 'Transport exonéré par mois', 'FCFA'], ['workingDays', 'Jours de référence (absences)', 'j'], ['smig', 'SMIG mensuel', 'FCFA'],
 ];
 
 export default function PayrollPage() {
@@ -58,7 +58,8 @@ export default function PayrollPage() {
             e.preventDefault();
             run(async () => {
               const body = Object.fromEntries(PARAM_LABELS.map(([k]) => [k, Number(settings[k])]));
-              await api('/company/payroll/settings', { method: 'PATCH', body: { ...body, itsBrackets: settings.itsBrackets, itsFamilyReduction: settings.itsFamilyReduction } });
+              await api('/company/payroll/settings', { method: 'PATCH', body: { ...body, itsBrackets: settings.itsBrackets, itsFamilyReduction: settings.itsFamilyReduction,
+                categories: settings.categories.filter((c: any) => c.code.trim()).map((c: any) => ({ code: c.code.trim(), label: c.label.trim() || c.code.trim(), minSalary: Number(c.minSalary || 0) })) } });
               setSettings(null);
             });
           }}>
@@ -67,6 +68,22 @@ export default function PayrollPage() {
             <Alert>{error}</Alert>
             <div className="grid2">{PARAM_LABELS.map(([k, label, unit]) => (
               <Field key={k} label={`${label} (${unit})`} type="number" step="any" min={0} disabled={!can('payroll.admin')} value={settings[k]} onChange={(e) => setSettings({ ...settings, [k]: e.target.value })} />))}</div>
+            <h3>Grille des catégories</h3>
+            <p className="small muted" style={{ margin: 0 }}>Salaire catégoriel mensuel de chaque catégorie, selon la convention collective de votre branche (barèmes revalorisés par l'arrêté n° 50/MEPS/CAB de 2023). Il sert de salaire de base au bouton « Calculer la fiche » des employés ; le sursalaire complète jusqu'au net demandé.</p>
+            <div className="table-wrap"><table>
+              <thead><tr><th style={{ width: 90 }}>Code</th><th>Intitulé</th><th className="n" style={{ width: 170 }}>Salaire catégoriel</th><th></th></tr></thead>
+              <tbody>{settings.categories.map((c: any, i: number) => {
+                const setCat = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => setSettings({ ...settings, categories: settings.categories.map((x: any, j: number) => (j === i ? { ...x, [k]: e.target.value } : x)) });
+                return (
+                  <tr key={i}>
+                    <td><input className="input" aria-label="Code" required maxLength={20} disabled={!can('payroll.admin')} value={c.code} onChange={setCat('code')} /></td>
+                    <td><input className="input" aria-label="Intitulé" maxLength={80} disabled={!can('payroll.admin')} value={c.label} onChange={setCat('label')} /></td>
+                    <td><input className="input n" aria-label="Salaire catégoriel" type="number" min={0} disabled={!can('payroll.admin')} placeholder="non renseigné" value={c.minSalary || ''} onChange={setCat('minSalary')} /></td>
+                    <td className="n">{can('payroll.admin') && <button type="button" className="btn sm" aria-label={`Retirer ${c.label}`} onClick={() => setSettings({ ...settings, categories: settings.categories.filter((_: any, j: number) => j !== i) })}>Retirer</button>}</td>
+                  </tr>
+                );
+              })}</tbody></table></div>
+            {can('payroll.admin') && <div><button type="button" className="btn sm" onClick={() => setSettings({ ...settings, categories: [...settings.categories, { code: '', label: '', minSalary: 0 }] })}>+ Ajouter une catégorie</button></div>}
             <h3>Barème mensuel de l'ITS</h3>
             <table className="vat"><thead><tr><th>Jusqu'à</th><th className="n">Taux</th></tr></thead>
               <tbody>{settings.itsBrackets.map(([ceiling, rate]: [number | null, number], i: number) => (

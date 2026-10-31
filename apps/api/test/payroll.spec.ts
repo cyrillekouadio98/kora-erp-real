@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { computePayslip, DEFAULT_PAYROLL_PARAMS as P, familyParts, progressiveTax } from '../src/modules/payroll/payroll.calc';
+import { computePayslip, DEFAULT_PAYROLL_PARAMS as P, familyParts, netToGross, progressiveTax } from '../src/modules/payroll/payroll.calc';
 import { today } from '../src/modules/sales/sales.service';
 import { createApp, ownerClient, resetDb, signup, uniqueEmail } from './helpers';
 
@@ -46,6 +46,21 @@ describe('Calcul du bulletin de paie (paramètres par défaut)', () => {
     expect(abs.taxable).toBe(320_000);
     expect(abs.lines.find((l) => l.code === 'ABS')?.gain).toBe(-30_000);
     expect(computePayslip(input({ baseSalary: 3_000_000 }), P).totals.cnpsEmployee).toBe(Math.round(1_647_315 * 0.063));
+  });
+  it('retrouve le brut à partir du net : salaire catégoriel, puis sursalaire jusqu’au net demandé', () => {
+    const fixed = { housingAllowance: 50_000, otherAllowances: 0, transportAllowance: 30_000, parts: 1, cmuBeneficiaries: 1 };
+    // Inverse exact du bulletin de référence ci-dessus (base 300 000 → net 307 950)
+    expect(netToGross(307_950, 0, fixed, P)).toMatchObject({ ok: true, baseSalary: 300_000, extraSalary: 0, result: { net: 307_950 } });
+    const cat = netToGross(307_950, 200_000, fixed, P);
+    expect(cat).toMatchObject({ ok: true, baseSalary: 200_000, extraSalary: 100_000, result: { net: 307_950 } });
+    expect(cat.ok && cat.result.lines.find((l) => l.code === 'SUR')?.gain).toBe(100_000);
+    for (const target of [120_000, 151_337, 1_234_567]) {
+      const r = netToGross(target, 75_000, { ...fixed, housingAllowance: 0, parts: 2.5, cmuBeneficiaries: 4 }, P);
+      expect(r.ok && r.result.net).toBe(target);
+    }
+    expect(netToGross(100_000, 200_000, fixed, P)).toMatchObject({ ok: false, reason: 'below_category' });
+    // Absences : le sursalaire est proratisé comme le salaire de base
+    expect(computePayslip(input({ baseSalary: 200_000, extraSalary: 100_000, absenceDays: 3 }), P).taxable).toBe(320_000);
   });
 });
 
@@ -163,5 +178,25 @@ describe('Paie : employés, campagne mensuelle, comptabilité, paiement', () => 
     expect(tb.balanced).toBe(true);
     const bal = (await owner.agent.get('/company/treasury/accounts')).body.find((a: any) => a.id === bank).balance;
     expect(bal).toBe(2_000_000 - paid.body.totals.net);
+  });
+  it('calcule la fiche à partir du net à payer et de la catégorie', async () => {
+    const settings = (await owner.agent.get('/company/payroll/settings')).body.params;
+    expect(settings.smig).toBe(75_000);
+    const categories = settings.categories.map((c: any) => (c.code === '3' ? { ...c, minSalary: 120_000 } : c));
+    expect((await owner.agent.patch('/company/payroll/settings').send({ categories })).status).toBe(200);
+    const body = { targetNet: 250_000, category: '3', transportAllowance: 30_000, maritalStatus: 'married', children: 1 };
+    const r = (await owner.agent.post('/company/payroll/net-to-gross').send(body)).body;
+    expect(r).toMatchObject({ baseSalary: 120_000, parts: 2.5, warnings: [], payslip: { net: 250_000 } });
+    expect(r.extraSalary).toBeGreaterThan(0);
+    expect(r.payslip.lines.map((l: any) => l.code)).toEqual(expect.arrayContaining(['BASE', 'SUR', 'CNPS', 'CMU', 'ITS', 'TRA']));
+    const saved = await owner.agent.patch(`/company/employees/${kouame}`).send({ category: '3', targetNet: 250_000, baseSalary: r.baseSalary, extraSalary: r.extraSalary, transportAllowance: 30_000, housingAllowance: 0, otherAllowances: 0 });
+    expect(saved.body).toMatchObject({ category: '3', targetNet: 250_000, baseSalary: 120_000, extraSalary: r.extraSalary });
+
+    const low = await owner.agent.post('/company/payroll/net-to-gross').send({ ...body, targetNet: 50_000 });
+    expect(low.body.error.code).toBe('net_too_low');
+    expect((await owner.agent.post('/company/payroll/net-to-gross').send({ ...body, category: 'Z9' })).body.error.code).toBe('unknown_category');
+    const unset = (await owner.agent.post('/company/payroll/net-to-gross').send({ ...body, category: '5', targetNet: 60_000 })).body;
+    expect(unset.extraSalary).toBe(0);
+    expect(unset.warnings.join(' ')).toMatch(/pas renseigné.*SMIG/s);
   });
 });

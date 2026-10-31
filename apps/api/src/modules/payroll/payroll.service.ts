@@ -9,12 +9,13 @@ import { AccountingService } from '../accounting/accounting.service';
 import { AuditService } from '../audit/audit.service';
 import { LeaveService } from '../leave/leave.service';
 import { TreasuryService } from '../treasury/treasury.service';
-import { computePayslip, DEFAULT_PAYROLL_PARAMS, familyParts, MaritalStatus, PayrollParams } from './payroll.calc';
+import { computePayslip, DEFAULT_PAYROLL_PARAMS, familyParts, MaritalStatus, netToGross, PayrollParams } from './payroll.calc';
 
 export interface EmployeeInput {
   firstName: string; lastName: string; jobTitle?: string | null; department?: string | null; hireDate: string; endDate?: string | null;
   contractType?: 'cdi' | 'cdd' | 'stage' | 'journalier'; cnpsNumber?: string | null; maritalStatus?: MaritalStatus; children?: number; partsOverride?: number | null;
   baseSalary?: number; housingAllowance?: number; transportAllowance?: number; otherAllowances?: number;
+  category?: string | null; targetNet?: number | null; extraSalary?: number;
   paymentMethod?: 'cash' | 'bank_transfer' | 'mobile_money'; bankDetails?: string | null; phone?: string | null; email?: string | null;
 }
 export interface PayslipInputs { overtime: number; bonus: number; absenceDays: number; advanceDeduction: number; otherDeduction: number }
@@ -24,9 +25,10 @@ const COLUMNS: Record<string, string> = {
   firstName: 'first_name', lastName: 'last_name', jobTitle: 'job_title', department: 'department', hireDate: 'hire_date', endDate: 'end_date',
   contractType: 'contract_type', cnpsNumber: 'cnps_number', maritalStatus: 'marital_status', children: 'children', partsOverride: 'parts_override',
   baseSalary: 'base_salary', housingAllowance: 'housing_allowance', transportAllowance: 'transport_allowance', otherAllowances: 'other_allowances',
+  category: 'category', targetNet: 'target_net', extraSalary: 'extra_salary',
   paymentMethod: 'payment_method', phone: 'phone', email: 'email',
 };
-const SALARY_FIELDS = ['baseSalary', 'housingAllowance', 'transportAllowance', 'otherAllowances'];
+const SALARY_FIELDS = ['baseSalary', 'housingAllowance', 'transportAllowance', 'otherAllowances', 'targetNet', 'extraSalary'];
 const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 export const periodLabel = (p: string) => `${MONTHS[Number(p.slice(5, 7)) - 1]} ${p.slice(0, 4)}`;
 const periodEnd = (p: string) => new Date(Date.UTC(Number(p.slice(0, 4)), Number(p.slice(5, 7)), 0)).toISOString().slice(0, 10);
@@ -78,9 +80,10 @@ export class PayrollService {
     return {
       id: e.id, number: e.number, firstName: e.first_name, lastName: e.last_name, fullName: `${e.first_name} ${e.last_name}`, jobTitle: e.job_title, department: e.department,
       hireDate: e.hire_date, endDate: e.end_date, contractType: e.contract_type, cnpsNumber: e.cnps_number, maritalStatus: e.marital_status, children: e.children,
-      partsOverride: e.parts_override === null ? null : Number(e.parts_override), parts, paymentMethod: e.payment_method, phone: e.phone, email: e.email,
+      partsOverride: e.parts_override === null ? null : Number(e.parts_override), parts, category: e.category, paymentMethod: e.payment_method, phone: e.phone, email: e.email,
       active: !e.end_date || e.end_date >= today(), linked: !!e.user_id,
-      ...(salaries ? { baseSalary: Number(e.base_salary), housingAllowance: Number(e.housing_allowance), transportAllowance: Number(e.transport_allowance), otherAllowances: Number(e.other_allowances) } : {}),
+      ...(salaries ? { baseSalary: Number(e.base_salary), extraSalary: Number(e.extra_salary), targetNet: e.target_net === null ? null : Number(e.target_net),
+        housingAllowance: Number(e.housing_allowance), transportAllowance: Number(e.transport_allowance), otherAllowances: Number(e.other_allowances) } : {}),
       bankDetails: bank ? (e.bank_details_enc ? decrypt(e.bank_details_enc) : null) : e.bank_details_enc ? '••••' : null,
     };
   }
@@ -140,6 +143,35 @@ export class PayrollService {
     });
   }
 
+  /** « Calculer la fiche » : salaire de base et sursalaire qui donnent le net demandé, avec le bulletin correspondant. */
+  async netToGross(t: TenantInfo, input: {
+    targetNet: number; category?: string | null; housingAllowance: number; transportAllowance: number; otherAllowances: number;
+    maritalStatus: MaritalStatus; children: number; partsOverride?: number | null;
+  }) {
+    this.assertSalaries(t);
+    return this.db.tenant(t.ctx, async (trx) => {
+      const p = await this.params(trx);
+      const fcfa = (n: number) => `${n.toLocaleString('fr-FR')} FCFA`;
+      const cat = input.category ? p.categories.find((c) => c.code === input.category) : undefined;
+      if (input.category && !cat) throw badRequest(`Catégorie « ${input.category} » absente de la grille de l'entreprise.`, undefined, 'unknown_category');
+      const parts = input.partsOverride ?? familyParts(input.maritalStatus, input.children);
+      const cmuBeneficiaries = 1 + (input.maritalStatus === 'married' ? 1 : 0) + input.children;
+      const r = netToGross(input.targetNet, cat?.minSalary ?? 0, {
+        housingAllowance: input.housingAllowance, transportAllowance: input.transportAllowance, otherAllowances: input.otherAllowances, parts, cmuBeneficiaries,
+      }, p);
+      if (!r.ok) {
+        throw badRequest(r.reason === 'below_category'
+          ? `Le salaire catégoriel de la ${cat!.label} (${fcfa(cat!.minSalary)}) donne déjà un net de ${fcfa(r.minNet)} : le net demandé ne peut pas être plus bas.`
+          : `Les indemnités saisies donnent déjà un net de ${fcfa(r.minNet)} : le net demandé ne peut pas être plus bas.`, undefined, 'net_too_low');
+      }
+      const warnings: string[] = [];
+      if (cat && !cat.minSalary) warnings.push(`Le salaire catégoriel de la ${cat.label} n'est pas renseigné (Paie › Paramètres de calcul) : tout le complément est porté au salaire de base, sans sursalaire.`);
+      if (r.baseSalary < p.smig) warnings.push(`Le salaire de base (${fcfa(r.baseSalary)}) est inférieur au SMIG (${fcfa(p.smig)}).`);
+      const { lines, gross, taxable, net, totals } = r.result;
+      return { baseSalary: r.baseSalary, extraSalary: r.extraSalary, parts, category: cat ?? null, warnings, payslip: { lines, gross, taxable, net, totals, employerCost: totals.employerCost } };
+    });
+  }
+
   // ------------------------------------------------------------------ paies mensuelles
   private async run(trx: TenantTrx, id: string, lock = false) {
     if (!isUuid(id)) throw notFound('Paie');
@@ -153,7 +185,7 @@ export class PayrollService {
     const parts = e.parts_override !== null ? Number(e.parts_override) : familyParts(e.marital_status, e.children);
     const beneficiaries = 1 + (e.marital_status === 'married' ? 1 : 0) + e.children;
     const result = computePayslip({
-      baseSalary: Number(e.base_salary), housingAllowance: Number(e.housing_allowance), otherAllowances: Number(e.other_allowances), transportAllowance: Number(e.transport_allowance),
+      baseSalary: Number(e.base_salary), extraSalary: Number(e.extra_salary), housingAllowance: Number(e.housing_allowance), otherAllowances: Number(e.other_allowances), transportAllowance: Number(e.transport_allowance),
       ...inputs, parts, cmuBeneficiaries: beneficiaries,
     }, params);
     if (result.net < 0) throw badRequest(`Le net à payer de ${e.first_name} ${e.last_name} serait négatif : réduisez les retenues.`, undefined, 'negative_net');

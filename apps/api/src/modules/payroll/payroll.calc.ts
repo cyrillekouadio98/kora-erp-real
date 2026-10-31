@@ -25,6 +25,9 @@ export interface PayrollParams {
   transportExemptCap: number;    // indemnité de transport exonérée par mois
   workingDays: number;           // base de proratisation des absences
   leaveDaysPerMonth: number;     // congés payés acquis par mois de service (jours ouvrables)
+  smig: number;                  // salaire minimum interprofessionnel garanti (mensuel)
+  /** Grille de l'entreprise : salaire catégoriel mensuel par catégorie (0 = non renseigné), selon la convention de sa branche. */
+  categories: { code: string; label: string; minSalary: number }[];
 }
 
 export const DEFAULT_PAYROLL_PARAMS: PayrollParams = {
@@ -35,6 +38,12 @@ export const DEFAULT_PAYROLL_PARAMS: PayrollParams = {
   cmuPerPerson: 1_000, cmuEmployerShare: 500,
   employerTaxRate: 1.2, apprenticeshipTaxRate: 0.4, trainingTaxRate: 1.2,
   transportExemptCap: 30_000, workingDays: 30, leaveDaysPerMonth: 2.2,
+  smig: 75_000,
+  // Montants à compléter : ils dépendent de la convention collective de la branche (arrêté n° 50/MEPS/CAB de 2023).
+  categories: [
+    ...[1, 2, 3, 4, 5, 6, 7].map((n) => ({ code: String(n), label: `${n}${n === 1 ? 're' : 'e'} catégorie`, minSalary: 0 })),
+    { code: 'AM', label: 'Agent de maîtrise', minSalary: 0 }, { code: 'C', label: 'Cadre', minSalary: 0 },
+  ],
 };
 
 export type MaritalStatus = 'single' | 'married' | 'divorced' | 'widowed';
@@ -51,7 +60,7 @@ export function familyParts(status: MaritalStatus, children: number): number {
 }
 
 export interface PayslipInput {
-  baseSalary: number; housingAllowance: number; otherAllowances: number; transportAllowance: number;
+  baseSalary: number; extraSalary?: number; housingAllowance: number; otherAllowances: number; transportAllowance: number;
   overtime: number; bonus: number; absenceDays: number; advanceDeduction: number; otherDeduction: number;
   parts: number; cmuBeneficiaries: number;
 }
@@ -73,9 +82,12 @@ export function progressiveTax(taxable: number, brackets: PayrollParams['itsBrac
 
 export function computePayslip(input: PayslipInput, p: PayrollParams) {
   const lines: PayslipLine[] = [];
-  const absence = input.absenceDays > 0 ? r((input.baseSalary * Math.min(input.absenceDays, p.workingDays)) / p.workingDays) : 0;
-  const base = input.baseSalary - absence;
+  const extra = input.extraSalary ?? 0;
+  // Les absences non rémunérées s'imputent sur le salaire de base et le sursalaire.
+  const absence = input.absenceDays > 0 ? r(((input.baseSalary + extra) * Math.min(input.absenceDays, p.workingDays)) / p.workingDays) : 0;
+  const base = input.baseSalary + extra - absence;
   lines.push({ code: 'BASE', label: 'Salaire de base', gain: input.baseSalary });
+  if (extra) lines.push({ code: 'SUR', label: 'Sursalaire', gain: extra });
   if (absence) lines.push({ code: 'ABS', label: `Absences non rémunérées (${input.absenceDays} j)`, gain: -absence });
   if (input.overtime) lines.push({ code: 'HS', label: 'Heures supplémentaires', gain: input.overtime });
   if (input.housingAllowance) lines.push({ code: 'LOG', label: 'Indemnité de logement', gain: input.housingAllowance });
@@ -134,4 +146,29 @@ export function computePayslip(input: PayslipInput, p: PayrollParams) {
       socialEmployee, socialEmployer, taxesEmployer, deductions, employerCost: gross + socialEmployer + taxesEmployer,
     },
   };
+}
+
+export type NetToGrossInput = Omit<PayslipInput, 'baseSalary' | 'extraSalary' | 'overtime' | 'bonus' | 'absenceDays' | 'advanceDeduction' | 'otherDeduction'>;
+
+/**
+ * Calcul inverse, du net à payer vers le brut : le salaire de base vaut le salaire catégoriel s'il est
+ * renseigné et le sursalaire complète ; sinon tout le complément va au salaire de base. On cherche le
+ * plus petit montant qui atteint le net demandé (le net croît avec le brut : l'impôt marginal reste < 100 %).
+ */
+export function netToGross(targetNet: number, minSalary: number, fixed: NetToGrossInput, p: PayrollParams) {
+  const slip = (base: number, extra: number) => computePayslip({ ...fixed, baseSalary: base, extraSalary: extra, overtime: 0, bonus: 0, absenceDays: 0, advanceDeduction: 0, otherDeduction: 0 }, p);
+  const withCategory = minSalary > 0;
+  const at = (x: number) => (withCategory ? slip(minSalary, x) : slip(x, 0));
+  const floor = at(0);
+  if (floor.net > targetNet) {
+    return { ok: false as const, minNet: floor.net, reason: withCategory ? 'below_category' as const : 'below_allowances' as const };
+  }
+  let lo = 0, hi = Math.max(1_000, targetNet * 2);
+  while (at(hi).net < targetNet) hi *= 2;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (at(mid).net >= targetNet) hi = mid; else lo = mid + 1;
+  }
+  const baseSalary = withCategory ? minSalary : lo, extraSalary = withCategory ? lo : 0;
+  return { ok: true as const, baseSalary, extraSalary, result: slip(baseSalary, extraSalary) };
 }

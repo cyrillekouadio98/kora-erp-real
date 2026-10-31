@@ -18,6 +18,7 @@ const EmployeeSchema = z.object({
   children: z.coerce.number().int().min(0).max(20).optional(),
   partsOverride: z.coerce.number().min(1).max(5).multipleOf(0.5).nullable().optional(),
   baseSalary: money.optional(), housingAllowance: money.optional(), transportAllowance: money.optional(), otherAllowances: money.optional(),
+  category: text(20), targetNet: money.nullable().optional(), extraSalary: money.optional(),
   paymentMethod: z.enum(['cash', 'bank_transfer', 'mobile_money']).optional(), bankDetails: text(80), phone: text(40),
   email: z.string().trim().toLowerCase().email({ message: 'Adresse e-mail invalide' }).nullable().optional().or(z.literal('').transform(() => null)),
 }).strict();
@@ -33,7 +34,15 @@ const SettingsSchema = z.object({
   familyBenefitsRate: rate.optional(), workAccidentRate: rate.optional(), smallBenefitsCeiling: money.optional(),
   cmuPerPerson: money.optional(), cmuEmployerShare: money.optional(), employerTaxRate: rate.optional(), apprenticeshipTaxRate: rate.optional(),
   trainingTaxRate: rate.optional(), transportExemptCap: money.optional(), workingDays: z.coerce.number().int().min(20).max(31).optional(),
-  leaveDaysPerMonth: z.coerce.number().min(0).max(5).optional(),
+  leaveDaysPerMonth: z.coerce.number().min(0).max(5).optional(), smig: money.optional(),
+  categories: z.array(z.object({ code: z.string().trim().min(1).max(20), label: z.string().trim().min(1).max(80), minSalary: money }).strict()).max(40)
+    .refine((l) => new Set(l.map((c) => c.code)).size === l.length, { message: 'Deux catégories ont le même code' }).optional(),
+}).strict();
+const NetToGrossSchema = z.object({
+  targetNet: z.coerce.number().positive({ message: 'Indiquez le net à payer' }).max(1e10).transform((v) => Math.round(v)),
+  category: text(20), housingAllowance: money.default(0), transportAllowance: money.default(0), otherAllowances: money.default(0),
+  maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']).default('single'), children: z.coerce.number().int().min(0).max(20).default(0),
+  partsOverride: z.coerce.number().min(1).max(5).multipleOf(0.5).nullable().optional(),
 }).strict();
 
 @ApiTags('Employés et paie')
@@ -59,6 +68,11 @@ export class PayrollController {
   @Permission('employees.update')
   @Patch('employees/:id')
   updateEmployee(@Tenant() t: TenantInfo, @Param('id') id: string, @Body() body: unknown) { return this.payroll.updateEmployee(t, id, parse(EmployeeSchema.partial(), body)); }
+
+  /** Calcul du brut à partir du net : ne modifie rien, renvoie le bulletin simulé. */
+  @Permission('employees.read') @AllowWhenReadOnly() @HttpCode(200)
+  @Post('payroll/net-to-gross')
+  netToGross(@Tenant() t: TenantInfo, @Body() body: unknown) { return this.payroll.netToGross(t, parse(NetToGrossSchema, body)); }
 
   @Permission('payroll.read') @AllowWhenReadOnly()
   @Get('payroll/settings')

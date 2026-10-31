@@ -163,6 +163,7 @@ export interface EmployeeTable {
   hire_date: string; end_date: DateNullable; contract_type: Generated<'cdi' | 'cdd' | 'stage' | 'journalier'>; cnps_number: string | null;
   marital_status: Generated<'single' | 'married' | 'divorced' | 'widowed'>; children: Generated<number>; parts_override: NumNullable;
   base_salary: NumDefault; housing_allowance: NumDefault; transport_allowance: NumDefault; other_allowances: NumDefault;
+  category: string | null; target_net: NumNullable; extra_salary: NumDefault;
   payment_method: Generated<'cash' | 'bank_transfer' | 'mobile_money'>; bank_details_enc: string | null; phone: string | null; email: string | null;
   user_id: string | null; leave_opening_balance: NumDefault; leave_opening_date: DateNullable;
   created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
