@@ -45,6 +45,11 @@ export const ACTION_LABELS: Record<string, string> = {
   'accounting.period_locked': 'Période comptable clôturée', 'accounting.year_closed': 'Exercice comptable clôturé', 'accounting.exported': 'Écritures exportées',
   'stock.opening_recorded': 'Stock initial enregistré', 'stock.counted': 'Inventaire de stock', 'stock.settings_updated': 'Paramètres de stock modifiés',
   'stock.variation_posted': 'Variation de stock comptabilisée',
+  'stock_receipt.created': 'Bon d’entrée créé', 'stock_receipt.updated': 'Bon d’entrée modifié', 'stock_receipt.deleted': 'Brouillon de bon d’entrée supprimé', 'stock_receipt.validated': 'Bon d’entrée validé',
+  'stock_issue.created': 'Bon de sortie créé', 'stock_issue.updated': 'Bon de sortie modifié', 'stock_issue.deleted': 'Brouillon de bon de sortie supprimé', 'stock_issue.validated': 'Bon de sortie validé',
+  'stock_transfer.created': 'Bon de transfert créé', 'stock_transfer.updated': 'Bon de transfert modifié', 'stock_transfer.deleted': 'Brouillon de bon de transfert supprimé', 'stock_transfer.validated': 'Bon de transfert validé',
+  'stock_inventory.created': 'Inventaire créé', 'stock_inventory.updated': 'Inventaire modifié', 'stock_inventory.deleted': 'Brouillon d’inventaire supprimé', 'stock_inventory.validated': 'Inventaire validé',
+  'warehouse.created': 'Entrepôt créé', 'warehouse.updated': 'Entrepôt modifié',
   'employee.created': 'Employé créé', 'employee.updated': 'Fiche employé modifiée', 'payroll.settings_updated': 'Paramètres de paie modifiés',
   'sales_document.sent': 'Document envoyé au client par e-mail',
   'leave.requested': 'Demande de congé', 'leave.approved': 'Congé validé', 'leave.refused': 'Congé refusé', 'leave.cancelled': 'Congé annulé',
@@ -83,7 +88,7 @@ export const EXPENSE_CATEGORIES: Record<string, string> = {
 };
 export const INCOME_CATEGORIES: Record<string, string> = { capital: 'Apport (capital, exploitant)', loan: 'Emprunt reçu', other_income: 'Autre recette' };
 export const MOVEMENT_CATEGORIES: Record<string, string> = {
-  ...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES, customer_payment: 'Encaissement client', supplier_payment: 'Règlement fournisseur', customer_refund: 'Remboursement client',
+  ...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES, customer_payment: 'Encaissement client', supplier_payment: 'Règlement fournisseur', customer_refund: 'Remboursement client', goods_purchase: 'Achat comptant de marchandises',
   transfer: 'Virement interne', cash_difference: 'Écart de caisse', net_salary: 'Salaire net',
 };
 
@@ -108,3 +113,18 @@ export function paymentStamp(doc: { type: string; status: string; paidAmount: nu
   if (doc.status === 'partially_paid' && doc.paidAmount > 0) return { tone: 'warn', label: 'Partiellement réglée', detail: `${money(doc.paidAmount)} réglés · reste ${money(doc.remaining)}` };
   return null;
 }
+
+export const qty = (n: number) => n.toLocaleString('fr-FR', { maximumFractionDigits: 3 });
+export const STOCK_MOVES: Record<string, string> = {
+  opening: 'Stock initial', purchase: 'Achat', sale: 'Vente', sale_return: 'Retour client', adjustment: 'Inventaire', receipt: 'Entrée', issue: 'Sortie', transfer: 'Transfert',
+};
+export const STOCK_DOC: Record<string, string> = { receipt: 'Bon d’entrée', issue: 'Bon de sortie', transfer: 'Bon de transfert', inventory: 'Inventaire' };
+export const RECEIPT_REASONS: Record<string, string> = {
+  cash_purchase: 'Achat comptant (payé en caisse, banque ou mobile money)', production: 'Production / fabrication', return: 'Retour hors facture',
+  gift: 'Don reçu', found: 'Marchandise retrouvée', other: 'Autre entrée',
+};
+export const ISSUE_REASONS: Record<string, string> = {
+  consumption: 'Consommation interne', loss: 'Casse / perte', theft: 'Vol', expired: 'Produit périmé', gift: 'Don', sample: 'Échantillon gratuit', other: 'Autre sortie',
+};
+export const stockReason = (type: string, reason: string) =>
+  type === 'receipt' ? RECEIPT_REASONS[reason]?.split(' (')[0] : type === 'issue' ? ISSUE_REASONS[reason] : null;

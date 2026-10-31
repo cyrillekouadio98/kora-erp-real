@@ -37,6 +37,10 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
   // Date limite propre au document : échéance (facture), validité (devis), livraison prévue (commande)
   const limitKey = type === 'invoice' ? 'dueDate' : type === 'quote' ? 'validUntil' : type === 'order' ? (scope === 'sales' ? 'deliveryDate' : 'expectedDate') : null;
   const isSalesOrder = scope === 'sales' && type === 'order';
+  // Entrepôt de départ (vente) ou d'arrivée (achat) : proposé dès qu'il y en a plusieurs
+  const movesStock = type === 'invoice' || type === 'order';
+  const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [warehouseId, setWarehouseId] = useState<string>(doc?.warehouseId ?? '');
   const [contacts, setContacts] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [contactId, setContactId] = useState<string>(doc?.contact?.id ?? '');
@@ -54,7 +58,9 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
   useEffect(() => {
     api('/company/contacts').then((c) => setContacts(c.filter((x: any) => x.kind !== cfg.excludeKind)), () => {});
     api('/company/products').then(setProducts, () => {});
-  }, [cfg.excludeKind]);
+    if (movesStock) api('/company/stock/warehouses').then((w) => setWarehouses(w.filter((x: any) => !x.archived)), () => {});
+  }, [cfg.excludeKind, movesStock]);
+  const showWarehouse = warehouses.length > 1;
 
   const editLines = (next: Line[]) => { setDirty(true); setLines(next); };
   const setLine = (i: number, patch: Partial<Line>) => editLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
@@ -74,6 +80,7 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
       ...(isPurchaseInvoice ? { supplierRef: supplierRef || null, issueDate } : {}),
       ...(isCredit ? { restock } : {}),
       ...(isSalesOrder ? { customerRef: customerRef || null } : {}),
+      ...(showWarehouse ? { warehouseId: warehouseId || null } : {}),
     };
     const saved = doc ? await api(`${cfg.base}/${doc.id}`, { method: 'PATCH', body }) : await api(cfg.base, { body: { ...body, type } });
     setDirty(false);
@@ -102,6 +109,11 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
         {isSalesOrder && <Field label="Référence de commande du client (facultatif)" value={customerRef} onChange={(e) => setCustomerRef(e.target.value)} placeholder="Ex. son n° de bon de commande" />}
         {isPurchaseInvoice && <Field label="N° de la facture du fournisseur (obligatoire pour valider)" value={supplierRef} onChange={(e) => setSupplierRef(e.target.value)} placeholder="Ex. FV-2026/118" />}
         {isPurchaseInvoice && <Field label="Date de la facture du fournisseur" type="date" required max={today()} value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />}
+        {showWarehouse && <label className="field">{scope === 'sales' ? 'Livré depuis l’entrepôt' : 'Réceptionné dans l’entrepôt'}
+          <select className="input" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
+            {warehouses.map((w) => <option key={w.id} value={w.isDefault ? '' : w.id}>{w.code} · {w.name}{w.isDefault ? ' (par défaut)' : ''}</option>)}
+          </select>
+        </label>}
         {limitKey && <label className="field">{limitLabel}
           <input className="input" type="date" value={limitDate} onChange={(e) => setLimitDate(e.target.value)} />
         </label>}

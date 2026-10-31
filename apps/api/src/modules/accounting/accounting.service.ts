@@ -19,7 +19,7 @@ export const ACCOUNTS = {
 const MOVEMENT_COUNTERPART: Record<string, string> = {
   rent: '622200', electricity: '605200', water: '605100', fuel: '605300', transport: '618000', telecom: '628000', supplies: '605500', maintenance: '624000',
   salaries: '661000', taxes: '641000', bank_fees: '631000', owner_withdrawal: '104000', other_expense: '658000', capital: '101000', loan: '162000', other_income: '758000',
-  transfer: ACCOUNTS.transfer, net_salary: '422000',
+  transfer: ACCOUNTS.transfer, net_salary: '422000', goods_purchase: '601000',
 };
 
 /** Rubriques du compte de résultat (deux premiers chiffres du compte). */

@@ -40,6 +40,7 @@ const DocSchema = z.object({
   deliveryDate: isoDate.nullable().optional(),
   customerRef: z.string().trim().max(60).transform((v) => v || null).nullable().optional(),
   notes: z.string().trim().max(2000).transform((v) => v || null).nullable().optional(),
+  warehouseId: z.string().uuid({ message: 'Entrepôt introuvable' }).nullable().optional(),
   restock: z.boolean().optional(),
   lines: z.array(LineSchema).min(1, { message: 'Ajoutez au moins une ligne' }).max(200),
 }).strict();

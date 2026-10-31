@@ -24,7 +24,7 @@ export default function Dashboard() {
     if (ctx && can('billing.read')) api('/company/subscription').then(setSub, () => {});
     if (ctx && can('sales.read') && ctx.entitlements.modules.includes('sales')) api('/company/sales/summary').then(setSales, () => {});
     if (ctx && can('purchases.read') && ctx.entitlements.modules.includes('purchases')) api('/company/purchases/summary').then(setPurchases, () => {});
-    if (ctx && can('products.read')) api('/company/stock').then((s) => s.items.length && setStock(s), () => {});
+    if (ctx && can('stock.read')) api('/company/stock').then((s) => s.items.length && setStock(s), () => {});
   }, [ctx]); // eslint-disable-line
   // Le changement de période garde l'affichage précédent (atténué) pendant le rechargement : pas de saut.
   useEffect(() => {

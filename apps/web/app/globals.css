@@ -236,3 +236,17 @@ a.chain-step:hover { border-color: var(--accent); }
 .stamp.ok { color: var(--ok); background: var(--ok-bg); }
 .stamp.warn { color: var(--warn); background: var(--warn-bg); }
 @media print { .stamp { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+
+/* Stocks : bons imprimables, feuille de comptage */
+.print-only { display: none; }
+.stock-meta { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 4px 0; font-size: 14px; }
+.stock-meta dt { color: var(--muted); }
+.stock-meta dd { margin: 0; }
+.signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 12px; }
+.signatures div { border-top: 1px solid var(--line); padding-top: 6px; min-height: 64px; font-size: 13px; color: var(--muted); }
+.stock-bar { position: sticky; bottom: 12px; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+@media print {
+  .print-only { display: block; }
+  .stock-print input.input { border: none; border-bottom: 1px dotted #999; border-radius: 0; background: none; }
+  .stock-print input::-webkit-inner-spin-button, .stock-print input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+}

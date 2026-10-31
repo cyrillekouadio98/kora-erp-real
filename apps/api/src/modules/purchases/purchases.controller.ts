@@ -18,6 +18,7 @@ const DocSchema = z.object({
   dueDate: isoDate.nullable().optional(),
   expectedDate: isoDate.nullable().optional(),
   notes: z.string().trim().max(2000).transform((v) => v || null).nullable().optional(),
+  warehouseId: z.string().uuid({ message: 'Entrepôt introuvable' }).nullable().optional(),
   lines: z.array(LineSchema).min(1, { message: 'Ajoutez au moins une ligne' }).max(200),
 }).strict();
 

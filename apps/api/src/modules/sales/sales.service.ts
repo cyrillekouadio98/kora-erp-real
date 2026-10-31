@@ -16,7 +16,7 @@ import { TreasuryService } from '../treasury/treasury.service';
 export interface LineInput { productId?: string | null; description: string; quantity: number; unit?: string | null; unitPrice: number; discountPct?: number; vatRate: number }
 export interface DocInput {
   contactId: string; issueDate?: string; dueDate?: string | null; validUntil?: string | null; deliveryDate?: string | null; customerRef?: string | null;
-  notes?: string | null; restock?: boolean; lines: LineInput[];
+  notes?: string | null; restock?: boolean; warehouseId?: string | null; lines: LineInput[];
 }
 
 const PREFIX: Record<SalesDocType, string> = { quote: 'DEV', order: 'CMD', invoice: 'FAC', credit_note: 'AV' };
@@ -149,7 +149,7 @@ export class SalesService {
     return {
       id: d.id, type: d.type, status: d.status, number: d.number, issueDate: d.issue_date, dueDate: d.due_date, validUntil: d.valid_until,
       currency: d.currency, notes: d.notes, restock: d.restock, validatedAt: d.validated_at, sourceQuoteId: d.source_quote_id, sourceOrderId: d.source_order_id,
-      deliveryDate: d.delivery_date, customerRef: d.customer_ref,
+      deliveryDate: d.delivery_date, customerRef: d.customer_ref, warehouseId: d.warehouse_id,
       customer: d.status === 'draft' ? contact : { ...contact, ...(d.customer as object) }, contact,
       totalHt: Number(d.total_ht), totalVat: Number(d.total_vat), totalTtc: Number(d.total_ttc), paidAmount: Number(d.paid_amount), creditedAmount: Number(d.credited_amount), refundedAmount: Number(d.refunded_amount),
       refunds: refunds.map((r) => ({ ...r, amount: Number(r.amount) })),
@@ -169,6 +169,7 @@ export class SalesService {
         company_id: t.companyId, type, contact_id: input.contactId, issue_date: input.issueDate ?? today(), due_date: type === 'invoice' ? input.dueDate ?? null : null,
         valid_until: type === 'quote' ? input.validUntil ?? null : null, notes: input.notes ?? null, number: null, source_quote_id: null, validated_by: null, created_by: t.ctx.userId,
         ...(type === 'order' ? { delivery_date: input.deliveryDate ?? null, customer_ref: input.customerRef ?? null } : {}),
+        warehouse_id: input.warehouseId ? (await this.stock.warehouseFor(trx, t, input.warehouseId)).id : null,
       }).returning('id').executeTakeFirstOrThrow();
       const totals = await this.writeLines(trx, t, d.id, input.lines);
       await trx.updateTable('sales_document').set({ total_ht: totals.ht, total_vat: totals.vat, total_ttc: totals.ttc }).where('id', '=', d.id).execute();
@@ -193,6 +194,7 @@ export class SalesService {
       if (d.type === 'order' && input.deliveryDate !== undefined) patch.delivery_date = input.deliveryDate;
       if (d.type === 'order' && input.customerRef !== undefined) patch.customer_ref = input.customerRef;
       if (d.type === 'credit_note' && input.restock !== undefined) patch.restock = input.restock;
+      if (input.warehouseId !== undefined) patch.warehouse_id = input.warehouseId ? (await this.stock.warehouseFor(trx, t, input.warehouseId)).id : null;
       if (input.lines) {
         const totals = await this.writeLines(trx, t, id, input.lines);
         Object.assign(patch, { total_ht: totals.ht, total_vat: totals.vat, total_ttc: totals.ttc });
@@ -260,7 +262,7 @@ export class SalesService {
   private async copyAs(trx: TenantTrx, t: TenantInfo, src: SalesDocumentRow, type: 'order' | 'invoice', links: { source_quote_id: string | null; source_order_id?: string | null }) {
     await this.customer(trx, src.contact_id);
     const doc = await trx.insertInto('sales_document').values({
-      company_id: t.companyId, type, contact_id: src.contact_id, issue_date: today(), notes: src.notes, ...links,
+      company_id: t.companyId, type, contact_id: src.contact_id, issue_date: today(), notes: src.notes, warehouse_id: src.warehouse_id, ...links,
       total_ht: src.total_ht, total_vat: src.total_vat, total_ttc: src.total_ttc, number: null, due_date: null, valid_until: null, validated_by: null, created_by: t.ctx.userId,
       ...(type === 'order' ? { delivery_date: null, customer_ref: null } : {}),
     }).returning('id').executeTakeFirstOrThrow();

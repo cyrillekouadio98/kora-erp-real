@@ -98,7 +98,7 @@ export interface SalesDocumentTable {
   company_id: string; id: Generated<string>; type: SalesDocType; status: Generated<SalesDocStatus>; number: string | null; contact_id: string;
   customer: JsonDefault<Record<string, unknown>>; issue_date: DateCol; due_date: DateNullable; valid_until: DateNullable; currency: Generated<string>; notes: string | null;
   total_ht: NumDefault; total_vat: NumDefault; total_ttc: NumDefault; paid_amount: NumDefault; credited_amount: NumDefault; refunded_amount: NumDefault; restock: Generated<boolean>; source_quote_id: string | null; source_invoice_id: string | null;
-  source_order_id: string | null; delivery_date: DateNullable; customer_ref: string | null;
+  source_order_id: string | null; delivery_date: DateNullable; customer_ref: string | null; warehouse_id: string | null;
   validated_at: TsNullable; validated_by: string | null; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 export interface SalesDocumentLineTable {
@@ -123,7 +123,7 @@ export interface PurchaseDocumentTable {
   company_id: string; id: Generated<string>; type: PurchaseDocType; status: Generated<PurchaseDocStatus>; number: string | null; contact_id: string;
   supplier: JsonDefault<Record<string, unknown>>; supplier_ref: string | null; issue_date: DateCol; due_date: DateNullable; expected_date: DateNullable;
   currency: Generated<string>; notes: string | null; total_ht: NumDefault; total_vat: NumDefault; total_ttc: NumDefault; paid_amount: NumDefault;
-  source_order_id: string | null; validated_at: TsNullable; validated_by: string | null; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
+  source_order_id: string | null; warehouse_id: string | null; validated_at: TsNullable; validated_by: string | null; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 export type PurchaseDocumentLineTable = SalesDocumentLineTable;
 export type PurchasePaymentTable = SalesPaymentTable;
@@ -133,7 +133,7 @@ export interface TreasuryAccountTable {
   company_id: string; id: Generated<string>; kind: TreasuryKind; name: string; bank_name: string | null; account_number: string | null; ledger_code: string;
   opening_balance: NumDefault; opening_date: ColumnType<string, string | undefined, string>; archived_at: TsNullable; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
-export type MovementSource = 'sales_payment' | 'purchase_payment' | 'sales_refund' | 'payroll' | 'expense' | 'income' | 'transfer' | 'cash_count' | 'reversal';
+export type MovementSource = 'sales_payment' | 'purchase_payment' | 'sales_refund' | 'payroll' | 'expense' | 'income' | 'transfer' | 'cash_count' | 'stock_purchase' | 'reversal';
 export interface TreasuryMovementTable {
   company_id: string; id: Generated<string>; account_id: string; date: DateCol; direction: 'in' | 'out'; amount: Num; category: string; label: string;
   contact_id: string | null; source_type: MovementSource; source_id: string | null; transfer_id: string | null; reversal_of: string | null; reversed_by: string | null;
@@ -152,10 +152,27 @@ export interface JournalLineTable {
   company_id: string; id: Generated<string>; entry_id: string; position: number; account_code: string; contact_id: string | null; label: string; debit: NumDefault; credit: NumDefault;
 }
 
-export type StockReason = 'opening' | 'purchase' | 'sale' | 'sale_return' | 'adjustment';
+export type StockReason = 'opening' | 'purchase' | 'sale' | 'sale_return' | 'adjustment' | 'receipt' | 'issue' | 'transfer';
 export interface StockMovementTable {
-  company_id: string; id: Generated<string>; product_id: string; date: DateCol; direction: 'in' | 'out'; quantity: Num; value: Num;
-  qty_after: Num; value_after: Num; reason: StockReason; source_id: string | null; label: string; created_by: string | null; created_at: Generated<Date>;
+  company_id: string; id: Generated<string>; product_id: string; warehouse_id: string; date: DateCol; direction: 'in' | 'out'; quantity: Num; value: Num;
+  qty_after: Num; value_after: Num; wh_qty_after: Num; reason: StockReason; source_id: string | null; document_id: string | null; label: string; created_by: string | null; created_at: Generated<Date>;
+}
+export interface WarehouseTable {
+  company_id: string; id: Generated<string>; code: string; name: string; address: string | null; is_default: Generated<boolean>;
+  archived_at: TsNullable; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface StockLevelTable { company_id: string; product_id: string; warehouse_id: string; quantity: NumDefault; }
+export type StockDocType = 'receipt' | 'issue' | 'transfer' | 'inventory';
+export interface StockDocumentTable {
+  company_id: string; id: Generated<string>; type: StockDocType; status: Generated<'draft' | 'done'>; number: string | null; date: DateCol;
+  warehouse_id: string; dest_warehouse_id: string | null; reason: string; contact_id: string | null; treasury_account_id: string | null; treasury_movement_id: string | null;
+  reference: string | null; notes: string | null; total_value: NumDefault; validated_at: TsNullable; validated_by: string | null; created_by: string | null;
+  created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface StockDocumentLineTable {
+  company_id: string; id: Generated<string>; document_id: string; position: number; product_id: string;
+  quantity: ColumnType<string | null, number | string | null | undefined, number | string | null>; expected: ColumnType<string | null, number | string | null | undefined, number | string | null>;
+  unit_cost: ColumnType<string | null, number | string | null | undefined, number | string | null>; value: ColumnType<string | null, number | string | null | undefined, number | string | null>; note: string | null;
 }
 
 type NumNullable = ColumnType<string | null, number | string | null | undefined, number | string | null>;
@@ -211,7 +228,7 @@ export interface DB {
   purchase_document: PurchaseDocumentTable; purchase_document_line: PurchaseDocumentLineTable; purchase_payment: PurchasePaymentTable;
   treasury_account: TreasuryAccountTable; treasury_movement: TreasuryMovementTable;
   ledger_account: LedgerAccountTable; journal: JournalTable; journal_entry: JournalEntryTable; journal_line: JournalLineTable;
-  stock_movement: StockMovementTable;
+  stock_movement: StockMovementTable; warehouse: WarehouseTable; stock_level: StockLevelTable; stock_document: StockDocumentTable; stock_document_line: StockDocumentLineTable;
   employee: EmployeeTable; payroll_settings: PayrollSettingsTable; payroll_run: PayrollRunTable; payslip: PayslipTable;
   email_message: EmailMessageTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable; leave_request: LeaveRequestTable;
 }

@@ -105,7 +105,11 @@ export const APPS: App[] = [
     { href: '/app/tresorerie/banque', label: 'Banque' }, { href: '/app/tresorerie/mobile-money', label: 'Mobile money' },
   ] },
   { key: 'accounting', label: 'Comptabilité', href: '/app/comptabilite', perm: 'accounting.read', module: 'accounting' },
-  { key: 'stock', label: 'Stocks', href: '/app/stocks', perm: 'products.read' },
+  { key: 'stock', label: 'Stocks', href: '/app/stocks', perm: 'stock.read', pages: [
+    { href: '/app/stocks', label: "Vue d'ensemble" }, { href: '/app/stocks/operations', label: 'Entrées et sorties' },
+    { href: '/app/stocks/inventaires', label: 'Inventaires' }, { href: '/app/stocks/mouvements', label: 'Mouvements' },
+    { href: '/app/stocks/valorisation', label: 'Valorisation' }, { href: '/app/stocks/entrepots', label: 'Entrepôts' },
+  ] },
   { key: 'products', label: 'Articles', href: '/app/articles', perm: 'products.read' },
   { key: 'contacts', label: 'Contacts', href: '/app/contacts', perm: 'contacts.read' },
   { key: 'employees', label: 'Employés', href: '/app/employes', perm: 'employees.read', module: 'hr' },

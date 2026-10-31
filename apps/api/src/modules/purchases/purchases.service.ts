@@ -12,7 +12,7 @@ import { TreasuryService } from '../treasury/treasury.service';
 import { addDays, computeTotals, LineInput, today } from '../sales/sales.service';
 
 export interface PurchaseInput {
-  contactId: string; supplierRef?: string | null; issueDate?: string; dueDate?: string | null; expectedDate?: string | null; notes?: string | null; lines: LineInput[];
+  contactId: string; supplierRef?: string | null; issueDate?: string; dueDate?: string | null; expectedDate?: string | null; notes?: string | null; warehouseId?: string | null; lines: LineInput[];
 }
 
 const PREFIX: Record<PurchaseDocType, string> = { order: 'BC', invoice: 'ACH' };
@@ -106,7 +106,7 @@ export class PurchasesService {
       }, {})).sort((a, b) => b.rate - a.rate);
       return {
         id: d.id, type: d.type, status: d.status, number: d.number, supplierRef: d.supplier_ref, issueDate: d.issue_date, dueDate: d.due_date, expectedDate: d.expected_date,
-        currency: d.currency, notes: d.notes, validatedAt: d.validated_at, sourceOrderId: d.source_order_id,
+        currency: d.currency, notes: d.notes, validatedAt: d.validated_at, sourceOrderId: d.source_order_id, warehouseId: d.warehouse_id,
         supplier: d.status === 'draft' ? contact : { ...contact, ...(d.supplier as object) }, contact,
         totalHt: Number(d.total_ht), totalVat: Number(d.total_vat), totalTtc: Number(d.total_ttc), paidAmount: Number(d.paid_amount),
         remaining: d.type === 'invoice' && d.status !== 'draft' ? remainingOf(d) : 0, vatBreakdown, related,
@@ -125,6 +125,7 @@ export class PurchasesService {
         company_id: t.companyId, type, contact_id: input.contactId, issue_date: input.issueDate ?? today(), notes: input.notes ?? null, number: null,
         supplier_ref: type === 'invoice' ? input.supplierRef ?? null : null, due_date: type === 'invoice' ? input.dueDate ?? null : null,
         expected_date: type === 'order' ? input.expectedDate ?? null : null, source_order_id: null, validated_by: null, created_by: t.ctx.userId,
+        warehouse_id: input.warehouseId ? (await this.stock.warehouseFor(trx, t, input.warehouseId)).id : null,
       }).returning('id').executeTakeFirstOrThrow();
       const totals = await this.writeLines(trx, t, d.id, input.lines);
       await trx.updateTable('purchase_document').set({ total_ht: totals.ht, total_vat: totals.vat, total_ttc: totals.ttc }).where('id', '=', d.id).execute();
@@ -147,6 +148,7 @@ export class PurchasesService {
       if (d.type === 'invoice' && input.supplierRef !== undefined) patch.supplier_ref = input.supplierRef;
       if (d.type === 'invoice' && input.dueDate !== undefined) patch.due_date = input.dueDate;
       if (d.type === 'order' && input.expectedDate !== undefined) patch.expected_date = input.expectedDate;
+      if (input.warehouseId !== undefined) patch.warehouse_id = input.warehouseId ? (await this.stock.warehouseFor(trx, t, input.warehouseId)).id : null;
       if (input.lines) {
         const totals = await this.writeLines(trx, t, id, input.lines);
         Object.assign(patch, { total_ht: totals.ht, total_vat: totals.vat, total_ttc: totals.ttc });
@@ -214,7 +216,7 @@ export class PurchasesService {
       if (o.type !== 'order' || o.status !== 'sent') throw conflict('Seul un bon de commande envoyé peut être facturé.', 'invalid_state');
       await this.supplier(trx, o.contact_id);
       const inv = await trx.insertInto('purchase_document').values({
-        company_id: t.companyId, type: 'invoice', contact_id: o.contact_id, issue_date: today(), notes: o.notes, source_order_id: o.id,
+        company_id: t.companyId, type: 'invoice', contact_id: o.contact_id, issue_date: today(), notes: o.notes, source_order_id: o.id, warehouse_id: o.warehouse_id,
         total_ht: o.total_ht, total_vat: o.total_vat, total_ttc: o.total_ttc, number: null, supplier_ref: null, due_date: null, expected_date: null, validated_by: null, created_by: t.ctx.userId,
       }).returning('id').executeTakeFirstOrThrow();
       const lines = await trx.selectFrom('purchase_document_line').selectAll().where('document_id', '=', o.id).orderBy('position').execute();
