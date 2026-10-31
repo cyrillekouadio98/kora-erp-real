@@ -85,14 +85,25 @@ const ICONS: Record<string, React.ReactNode> = {
   </>,
 };
 
-export interface App { key: string; label: string; href: string; perm?: string; module?: string }
+export interface AppPage { href: string; label: string; perm?: string; module?: string }
+/** base : préfixe des adresses de l'application ; pages : son menu, affiché dans la barre du haut. */
+export interface App extends AppPage { key: string; base?: string; pages?: AppPage[] }
 
 /** Même droits que le menu : une application n'apparaît que si le rôle et la formule l'autorisent. */
 export const APPS: App[] = [
   { key: 'dashboard', label: 'Tableau de bord', href: '/app/tableau-de-bord' },
-  { key: 'sales', label: 'Ventes', href: '/app/ventes/factures', perm: 'sales.read' },
-  { key: 'purchases', label: 'Achats', href: '/app/achats/factures', perm: 'purchases.read', module: 'purchases' },
-  { key: 'treasury', label: 'Trésorerie', href: '/app/tresorerie', perm: 'cash.read', module: 'cash' },
+  { key: 'sales', label: 'Ventes', href: '/app/ventes/factures', perm: 'sales.read', base: '/app/ventes', pages: [
+    { href: '/app/ventes/devis', label: 'Devis' }, { href: '/app/ventes/factures', label: 'Factures' },
+    { href: '/app/ventes/avoirs', label: 'Avoirs' }, { href: '/app/ventes/relances', label: 'Relances clients' },
+  ] },
+  { key: 'purchases', label: 'Achats', href: '/app/achats/factures', perm: 'purchases.read', module: 'purchases', base: '/app/achats', pages: [
+    { href: '/app/achats/commandes', label: 'Bons de commande' }, { href: '/app/achats/factures', label: 'Factures fournisseurs' },
+    { href: '/app/achats/echeancier', label: 'Échéancier' },
+  ] },
+  { key: 'treasury', label: 'Trésorerie', href: '/app/tresorerie', perm: 'cash.read', module: 'cash', pages: [
+    { href: '/app/tresorerie', label: "Vue d'ensemble" }, { href: '/app/tresorerie/caisse', label: 'Caisse' },
+    { href: '/app/tresorerie/banque', label: 'Banque' }, { href: '/app/tresorerie/mobile-money', label: 'Mobile money' },
+  ] },
   { key: 'accounting', label: 'Comptabilité', href: '/app/comptabilite', perm: 'accounting.read', module: 'accounting' },
   { key: 'stock', label: 'Stocks', href: '/app/stocks', perm: 'products.read' },
   { key: 'products', label: 'Articles', href: '/app/articles', perm: 'products.read' },
@@ -110,6 +121,14 @@ export const APPS: App[] = [
   { key: 'support', label: 'Support', href: '/app/support', perm: 'settings.admin' },
   { key: 'security', label: 'Ma sécurité', href: '/app/securite' },
 ];
+
+const under = (path: string, href: string) => path === href || path.startsWith(`${href}/`);
+/** L'adresse la plus précise l'emporte : /app/tresorerie/caisse → « Caisse », pas « Vue d'ensemble ». */
+export const activeHref = (path: string, hrefs: string[]) => hrefs.filter((h) => under(path, h)).sort((x, y) => y.length - x.length)[0];
+export const currentApp = (path: string) => {
+  const base = activeHref(path, APPS.map((a) => a.base ?? a.href));
+  return APPS.find((a) => (a.base ?? a.href) === base);
+};
 
 export function AppIcon({ name, size = 62 }: { name: string; size?: number }) {
   return <svg viewBox="0 0 48 48" width={size} height={size} aria-hidden="true">{ICONS[name]}</svg>;

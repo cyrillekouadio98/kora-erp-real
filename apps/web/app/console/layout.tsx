@@ -12,7 +12,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   if (!me) return <main className="auth"><p className="muted">Chargement…</p></main>;
   if (!me.platformRoles.length) return <main className="auth"><div className="alert err">Cette console est réservée à l'équipe de l'éditeur.</div></main>;
   return (
-    <div className="shell">
+    <div className="shell with-side">
       <aside className="side">
         <div className="brand">Kora<span> Console</span></div>
         <nav className="nav">
