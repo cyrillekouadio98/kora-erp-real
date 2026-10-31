@@ -14,10 +14,13 @@ import { StockService } from '../stock/stock.service';
 import { TreasuryService } from '../treasury/treasury.service';
 
 export interface LineInput { productId?: string | null; description: string; quantity: number; unit?: string | null; unitPrice: number; discountPct?: number; vatRate: number }
-export interface DocInput { contactId: string; issueDate?: string; dueDate?: string | null; validUntil?: string | null; notes?: string | null; restock?: boolean; lines: LineInput[] }
+export interface DocInput {
+  contactId: string; issueDate?: string; dueDate?: string | null; validUntil?: string | null; deliveryDate?: string | null; customerRef?: string | null;
+  notes?: string | null; restock?: boolean; lines: LineInput[];
+}
 
-const PREFIX: Record<SalesDocType, string> = { quote: 'DEV', invoice: 'FAC', credit_note: 'AV' };
-const LABEL: Record<SalesDocType, string> = { quote: 'Devis', invoice: 'Facture', credit_note: 'Avoir' };
+const PREFIX: Record<SalesDocType, string> = { quote: 'DEV', order: 'CMD', invoice: 'FAC', credit_note: 'AV' };
+const LABEL: Record<SalesDocType, string> = { quote: 'Devis', order: 'Bon de commande', invoice: 'Facture', credit_note: 'Avoir' };
 const OPEN_INVOICE: SalesDocStatus[] = ['issued', 'partially_paid'];
 const QUOTE_VALIDITY_DAYS = 30;
 
@@ -47,6 +50,8 @@ export function computeTotals(lines: LineInput[]) {
   const vat = totals.reduce((s, x) => s + x.vat, 0);
   return { lines: totals, ht, vat, ttc: ht + vat };
 }
+
+type SalesDocumentRow = Awaited<ReturnType<SalesService['doc']>>;
 
 @Injectable()
 export class SalesService {
@@ -90,6 +95,7 @@ export class SalesService {
       let q = trx.selectFrom('sales_document as d').innerJoin('contact as c', (j) => j.onRef('c.id', '=', 'd.contact_id').onRef('c.company_id', '=', 'd.company_id'))
         .select(['d.id', 'd.type', 'd.status', 'd.number', 'd.issue_date as issueDate', 'd.due_date as dueDate', 'd.valid_until as validUntil',
           'd.total_ht as totalHt', 'd.total_vat as totalVat', 'd.total_ttc as totalTtc', 'd.paid_amount as paidAmount', 'd.credited_amount as creditedAmount', 'd.refunded_amount as refundedAmount', 'd.currency',
+          'd.delivery_date as deliveryDate', 'd.customer_ref as customerRef',
           'c.id as contactId', 'c.name as contactName', 'c.code as contactCode'])
         .where('d.type', '=', f.type).orderBy('d.created_at', 'desc').limit(1000);
       if (f.status) q = q.where('d.status', '=', f.status as any);
@@ -125,9 +131,12 @@ export class SalesService {
     const refunds = await trx.selectFrom('treasury_movement as m')
       .innerJoin('treasury_account as a', (j) => j.onRef('a.id', '=', 'm.account_id').onRef('a.company_id', '=', 'm.company_id'))
       .select(['m.id', 'm.amount', 'm.date', 'm.reference', 'a.name as accountName']).where('m.source_type', '=', 'sales_refund').where('m.source_id', '=', id).orderBy('m.date').execute();
-    const source = d.source_quote_id ?? d.source_invoice_id ?? id;
+    // Chaîne du document : devis → bon de commande → facture → avoirs (en amont et en aval)
+    const upstream = [d.source_quote_id, d.source_order_id, d.source_invoice_id].filter((x): x is string => !!x);
     const related = await trx.selectFrom('sales_document').select(['id', 'type', 'number', 'status', 'total_ttc as totalTtc'])
-      .where((eb) => eb.or([eb('id', '=', source), eb('source_quote_id', '=', id), eb('source_invoice_id', '=', id)])).where('id', '!=', id).orderBy('created_at').execute();
+      .where((eb) => eb.or([
+        ...(upstream.length ? [eb('id', 'in', upstream)] : []), eb('source_quote_id', '=', id), eb('source_order_id', '=', id), eb('source_invoice_id', '=', id),
+      ])).where('id', '!=', id).orderBy('created_at').execute();
     const reminders = await trx.selectFrom('sales_reminder as r').leftJoin('user_account as u', 'u.id', 'r.created_by')
       .select(['r.id', 'r.channel', 'r.note', 'r.promised_on as promisedOn', 'r.created_at as createdAt', 'u.full_name as by'])
       .where('r.document_id', '=', id).orderBy('r.created_at', 'desc').execute();
@@ -139,7 +148,8 @@ export class SalesService {
     }, {})).sort((a, b) => b.rate - a.rate);
     return {
       id: d.id, type: d.type, status: d.status, number: d.number, issueDate: d.issue_date, dueDate: d.due_date, validUntil: d.valid_until,
-      currency: d.currency, notes: d.notes, restock: d.restock, validatedAt: d.validated_at, sourceQuoteId: d.source_quote_id,
+      currency: d.currency, notes: d.notes, restock: d.restock, validatedAt: d.validated_at, sourceQuoteId: d.source_quote_id, sourceOrderId: d.source_order_id,
+      deliveryDate: d.delivery_date, customerRef: d.customer_ref,
       customer: d.status === 'draft' ? contact : { ...contact, ...(d.customer as object) }, contact,
       totalHt: Number(d.total_ht), totalVat: Number(d.total_vat), totalTtc: Number(d.total_ttc), paidAmount: Number(d.paid_amount), creditedAmount: Number(d.credited_amount), refundedAmount: Number(d.refunded_amount),
       refunds: refunds.map((r) => ({ ...r, amount: Number(r.amount) })),
@@ -157,6 +167,7 @@ export class SalesService {
       const d = await trx.insertInto('sales_document').values({
         company_id: t.companyId, type, contact_id: input.contactId, issue_date: input.issueDate ?? today(), due_date: type === 'invoice' ? input.dueDate ?? null : null,
         valid_until: type === 'quote' ? input.validUntil ?? null : null, notes: input.notes ?? null, number: null, source_quote_id: null, validated_by: null, created_by: t.ctx.userId,
+        ...(type === 'order' ? { delivery_date: input.deliveryDate ?? null, customer_ref: input.customerRef ?? null } : {}),
       }).returning('id').executeTakeFirstOrThrow();
       const totals = await this.writeLines(trx, t, d.id, input.lines);
       await trx.updateTable('sales_document').set({ total_ht: totals.ht, total_vat: totals.vat, total_ttc: totals.ttc }).where('id', '=', d.id).execute();
@@ -178,6 +189,8 @@ export class SalesService {
       if (input.notes !== undefined) patch.notes = input.notes;
       if (d.type === 'invoice' && input.dueDate !== undefined) patch.due_date = input.dueDate;
       if (d.type === 'quote' && input.validUntil !== undefined) patch.valid_until = input.validUntil;
+      if (d.type === 'order' && input.deliveryDate !== undefined) patch.delivery_date = input.deliveryDate;
+      if (d.type === 'order' && input.customerRef !== undefined) patch.customer_ref = input.customerRef;
       if (d.type === 'credit_note' && input.restock !== undefined) patch.restock = input.restock;
       if (input.lines) {
         const totals = await this.writeLines(trx, t, id, input.lines);
@@ -194,6 +207,13 @@ export class SalesService {
       const d = await this.doc(trx, id, true);
       if (d.status !== 'draft') throw conflict('Seul un brouillon peut être supprimé. Une facture émise se corrige par un avoir.', 'document_locked');
       await trx.deleteFrom('sales_document').where('id', '=', id).execute();
+      // Le document d'origine redevient transformable : la commande redevient à facturer, le devis à commander.
+      if (d.type === 'invoice' && d.source_order_id) {
+        await trx.updateTable('sales_document').set({ status: 'confirmed' }).where('id', '=', d.source_order_id).where('status', '=', 'invoiced').execute();
+        if (d.source_quote_id) await trx.updateTable('sales_document').set({ status: 'ordered' }).where('id', '=', d.source_quote_id).where('status', '=', 'invoiced').execute();
+      } else if (d.source_quote_id && (d.type === 'invoice' || d.type === 'order')) {
+        await trx.updateTable('sales_document').set({ status: 'accepted' }).where('id', '=', d.source_quote_id).where('status', 'in', ['invoiced', 'ordered']).execute();
+      }
       await this.audit.tenant(trx, t.ctx, { action: `${d.type}.deleted`, entityType: 'sales_document', entityId: id, data: { totalTtc: Number(d.total_ttc) } });
       return { ok: true };
     });
@@ -216,7 +236,7 @@ export class SalesService {
       const dates = d.type === 'invoice' ? { due_date: d.due_date && d.due_date >= issue ? d.due_date : addDays(issue, c.payment_terms_days) }
         : d.type === 'quote' ? { valid_until: d.valid_until && d.valid_until >= issue ? d.valid_until : addDays(issue, QUOTE_VALIDITY_DAYS) } : {};
       await trx.updateTable('sales_document').set({
-        status: d.type === 'quote' ? 'sent' : 'issued', number, issue_date: issue, customer: JSON.stringify(customer), validated_at: new Date(), validated_by: t.ctx.userId, ...dates,
+        status: d.type === 'quote' ? 'sent' : d.type === 'order' ? 'confirmed' : 'issued', number, issue_date: issue, customer: JSON.stringify(customer), validated_at: new Date(), validated_by: t.ctx.userId, ...dates,
       }).where('id', '=', id).execute();
       await this.stock.applySalesDocument(trx, t, id);
       await this.accounting.postSalesDocument(trx, t, id);
@@ -235,23 +255,70 @@ export class SalesService {
     return this.get(t, id);
   }
 
-  /** Transforme un devis envoyé ou accepté en brouillon de facture reprenant ses lignes. */
+  /** Copie un document (lignes et totaux) en brouillon d'un autre type : rien n'est ressaisi. */
+  private async copyAs(trx: TenantTrx, t: TenantInfo, src: SalesDocumentRow, type: 'order' | 'invoice', links: { source_quote_id: string | null; source_order_id?: string | null }) {
+    await this.customer(trx, src.contact_id);
+    const doc = await trx.insertInto('sales_document').values({
+      company_id: t.companyId, type, contact_id: src.contact_id, issue_date: today(), notes: src.notes, ...links,
+      total_ht: src.total_ht, total_vat: src.total_vat, total_ttc: src.total_ttc, number: null, due_date: null, valid_until: null, validated_by: null, created_by: t.ctx.userId,
+      ...(type === 'order' ? { delivery_date: null, customer_ref: null } : {}),
+    }).returning('id').executeTakeFirstOrThrow();
+    const lines = await trx.selectFrom('sales_document_line').selectAll().where('document_id', '=', src.id).orderBy('position').execute();
+    await trx.insertInto('sales_document_line').values(lines.map(({ id: _id, document_id: _d, ...l }) => ({ ...l, document_id: doc.id }))).execute();
+    return doc.id;
+  }
+
+  /** Devis envoyé ou accepté → brouillon de bon de commande client reprenant ses lignes. */
+  async toOrder(t: TenantInfo, id: string) {
+    const orderId = await this.db.tenant(t.ctx, async (trx) => {
+      const q = await this.doc(trx, id, true);
+      if (q.type !== 'quote' || !['sent', 'accepted'].includes(q.status)) {
+        throw conflict(q.type === 'quote' && q.status === 'ordered' ? `Le devis ${q.number} a déjà un bon de commande.` : 'Seul un devis envoyé ou accepté peut devenir un bon de commande.', 'invalid_state');
+      }
+      const orderId = await this.copyAs(trx, t, q, 'order', { source_quote_id: q.id });
+      await trx.updateTable('sales_document').set({ status: 'ordered' }).where('id', '=', q.id).execute();
+      await this.audit.tenant(trx, t.ctx, { action: 'quote.ordered', entityType: 'sales_document', entityId: q.id, data: { number: q.number, orderDraft: orderId } });
+      return orderId;
+    });
+    return this.get(t, orderId);
+  }
+
+  /**
+   * Brouillon de facture reprenant les lignes : depuis un devis envoyé ou accepté, ou depuis un bon de
+   * commande confirmé (la facture garde alors le lien vers la commande et vers le devis d'origine).
+   */
   async convert(t: TenantInfo, id: string) {
     const invoiceId = await this.db.tenant(t.ctx, async (trx) => {
-      const q = await this.doc(trx, id, true);
-      if (q.type !== 'quote' || !['sent', 'accepted'].includes(q.status)) throw conflict('Seul un devis envoyé ou accepté peut être facturé.', 'invalid_state');
-      await this.customer(trx, q.contact_id);
-      const inv = await trx.insertInto('sales_document').values({
-        company_id: t.companyId, type: 'invoice', contact_id: q.contact_id, issue_date: today(), notes: q.notes, source_quote_id: q.id,
-        total_ht: q.total_ht, total_vat: q.total_vat, total_ttc: q.total_ttc, number: null, due_date: null, valid_until: null, validated_by: null, created_by: t.ctx.userId,
-      }).returning('id').executeTakeFirstOrThrow();
-      const lines = await trx.selectFrom('sales_document_line').selectAll().where('document_id', '=', q.id).orderBy('position').execute();
-      await trx.insertInto('sales_document_line').values(lines.map(({ id: _id, document_id: _d, ...l }) => ({ ...l, document_id: inv.id }))).execute();
-      await trx.updateTable('sales_document').set({ status: 'invoiced' }).where('id', '=', q.id).execute();
-      await this.audit.tenant(trx, t.ctx, { action: 'quote.invoiced', entityType: 'sales_document', entityId: q.id, data: { number: q.number, invoiceDraft: inv.id } });
-      return inv.id;
+      const src = await this.doc(trx, id, true);
+      if (src.type === 'order') {
+        if (src.status !== 'confirmed') throw conflict(src.status === 'invoiced' ? 'Ce bon de commande est déjà facturé.' : 'Seul un bon de commande confirmé peut être facturé.', 'invalid_state');
+        const invoiceId = await this.copyAs(trx, t, src, 'invoice', { source_quote_id: src.source_quote_id, source_order_id: src.id });
+        await trx.updateTable('sales_document').set({ status: 'invoiced' }).where('id', '=', src.id).execute();
+        if (src.source_quote_id) await trx.updateTable('sales_document').set({ status: 'invoiced' }).where('id', '=', src.source_quote_id).where('status', '=', 'ordered').execute();
+        await this.audit.tenant(trx, t.ctx, { action: 'order.invoiced', entityType: 'sales_document', entityId: src.id, data: { number: src.number, invoiceDraft: invoiceId } });
+        return invoiceId;
+      }
+      if (src.type !== 'quote' || !['sent', 'accepted'].includes(src.status)) {
+        throw conflict(src.type === 'quote' && src.status === 'ordered' ? 'Ce devis a un bon de commande : facturez depuis la commande.' : 'Seul un devis envoyé ou accepté peut être facturé.', 'invalid_state');
+      }
+      const invoiceId = await this.copyAs(trx, t, src, 'invoice', { source_quote_id: src.id });
+      await trx.updateTable('sales_document').set({ status: 'invoiced' }).where('id', '=', src.id).execute();
+      await this.audit.tenant(trx, t.ctx, { action: 'quote.invoiced', entityType: 'sales_document', entityId: src.id, data: { number: src.number, invoiceDraft: invoiceId } });
+      return invoiceId;
     });
     return this.get(t, invoiceId);
+  }
+
+  /** Annule un bon de commande confirmé non facturé ; son devis redevient transformable. */
+  async cancelOrder(t: TenantInfo, id: string) {
+    await this.db.tenant(t.ctx, async (trx) => {
+      const o = await this.doc(trx, id, true);
+      if (o.type !== 'order' || o.status !== 'confirmed') throw conflict('Seul un bon de commande confirmé et non facturé peut être annulé (un brouillon se supprime).', 'invalid_state');
+      await trx.updateTable('sales_document').set({ status: 'cancelled' }).where('id', '=', id).execute();
+      if (o.source_quote_id) await trx.updateTable('sales_document').set({ status: 'accepted' }).where('id', '=', o.source_quote_id).where('status', '=', 'ordered').execute();
+      await this.audit.tenant(trx, t.ctx, { action: 'order.cancelled', entityType: 'sales_document', entityId: id, data: { number: o.number } });
+    });
+    return this.get(t, id);
   }
 
   async addPayment(t: TenantInfo, id: string, p: { amount: number; paidOn?: string; method: PaymentMethod; reference?: string | null; accountId?: string | null }) {
@@ -352,6 +419,7 @@ export class SalesService {
       const fr = (iso: string | null) => (iso ? new Date(`${iso}T00:00:00Z`).toLocaleDateString('fr-FR', { timeZone: 'UTC' }) : '');
       const intro = {
         quote: `Veuillez trouver notre devis ${d.number} d'un montant de ${amount}, valable jusqu'au ${fr(d.valid_until)}.`,
+        order: `Nous vous confirmons votre commande ${d.number}${d.customer_ref ? ` (votre référence ${d.customer_ref})` : ''} d'un montant de ${amount}${d.delivery_date ? `, livraison prévue le ${fr(d.delivery_date)}` : ''}.`,
         invoice: `Veuillez trouver notre facture ${d.number} d'un montant de ${amount}${d.due_date ? `, à régler au plus tard le ${fr(d.due_date)}` : ''}.`,
         credit_note: `Veuillez trouver notre avoir ${d.number} d'un montant de ${amount}.`,
       }[d.type];
@@ -359,7 +427,7 @@ export class SalesService {
         companyId: t.companyId, to, kind: 'sales_document', entityId: id, fromName: company.name, replyTo, createdBy: t.ctx.userId,
         subject: `${LABEL[d.type]} ${d.number} — ${company.name}`,
         paragraphs: [`Bonjour ${contact.name},`, intro, ...(input.message ? [input.message] : []), `Cordialement,\n${user.full_name}\n${company.name}`],
-        action: { label: `Consulter ${d.type === 'invoice' ? 'la facture' : d.type === 'quote' ? 'le devis' : "l'avoir"}`, url },
+        action: { label: `Consulter ${{ invoice: 'la facture', quote: 'le devis', order: 'le bon de commande', credit_note: "l'avoir" }[d.type]}`, url },
       });
       await this.audit.tenant(trx, t.ctx, { action: 'sales_document.sent', entityType: 'sales_document', entityId: id, data: { number: d.number, to } });
       return { to, url };
@@ -381,7 +449,7 @@ export class SalesService {
       const v = await this.view(tt, share.document_id);
       // Seul ce qui figure sur le document imprimé est montré : ni relances, ni historique interne.
       return {
-        company, type: v.type, number: v.number, status: v.status, issueDate: v.issueDate, dueDate: v.dueDate, validUntil: v.validUntil, customer: v.customer, notes: v.notes,
+        company, type: v.type, number: v.number, status: v.status, issueDate: v.issueDate, dueDate: v.dueDate, validUntil: v.validUntil, deliveryDate: v.deliveryDate, customerRef: v.customerRef, customer: v.customer, notes: v.notes,
         lines: v.lines, vatBreakdown: v.vatBreakdown, totalHt: v.totalHt, totalVat: v.totalVat, totalTtc: v.totalTtc, paidAmount: v.paidAmount,
         creditedAmount: v.creditedAmount, remaining: v.remaining,
       };
@@ -447,6 +515,7 @@ export class SalesService {
       const credits = await trx.selectFrom('sales_document').select('total_ht').where('type', '=', 'credit_note').where('status', '=', 'issued').where('issue_date', '>=', monthStart).execute();
       const pay = await trx.selectFrom('sales_payment').select('amount').where('paid_on', '>=', monthStart).execute();
       const quotes = await trx.selectFrom('sales_document').select((eb) => eb.fn.countAll<string>().as('c')).where('type', '=', 'quote').where('status', 'in', ['sent', 'accepted']).executeTakeFirstOrThrow();
+      const orders = await trx.selectFrom('sales_document').select('total_ttc').where('type', '=', 'order').where('status', '=', 'confirmed').execute();
       const open = inv.filter((i) => OPEN_INVOICE.includes(i.status));
       const overdue = open.filter((i) => i.due_date && i.due_date < now);
       const due = (rows: typeof inv) => rows.reduce((s, i) => s + balance(i).remaining, 0);
@@ -454,6 +523,7 @@ export class SalesService {
         // Chiffre d'affaires net : factures émises dans le mois moins avoirs émis dans le mois.
         revenueMonthHt: inv.filter((i) => i.issue_date >= monthStart).reduce((s, i) => s + Number(i.total_ht), 0) - credits.reduce((s, c) => s + Number(c.total_ht), 0),
         collectedMonth: pay.reduce((s, p) => s + Number(p.amount), 0), outstanding: due(open), overdueAmount: due(overdue), overdueCount: overdue.length, openQuotes: Number(quotes.c),
+        ordersToInvoice: orders.length, ordersToInvoiceAmount: orders.reduce((s, o) => s + Number(o.total_ttc), 0),
       };
     });
   }
@@ -462,7 +532,8 @@ export class SalesService {
     const rows = await this.list(t, { type });
     await this.db.tenant(t.ctx, (trx) => this.audit.tenant(trx, t.ctx, { action: `${type}.exported`, data: { count: rows.length } }));
     return rows.filter((r) => r.number).map((r) => ({
-      numero: r.number, date: r.issueDate, ...(r.type === 'credit_note' ? {} : { echeance: r.type === 'invoice' ? r.dueDate : r.validUntil }), client_code: r.contactCode, client: r.contactName,
+      numero: r.number, date: r.issueDate, ...(r.type === 'credit_note' ? {} : r.type === 'order' ? { livraison_prevue: r.deliveryDate, reference_client: r.customerRef } : { echeance: r.type === 'invoice' ? r.dueDate : r.validUntil }),
+      client_code: r.contactCode, client: r.contactName,
       statut: r.status, total_ht: r.totalHt, tva: r.totalVat, total_ttc: r.totalTtc,
       ...(r.type === 'invoice' ? { encaisse: r.paidAmount, avoirs: r.creditedAmount, reste_a_payer: r.remaining } : {}),
     }));

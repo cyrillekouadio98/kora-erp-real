@@ -20,7 +20,7 @@ function lineTotals(l: Line) {
 const SCOPES = {
   sales: {
     base: '/company/sales/documents', party: 'client', excludeKind: 'supplier', labels: DOC_LABEL as Record<string, string>,
-    price: (p: any) => p.salePrice, newTitle: (t: string) => (t === 'invoice' ? 'Nouvelle facture' : 'Nouveau devis'),
+    price: (p: any) => p.salePrice, newTitle: (t: string) => ({ invoice: 'Nouvelle facture', order: 'Nouveau bon de commande client' }[t] ?? 'Nouveau devis'),
   },
   purchases: {
     base: '/company/purchases/documents', party: 'fournisseur', excludeKind: 'customer', labels: PURCHASE_LABEL as Record<string, string>,
@@ -35,13 +35,15 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
   const isCredit = type === 'credit_note';
   const isPurchaseInvoice = scope === 'purchases' && type === 'invoice';
   // Date limite propre au document : échéance (facture), validité (devis), livraison prévue (commande)
-  const limitKey = type === 'invoice' ? 'dueDate' : type === 'quote' ? 'validUntil' : type === 'order' ? 'expectedDate' : null;
+  const limitKey = type === 'invoice' ? 'dueDate' : type === 'quote' ? 'validUntil' : type === 'order' ? (scope === 'sales' ? 'deliveryDate' : 'expectedDate') : null;
+  const isSalesOrder = scope === 'sales' && type === 'order';
   const [contacts, setContacts] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [contactId, setContactId] = useState<string>(doc?.contact?.id ?? '');
   const [notes, setNotes] = useState<string>(doc?.notes ?? '');
   const [limitDate, setLimitDate] = useState<string>((limitKey && doc?.[limitKey]) ?? '');
   const [supplierRef, setSupplierRef] = useState<string>(doc?.supplierRef ?? '');
+  const [customerRef, setCustomerRef] = useState<string>(doc?.customerRef ?? '');
   const [issueDate, setIssueDate] = useState<string>(doc?.issueDate ?? today());
   const [lines, setLines] = useState<Line[]>(doc?.lines?.length ? doc.lines.map(toLine) : [{ ...EMPTY_LINE }]);
   const [restock, setRestock] = useState<boolean>(doc?.restock ?? true);
@@ -71,6 +73,7 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
       ...(limitKey ? { [limitKey]: limitDate || null } : {}),
       ...(isPurchaseInvoice ? { supplierRef: supplierRef || null, issueDate } : {}),
       ...(isCredit ? { restock } : {}),
+      ...(isSalesOrder ? { customerRef: customerRef || null } : {}),
     };
     const saved = doc ? await api(`${cfg.base}/${doc.id}`, { method: 'PATCH', body }) : await api(cfg.base, { body: { ...body, type } });
     setDirty(false);
@@ -79,6 +82,7 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
 
   const limitLabel = {
     dueDate: `Échéance (vide : selon le délai de paiement du ${cfg.party})`, validUntil: 'Valable jusqu’au (vide : 30 jours)', expectedDate: 'Livraison prévue le (facultatif)',
+    deliveryDate: 'Livraison prévue le (facultatif)',
   }[limitKey ?? 'dueDate'];
   const Party = cfg.party[0].toUpperCase() + cfg.party.slice(1);
 
@@ -95,6 +99,7 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
           </select>
           {!contacts.length && <span className="small muted" style={{ fontWeight: 400 }}>Aucun {cfg.party} : <Link href="/app/contacts">créez-en un d'abord</Link>.</span>}
         </label>
+        {isSalesOrder && <Field label="Référence de commande du client (facultatif)" value={customerRef} onChange={(e) => setCustomerRef(e.target.value)} placeholder="Ex. son n° de bon de commande" />}
         {isPurchaseInvoice && <Field label="N° de la facture du fournisseur (obligatoire pour valider)" value={supplierRef} onChange={(e) => setSupplierRef(e.target.value)} placeholder="Ex. FV-2026/118" />}
         {isPurchaseInvoice && <Field label="Date de la facture du fournisseur" type="date" required max={today()} value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />}
         {limitKey && <label className="field">{limitLabel}

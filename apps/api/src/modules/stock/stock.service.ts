@@ -58,7 +58,7 @@ export class StockService {
   /** Facture de vente : sortie de stock ; avoir avec retour : rentrée au coût moyen. Contrôle global avant tout mouvement. */
   async applySalesDocument(trx: TenantTrx, t: TenantInfo, documentId: string) {
     const d = await trx.selectFrom('sales_document').select(['id', 'type', 'number', 'issue_date', 'restock']).where('id', '=', documentId).executeTakeFirstOrThrow();
-    if (d.type === 'quote' || (d.type === 'credit_note' && !d.restock)) return;
+    if (d.type === 'quote' || d.type === 'order' || (d.type === 'credit_note' && !d.restock)) return;
     const lines = await trx.selectFrom('sales_document_line as l').innerJoin('product as p', (j) => j.onRef('p.id', '=', 'l.product_id').onRef('p.company_id', '=', 'l.company_id'))
       .select(['l.product_id', 'l.quantity', 'p.name', 'p.track_stock', 'p.stock_qty']).where('l.document_id', '=', documentId).where('p.track_stock', '=', true).execute();
     const byProduct = new Map<string, { name: string; qty: number; stock: number }>();

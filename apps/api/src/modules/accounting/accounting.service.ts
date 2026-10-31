@@ -116,7 +116,7 @@ export class AccountingService {
   async postSalesDocument(trx: TenantTrx, t: TenantInfo, documentId: string) {
     if (await this.already(trx, 'sales_document', documentId)) return;
     const d = await trx.selectFrom('sales_document').selectAll().where('id', '=', documentId).executeTakeFirstOrThrow();
-    if (d.type === 'quote' || d.status === 'draft') return;
+    if (d.type === 'quote' || d.type === 'order' || d.status === 'draft') return;
     const lines = await trx.selectFrom('sales_document_line as l').leftJoin('product as p', (j) => j.onRef('p.id', '=', 'l.product_id').onRef('p.company_id', '=', 'l.company_id'))
       .select(['l.total_ht', 'l.total_vat', 'l.vat_rate', 'p.kind']).where('l.document_id', '=', documentId).execute();
     const customer = (d.customer as any)?.name ?? 'Client';

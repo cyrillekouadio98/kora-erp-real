@@ -3,20 +3,35 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
-import { date, dateTime, DOC_LABEL, docStatus, DocType, money, PAYMENT_METHODS, REMINDER_CHANNELS } from '@/lib/format';
+import { CHAIN_ORDER, date, dateTime, DOC_LABEL, docStatus, DocType, money, PAYMENT_METHODS, REMINDER_CHANNELS } from '@/lib/format';
 import { useSession } from '@/components/session';
 import { SalesEditor } from '@/components/sales-editor';
 import { Alert, Field, Pill, useAction } from '@/components/ui';
 import { AccountSelect } from '@/components/account-select';
 
-const LIST_HREF: Record<DocType, [string, string]> = { quote: ['/app/ventes/devis', 'Devis'], invoice: ['/app/ventes/factures', 'Factures'], credit_note: ['/app/ventes/avoirs', 'Avoirs'] };
+const LIST_HREF: Record<DocType, [string, string]> = { quote: ['/app/ventes/devis', 'Devis'], order: ['/app/ventes/commandes', 'Bons de commande'], invoice: ['/app/ventes/factures', 'Factures'], credit_note: ['/app/ventes/avoirs', 'Avoirs'] };
 
-/** Phrase reliant le document affiché à un document lié (devis d'origine, facture, avoirs). */
+/** Phrase reliant le document affiché à un avoir lié (avoirs d'une facture, facture d'un avoir). */
 function relation(doc: any, r: any) {
-  if (doc.type === 'invoice' && r.type === 'quote') return 'Établie à partir du devis';
-  if (doc.type === 'quote') return 'Facturé par';
   if (doc.type === 'invoice' && r.type === 'credit_note') return `Avoir de ${money(r.totalTtc)} :`;
   return 'Avoir sur la facture';
+}
+
+/** Suivi commercial : devis → bon de commande → facture, chaque étape cliquable avec son statut. */
+function Chain({ doc }: { doc: any }) {
+  const steps = [doc, ...(doc.related ?? [])].filter((d) => CHAIN_ORDER.includes(d.type) && d.status !== 'cancelled')
+    .sort((a, b) => CHAIN_ORDER.indexOf(a.type) - CHAIN_ORDER.indexOf(b.type));
+  if (steps.length < 2) return null;
+  return (
+    <nav className="chain no-print" aria-label="Suivi du document">
+      {steps.map((d, i) => {
+        const [label, tone] = docStatus(d.type, d.status);
+        const body = <><span className="small muted">{DOC_LABEL[d.type as DocType]}</span><b>{d.number ?? 'Brouillon'}</b><Pill tone={tone}>{label}</Pill></>;
+        return [i > 0 && <span key={`a${i}`} className="chain-arrow" aria-hidden="true">→</span>,
+          d.id === doc.id ? <span key={d.id} className="chain-step current" aria-current="page">{body}</span> : <Link key={d.id} href={`/app/ventes/${d.id}`} className="chain-step">{body}</Link>];
+      })}
+    </nav>
+  );
 }
 
 /** Message de relance prêt à copier (WhatsApp, SMS, e-mail). */
@@ -48,6 +63,7 @@ export default function SalesDocumentPage() {
   const type = doc.type as DocType;
   const isInvoice = type === 'invoice';
   const isCredit = type === 'credit_note';
+  const isOrder = type === 'order';
   const isOpen = isInvoice && ['issued', 'partially_paid'].includes(doc.status);
   const [listHref, listLabel] = LIST_HREF[type];
   const act = (path: string, confirmText?: string) => {
@@ -58,8 +74,10 @@ export default function SalesDocumentPage() {
     });
   };
   const status = docStatus(type, doc.status);
-  const validateText = { invoice: 'Émettre la facture ? Elle recevra son numéro définitif et ne pourra plus être modifiée.', quote: 'Valider le devis ? Il recevra son numéro et ne pourra plus être modifié.', credit_note: "Émettre l'avoir ? Il diminuera le reste à payer de la facture d'origine et ne pourra plus être modifié." }[type];
-  const validateLabel = { invoice: 'Émettre la facture', quote: 'Valider le devis', credit_note: "Émettre l'avoir" }[type];
+  const validateText = { invoice: 'Émettre la facture ? Elle recevra son numéro définitif et ne pourra plus être modifiée.', quote: 'Valider le devis ? Il recevra son numéro et ne pourra plus être modifié.',
+    order: 'Confirmer le bon de commande ? Il recevra son numéro et ne pourra plus être modifié ; il sera ensuite à facturer.',
+    credit_note: "Émettre l'avoir ? Il diminuera le reste à payer de la facture d'origine et ne pourra plus être modifié." }[type];
+  const validateLabel = { invoice: 'Émettre la facture', quote: 'Valider le devis', order: 'Confirmer la commande', credit_note: "Émettre l'avoir" }[type];
 
   return (
     <>
@@ -75,8 +93,12 @@ export default function SalesDocumentPage() {
           {type === 'quote' && doc.status === 'sent' && writable && can('sales.validate') && <>
             <button className="btn" disabled={busy} onClick={() => act('refuse')}>Refusé par le client</button>
             <button className="btn" disabled={busy} onClick={() => act('accept')}>Accepté par le client</button></>}
-          {type === 'quote' && ['sent', 'accepted'].includes(doc.status) && writable && can('sales.create') &&
-            <button className="btn primary" disabled={busy} onClick={() => act('convert')}>Transformer en facture</button>}
+          {type === 'quote' && ['sent', 'accepted'].includes(doc.status) && writable && can('sales.create') && <>
+            <button className="btn" disabled={busy} title="Sans passer par un bon de commande" onClick={() => act('convert')}>Facturer directement</button>
+            <button className="btn primary" disabled={busy} onClick={() => act('order')}>Transformer en bon de commande</button></>}
+          {isOrder && doc.status === 'confirmed' && writable && <>
+            {can('sales.cancel') && <button className="btn danger" disabled={busy} onClick={() => act('cancel', `Annuler le bon de commande ${doc.number} ? ${doc.sourceQuoteId ? 'Son devis pourra de nouveau être transformé.' : ''}`)}>Annuler la commande</button>}
+            {can('sales.create') && <button className="btn primary" disabled={busy} onClick={() => act('convert')}>Transformer en facture</button>}</>}
           {isInvoice && ['issued', 'partially_paid', 'paid'].includes(doc.status) && writable && can('sales.create') &&
             <button className="btn" disabled={busy} onClick={() => act('credit-note')}>Établir un avoir</button>}
           {isOpen && writable && can('sales.update') && <button className="btn" onClick={() => { setCopied(false); setRem({ channel: 'whatsapp', note: '', promisedOn: '', message: reminderText(doc, company), sendEmail: !!doc.contact.email, to: doc.contact.email ?? '' }); }}>Relancer</button>}
@@ -89,7 +111,8 @@ export default function SalesDocumentPage() {
       <Alert>{!pay && !rem && !refund && !send && error}</Alert>
       <Alert kind="ok">{notice}</Alert>
       {dirty && <Alert kind="warn">Modifications non enregistrées : enregistrez le brouillon avant de le valider.</Alert>}
-      {doc.related?.map((r: any) => <Alert key={r.id} kind="info">{relation(doc, r)} <Link href={`/app/ventes/${r.id}`}>{r.number ?? 'brouillon'}</Link>{r.status === 'draft' ? ' (brouillon à émettre)' : ''}.</Alert>)}
+      <Chain doc={doc} />
+      {doc.related?.filter((r: any) => r.type === 'credit_note' || isCredit).map((r: any) => <Alert key={r.id} kind="info">{relation(doc, r)} <Link href={`/app/ventes/${r.id}`}>{r.number ?? 'brouillon'}</Link>{r.status === 'draft' ? ' (brouillon à émettre)' : ''}.</Alert>)}
       {doc.refundDue > 0 && <Alert kind="warn">Le client a payé <b>{money(doc.refundDue)}</b> de plus que ce qu'il doit après avoir : ce trop-perçu est à lui rembourser.
         {writable && can('cash.create') && <> <button className="btn sm" onClick={() => setRefund({ amount: doc.refundDue, method: 'bank_transfer', accountId: '', paidOn: new Date().toISOString().slice(0, 10), reference: '' })}>Rembourser le client</button></>}</Alert>}
 
@@ -105,6 +128,8 @@ export default function SalesDocumentPage() {
                 <div><b>{doc.number ?? 'Brouillon'}</b></div><div className="small">du {date(doc.issueDate)}</div>
                 {isInvoice && <div className="small">Échéance : {date(doc.dueDate)}</div>}
                 {type === 'quote' && <div className="small">Valable jusqu'au {date(doc.validUntil)}</div>}
+                {isOrder && doc.deliveryDate && <div className="small">Livraison prévue le {date(doc.deliveryDate)}</div>}
+                {isOrder && doc.customerRef && <div className="small">Votre référence : {doc.customerRef}</div>}
                 {isCredit && doc.related?.[0] && <div className="small">Sur la facture {doc.related[0].number}</div>}</div>
             </header>
             <div className="doc-customer"><div className="small muted">Client</div><b>{doc.customer.name}</b>

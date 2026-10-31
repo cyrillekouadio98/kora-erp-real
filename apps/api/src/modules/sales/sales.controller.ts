@@ -10,8 +10,8 @@ import { VAT_RATES } from './products.controller';
 import { SalesService } from './sales.service';
 
 export const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'Date attendue au format AAAA-MM-JJ' });
-const type = z.enum(['quote', 'invoice'], { message: 'Type de document : devis ou facture' });
-const anyType = z.enum(['quote', 'invoice', 'credit_note'], { message: 'Type de document : devis, facture ou avoir' });
+const type = z.enum(['quote', 'order', 'invoice'], { message: 'Type de document : devis, bon de commande ou facture' });
+const anyType = z.enum(['quote', 'order', 'invoice', 'credit_note'], { message: 'Type de document : devis, bon de commande, facture ou avoir' });
 
 /** Paiement reçu ou versé : le compte de trésorerie est facultatif (compte par défaut du mode de paiement). */
 export const PaymentSchema = z.object({
@@ -37,6 +37,8 @@ const DocSchema = z.object({
   issueDate: isoDate.optional(),
   dueDate: isoDate.nullable().optional(),
   validUntil: isoDate.nullable().optional(),
+  deliveryDate: isoDate.nullable().optional(),
+  customerRef: z.string().trim().max(60).transform((v) => v || null).nullable().optional(),
   notes: z.string().trim().max(2000).transform((v) => v || null).nullable().optional(),
   restock: z.boolean().optional(),
   lines: z.array(LineSchema).min(1, { message: 'Ajoutez au moins une ligne' }).max(200),
@@ -69,7 +71,7 @@ export class SalesController {
     const q = parse(z.object({ type: anyType }), query);
     const rows = await this.sales.exportRows(t, q.type);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${{ invoice: 'factures', quote: 'devis', credit_note: 'avoirs' }[q.type]}-${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${{ invoice: 'factures', quote: 'devis', order: 'commandes-clients', credit_note: 'avoirs' }[q.type]}-${new Date().toISOString().slice(0, 10)}.csv"`);
     res.send(toCsv(rows));
   }
 
@@ -104,9 +106,19 @@ export class SalesController {
   @Post('documents/:id/refuse')
   refuse(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.sales.decideQuote(t, id, false); }
 
+  /** Devis envoyé ou accepté → brouillon de bon de commande client. */
+  @Permission('sales.create') @HttpCode(200)
+  @Post('documents/:id/order')
+  toOrder(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.sales.toOrder(t, id); }
+
+  /** Devis ou bon de commande confirmé → brouillon de facture. */
   @Permission('sales.create') @HttpCode(200)
   @Post('documents/:id/convert')
   convert(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.sales.convert(t, id); }
+
+  @Permission('sales.cancel') @HttpCode(200)
+  @Post('documents/:id/cancel')
+  cancel(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.sales.cancelOrder(t, id); }
 
   /** Envoi du document au client par e-mail, avec un lien de consultation valable 90 jours. */
   @Permission('sales.update') @HttpCode(200)

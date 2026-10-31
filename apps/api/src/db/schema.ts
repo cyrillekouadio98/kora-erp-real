@@ -91,13 +91,14 @@ export interface ProductTable {
   track_stock: Generated<boolean>; min_stock: ColumnType<string | null, number | string | null | undefined, number | string | null>;
   stock_qty: NumDefault; stock_value: NumDefault; avg_cost: NumDefault;
 }
-export type SalesDocType = 'quote' | 'invoice' | 'credit_note';
-export type SalesDocStatus = 'draft' | 'sent' | 'accepted' | 'refused' | 'invoiced' | 'issued' | 'partially_paid' | 'paid' | 'credited';
+export type SalesDocType = 'quote' | 'order' | 'invoice' | 'credit_note';
+export type SalesDocStatus = 'draft' | 'sent' | 'accepted' | 'refused' | 'ordered' | 'invoiced' | 'confirmed' | 'cancelled' | 'issued' | 'partially_paid' | 'paid' | 'credited';
 type NumDefault = ColumnType<string, number | string | undefined, number | string>;
 export interface SalesDocumentTable {
   company_id: string; id: Generated<string>; type: SalesDocType; status: Generated<SalesDocStatus>; number: string | null; contact_id: string;
   customer: JsonDefault<Record<string, unknown>>; issue_date: DateCol; due_date: DateNullable; valid_until: DateNullable; currency: Generated<string>; notes: string | null;
   total_ht: NumDefault; total_vat: NumDefault; total_ttc: NumDefault; paid_amount: NumDefault; credited_amount: NumDefault; refunded_amount: NumDefault; restock: Generated<boolean>; source_quote_id: string | null; source_invoice_id: string | null;
+  source_order_id: string | null; delivery_date: DateNullable; customer_ref: string | null;
   validated_at: TsNullable; validated_by: string | null; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 export interface SalesDocumentLineTable {

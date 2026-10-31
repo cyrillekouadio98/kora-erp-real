@@ -209,3 +209,87 @@ describe('Avoirs et relances clients', () => {
     expect((await owner.agent.get('/company/sales/summary')).body).toMatchObject({ overdueCount: 1, overdueAmount: 59000 });
   });
 });
+
+describe('Devis → bon de commande client → facture, sans ressaisie', () => {
+  let app: INestApplication;
+  let owner: Awaited<ReturnType<typeof signup>>;
+  let customerId: string;
+  let productId: string;
+  const year = today().slice(0, 4);
+  const doc = async (id: string) => (await owner.agent.get(`/company/sales/documents/${id}`)).body;
+  const stockQty = async () => (await owner.agent.get('/company/products')).body.find((p: any) => p.id === productId).stockQty;
+  const acceptedQuote = async () => {
+    const q = await owner.agent.post('/company/sales/documents').send({ type: 'quote', contactId: customerId,
+      lines: [{ productId, description: 'Sac de ciment 50 kg', quantity: 10, unitPrice: 15000, vatRate: 18 }, { description: 'Livraison', quantity: 1, unitPrice: 5000, vatRate: 18 }] });
+    await owner.agent.post(`/company/sales/documents/${q.body.id}/validate`);
+    await owner.agent.post(`/company/sales/documents/${q.body.id}/accept`);
+    return q.body.id as string;
+  };
+
+  beforeAll(async () => {
+    await resetDb();
+    app = await createApp();
+    owner = await signup(app);
+    customerId = (await owner.agent.post('/company/contacts').send({ kind: 'customer', name: 'Quincaillerie du Plateau' })).body.id;
+    productId = (await owner.agent.post('/company/products').send({ name: 'Sac de ciment 50 kg', salePrice: 15000, vatRate: 18, unit: 'sac' })).body.id;
+    await owner.agent.post(`/company/stock/${productId}/opening`).send({ quantity: 100, unitCost: 12000 });
+  });
+  afterAll(async () => { await app.close(); });
+
+  it('transforme le devis accepté en bon de commande, une seule fois', async () => {
+    const quoteId = await acceptedQuote();
+    const order = (await owner.agent.post(`/company/sales/documents/${quoteId}/order`)).body;
+    expect(order).toMatchObject({ type: 'order', status: 'draft', sourceQuoteId: quoteId, totalTtc: 182_900 });
+    expect(order.lines.map((l: any) => [l.description, l.quantity, l.unitPrice])).toEqual([['Sac de ciment 50 kg', 10, 15000], ['Livraison', 1, 5000]]);
+    expect((await doc(quoteId)).status).toBe('ordered');
+    // Pas de doublon : ni seconde commande, ni facture directe depuis le devis
+    expect((await owner.agent.post(`/company/sales/documents/${quoteId}/order`)).body.error.code).toBe('invalid_state');
+    expect((await owner.agent.post(`/company/sales/documents/${quoteId}/convert`)).body.error.code).toBe('invalid_state');
+    // Supprimer le brouillon de commande rend le devis à nouveau transformable
+    await owner.agent.delete(`/company/sales/documents/${order.id}`);
+    expect((await doc(quoteId)).status).toBe('accepted');
+  });
+
+  it('confirme la commande sans effet en stock ni en comptabilité, puis la facture', async () => {
+    const quoteId = (await owner.agent.get('/company/sales/documents').query({ type: 'quote' })).body[0].id;
+    const draft = (await owner.agent.post(`/company/sales/documents/${quoteId}/order`)).body;
+    await owner.agent.patch(`/company/sales/documents/${draft.id}`).send({ customerRef: 'BC-QP-0042', deliveryDate: addDays(today(), 5) });
+    const entriesBefore = (await owner.agent.get('/company/accounting/entries')).body.length;
+    const order = (await owner.agent.post(`/company/sales/documents/${draft.id}/validate`)).body;
+    expect(order).toMatchObject({ status: 'confirmed', number: `CMD-${year}-00001`, customerRef: 'BC-QP-0042', deliveryDate: addDays(today(), 5) });
+    expect((await stockQty())).toBe(100);
+    expect((await owner.agent.get('/company/accounting/entries')).body.length).toBe(entriesBefore);
+    expect((await owner.agent.get('/company/sales/summary')).body).toMatchObject({ ordersToInvoice: 1, ordersToInvoiceAmount: 182_900 });
+
+    let inv = (await owner.agent.post(`/company/sales/documents/${order.id}/convert`)).body;
+    expect(inv).toMatchObject({ type: 'invoice', status: 'draft', sourceOrderId: order.id, sourceQuoteId: quoteId, totalTtc: 182_900 });
+    expect(inv.lines).toHaveLength(2);
+    expect([(await doc(order.id)).status, (await doc(quoteId)).status]).toEqual(['invoiced', 'invoiced']);
+    expect((await owner.agent.post(`/company/sales/documents/${order.id}/convert`)).body.error.code).toBe('invalid_state');
+    // Brouillon de facture supprimé : la commande redevient à facturer
+    await owner.agent.delete(`/company/sales/documents/${inv.id}`);
+    expect([(await doc(order.id)).status, (await doc(quoteId)).status]).toEqual(['confirmed', 'ordered']);
+    inv = (await owner.agent.post(`/company/sales/documents/${order.id}/convert`)).body;
+    const issued = (await owner.agent.post(`/company/sales/documents/${inv.id}/validate`)).body;
+    expect(issued).toMatchObject({ status: 'issued', number: `FAC-${year}-00001` });
+    expect((await stockQty())).toBe(90);
+
+    // Suivi : chaque document montre toute la chaîne
+    const chain = (id: string) => doc(id).then((d) => d.related.map((r: any) => r.type).sort());
+    expect(await chain(quoteId)).toEqual(['invoice', 'order']);
+    expect(await chain(order.id)).toEqual(['invoice', 'quote']);
+    expect(await chain(inv.id)).toEqual(['order', 'quote']);
+  });
+
+  it("annule une commande confirmée non facturée et libère son devis", async () => {
+    const quoteId = await acceptedQuote();
+    const draft = (await owner.agent.post(`/company/sales/documents/${quoteId}/order`)).body;
+    const order = (await owner.agent.post(`/company/sales/documents/${draft.id}/validate`)).body;
+    expect((await owner.agent.post(`/company/sales/documents/${order.id}/cancel`)).body.status).toBe('cancelled');
+    expect((await doc(quoteId)).status).toBe('accepted');
+    expect((await owner.agent.post(`/company/sales/documents/${order.id}/convert`)).body.error.code).toBe('invalid_state');
+    expect((await owner.agent.post(`/company/sales/documents/${quoteId}/order`)).body.status).toBe('draft');
+    const invoiced = (await owner.agent.get('/company/sales/documents').query({ type: 'order', status: 'invoiced' })).body[0];
+    expect((await owner.agent.post(`/company/sales/documents/${invoiced.id}/cancel`)).body.error.code).toBe('invalid_state');
+  });
+});

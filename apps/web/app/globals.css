@@ -194,3 +194,10 @@ table.vat { width: auto; font-size: 13px; } table.vat td, table.vat th { padding
   .subnav { order: 3; flex-basis: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { .app-ico { transition: none; } }
+
+/* Suivi commercial : devis → bon de commande → facture */
+.chain { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.chain-step { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); text-decoration: none; }
+a.chain-step:hover { border-color: var(--accent); }
+.chain-step.current { border-color: var(--accent); background: var(--accent-soft); }
+.chain-arrow { color: var(--muted); }

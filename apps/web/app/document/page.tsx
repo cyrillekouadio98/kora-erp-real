@@ -23,7 +23,9 @@ function PublicDocument() {
             <div className="small muted">{[c.address, c.city].filter(Boolean).join(', ')}{c.phone ? ` · ${c.phone}` : ''}{c.email ? ` · ${c.email}` : ''}</div>
             <div className="small muted">{[c.rccm && `RCCM ${c.rccm}`, c.taxId && `NCC ${c.taxId}`, c.taxRegime].filter(Boolean).join(' · ')}</div></div>
           <div style={{ textAlign: 'right' }}><div className="doc-title">{DOC_LABEL[doc.type as 'invoice']}</div><div><b>{doc.number}</b></div><div className="small">du {date(doc.issueDate)}</div>
-            {isInvoice && <div className="small">Échéance : {date(doc.dueDate)}</div>}{doc.type === 'quote' && <div className="small">Valable jusqu'au {date(doc.validUntil)}</div>}</div>
+            {isInvoice && <div className="small">Échéance : {date(doc.dueDate)}</div>}{doc.type === 'quote' && <div className="small">Valable jusqu'au {date(doc.validUntil)}</div>}
+            {doc.type === 'order' && doc.deliveryDate && <div className="small">Livraison prévue le {date(doc.deliveryDate)}</div>}
+            {doc.type === 'order' && doc.customerRef && <div className="small">Votre référence : {doc.customerRef}</div>}</div>
         </header>
         <div className="doc-customer"><div className="small muted">Client</div><b>{doc.customer.name}</b>
           <div className="small">{[doc.customer.address, doc.customer.city].filter(Boolean).join(', ')}</div>

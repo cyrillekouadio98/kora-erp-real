@@ -101,6 +101,8 @@ export class DashboardService {
         .where('type', '=', 'invoice').where('status', 'in', ['issued', 'partially_paid']).where('due_date', '<', now).execute();
       if (late.length) out.push({ kind: 'overdue_invoices', severity: 'critical', label: 'Factures clients en retard', count: late.length, amount: sumDue(late), href: '/app/ventes/relances' });
       const drafts = await trx.selectFrom('sales_document').select('id').where('status', '=', 'draft').where('created_at', '<', new Date(Date.now() - 7 * 86400_000)).execute();
+      const orders = await trx.selectFrom('sales_document').select('total_ttc').where('type', '=', 'order').where('status', '=', 'confirmed').execute();
+      if (orders.length) out.push({ kind: 'orders_to_invoice', severity: 'info', label: 'Bons de commande clients à facturer', count: orders.length, amount: round(orders.reduce((s, o) => s + Number(o.total_ttc), 0)), href: '/app/ventes/commandes' });
       if (drafts.length) out.push({ kind: 'old_drafts', severity: 'info', label: 'Brouillons de vente de plus de 7 jours', count: drafts.length, href: '/app/ventes/factures' });
     }
     if (can('purchases.read', 'purchases')) {

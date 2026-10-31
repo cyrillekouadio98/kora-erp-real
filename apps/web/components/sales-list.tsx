@@ -7,11 +7,14 @@ import { useSession } from '@/components/session';
 import { Alert, Field, Pill, useAction } from '@/components/ui';
 
 const STATUSES = {
-  quote: ['draft', 'sent', 'accepted', 'refused', 'invoiced'],
+  quote: ['draft', 'sent', 'accepted', 'refused', 'ordered', 'invoiced'],
+  order: ['draft', 'confirmed', 'invoiced', 'cancelled'],
   invoice: ['draft', 'issued', 'partially_paid', 'paid', 'credited'],
   credit_note: ['draft', 'issued'],
 };
-const TITLES = { quote: 'Devis', invoice: 'Factures', credit_note: 'Avoirs' };
+const TITLES = { quote: 'Devis', order: 'Bons de commande clients', invoice: 'Factures', credit_note: 'Avoirs' };
+const NEW_LABEL = { quote: 'Nouveau devis', order: 'Nouveau bon de commande', invoice: 'Nouvelle facture', credit_note: '' };
+const EMPTY_TEXT = { quote: 'Aucun devis pour l’instant.', order: 'Aucun bon de commande pour l’instant : transformez un devis accepté (bouton « Transformer en bon de commande »).', invoice: 'Aucune facture pour l’instant.', credit_note: 'Aucun avoir pour l’instant.' };
 
 /** Liste des devis ou des factures, avec recherche et filtre par statut. */
 export function SalesList({ type }: { type: DocType }) {
@@ -25,6 +28,7 @@ export function SalesList({ type }: { type: DocType }) {
   useEffect(() => { const h = setTimeout(load, 250); return () => clearTimeout(h); }, [load]);
   const isInvoice = type === 'invoice';
   const isCredit = type === 'credit_note';
+  const isOrder = type === 'order';
 
   return (
     <>
@@ -32,7 +36,7 @@ export function SalesList({ type }: { type: DocType }) {
         <h1>{TITLES[type]}</h1>
         <div className="row">
           {can('sales.export') && <a className="btn" href={`/api/company/sales/documents/export?type=${type}`}>Exporter (CSV)</a>}
-          {can('sales.create') && !ctx?.readOnly && !isCredit && <Link className="btn primary" href={`/app/ventes/nouveau?type=${type}`}>{isInvoice ? 'Nouvelle facture' : 'Nouveau devis'}</Link>}
+          {can('sales.create') && !ctx?.readOnly && !isCredit && <Link className="btn primary" href={`/app/ventes/nouveau?type=${type}`}>{NEW_LABEL[type]}</Link>}
         </div>
       </div>
       <Alert>{error}</Alert>
@@ -46,21 +50,22 @@ export function SalesList({ type }: { type: DocType }) {
         </label>
       </div>
       <div className="table-wrap"><table>
-        <thead><tr><th>Numéro</th><th>Client</th><th>Date</th>{!isCredit && <th>{isInvoice ? 'Échéance' : 'Valable jusqu’au'}</th>}<th>Statut</th><th className="n">Total TTC</th>{isInvoice && <th className="n">Reste à payer</th>}</tr></thead>
+        <thead><tr><th>Numéro</th><th>Client</th><th>Date</th>{isOrder && <th>Réf. client</th>}{!isCredit && <th>{isInvoice ? 'Échéance' : isOrder ? 'Livraison prévue' : 'Valable jusqu’au'}</th>}<th>Statut</th><th className="n">Total TTC</th>{isInvoice && <th className="n">Reste à payer</th>}</tr></thead>
         <tbody>
           {rows?.map((d) => (
             <tr key={d.id}>
               <td style={{ whiteSpace: 'nowrap' }}><Link href={`/app/ventes/${d.id}`}>{d.number ?? 'Brouillon'}</Link></td>
               <td><b>{d.contactName}</b><div className="small muted">{d.contactCode}</div></td>
               <td style={{ whiteSpace: 'nowrap' }}>{date(d.issueDate)}</td>
-              {!isCredit && <td style={{ whiteSpace: 'nowrap' }}>{date(isInvoice ? d.dueDate : d.validUntil)}{d.overdue && <> <Pill tone="crit">En retard</Pill></>}</td>}
+              {isOrder && <td className="small">{d.customerRef ?? '—'}</td>}
+              {!isCredit && <td style={{ whiteSpace: 'nowrap' }}>{date(isInvoice ? d.dueDate : isOrder ? d.deliveryDate : d.validUntil)}{d.overdue && <> <Pill tone="crit">En retard</Pill></>}</td>}
               <td><Pill tone={docStatus(type, d.status)[1]}>{docStatus(type, d.status)[0]}</Pill></td>
               <td className="n" style={{ whiteSpace: 'nowrap' }}>{money(d.totalTtc)}</td>
               {isInvoice && <td className="n" style={{ whiteSpace: 'nowrap' }}>{d.status === 'draft' ? '—' : money(d.remaining)}</td>}
             </tr>
           ))}
-          {rows && !rows.length && <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 28 }}>
-            {q || status ? 'Aucun document ne correspond à ces critères.' : isInvoice ? 'Aucune facture pour l’instant.' : isCredit ? 'Aucun avoir pour l’instant.' : 'Aucun devis pour l’instant.'}
+          {rows && !rows.length && <tr><td colSpan={8} className="muted" style={{ textAlign: 'center', padding: 28 }}>
+            {q || status ? 'Aucun document ne correspond à ces critères.' : EMPTY_TEXT[type]}
           </td></tr>}
         </tbody>
       </table></div>

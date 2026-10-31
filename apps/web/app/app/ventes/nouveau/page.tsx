@@ -5,7 +5,8 @@ import { SalesEditor } from '@/components/sales-editor';
 
 function NewDocument() {
   const router = useRouter();
-  const type = useSearchParams().get('type') === 'quote' ? 'quote' : 'invoice';
+  const asked = useSearchParams().get('type');
+  const type = asked === 'quote' || asked === 'order' ? asked : 'invoice';
   return <SalesEditor key={type} type={type} onSaved={(d) => router.replace(`/app/ventes/${d.id}`)} />;
 }
 
