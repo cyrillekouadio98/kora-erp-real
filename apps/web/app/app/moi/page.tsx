@@ -58,8 +58,8 @@ export default function MySpacePage() {
             {!slips.length && <tr><td colSpan={5} className="muted" style={{ textAlign: 'center' }}>Aucun bulletin pour l'instant.</td></tr>}</tbody>
         </table></div></div>}
 
-      {slip && <div className="modal-back" onClick={() => setSlip(null)}><div className="modal" style={{ width: 'min(820px, 100%)' }} onClick={(e) => e.stopPropagation()}>
-        <Payslip slip={slip.slip} label={periodLabel(slip.period)} company={{ ...slip.company }} onClose={() => setSlip(null)} /></div></div>}
+      {slip && <div className="modal-back" onClick={() => setSlip(null)}><div className="modal" style={{ width: 'min(960px, 100%)' }} onClick={(e) => e.stopPropagation()}>
+        <Payslip slip={slip.slip} period={slip.period} company={{ ...slip.company }} onClose={() => setSlip(null)} /></div></div>}
 
       {form && (
         <div className="modal-back" onClick={() => setForm(null)}>

@@ -201,3 +201,30 @@ table.vat { width: auto; font-size: 13px; } table.vat td, table.vat th { padding
 a.chain-step:hover { border-color: var(--accent); }
 .chain-step.current { border-color: var(--accent); background: var(--accent-soft); }
 .chain-arrow { color: var(--muted); }
+
+/* Bulletin de paie : en-tête, identification, rubriques salariales et patronales, cumuls, congés */
+.fiche { display: grid; gap: 14px; font-size: 12.5px; color: var(--ink); }
+.fiche-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 18px 20px; border-radius: 10px; background: var(--accent-soft); }
+.fiche-company { font-size: 26px; font-weight: 700; color: var(--accent); letter-spacing: .01em; }
+.fiche-contact { text-align: right; line-height: 1.7; }
+.fiche-title { text-align: center; font-size: 14px; font-weight: 700; color: var(--accent); margin: 6px 0 0; }
+.fiche table { width: 100%; border-collapse: collapse; }
+.fiche th, .fiche td { border: 1px solid var(--line); padding: 4px 8px; text-align: center; vertical-align: middle; }
+.fiche th { background: var(--surface-2); font-weight: 600; color: var(--ink); text-transform: none; letter-spacing: 0; font-size: 12.5px; }
+.fiche td.n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.fiche-id td { height: 26px; }
+.fiche-lines td.label { text-align: center; }
+.fiche-lines tr.total td { font-weight: 600; border-top: 2px solid var(--muted); }
+.fiche-lines tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--surface-2) 45%, transparent); }
+.fiche-cumuls td { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.fiche-net { font-size: 16px; font-weight: 700; }
+.fiche-scroll { overflow-x: auto; }
+.fiche-section { color: var(--accent); border-bottom: 1px solid var(--accent); padding-bottom: 2px; }
+.fiche-foot { margin: 8px 0 0; font-size: 11.5px; font-weight: 600; }
+@media print {
+  .fiche { font-size: 10.5px; }
+  .fiche th, .fiche td { padding: 3px 5px; }
+  .fiche-head { background: #eef3fa; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .fiche th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .fiche-scroll { overflow: visible; }
+}

@@ -172,3 +172,23 @@ export function netToGross(targetNet: number, minSalary: number, fixed: NetToGro
   const baseSalary = withCategory ? minSalary : lo, extraSalary = withCategory ? lo : 0;
   return { ok: true as const, baseSalary, extraSalary, result: slip(baseSalary, extraSalary) };
 }
+
+/** Durée légale mensuelle : 40 h par semaine × 52 semaines / 12 mois. */
+export const MONTHLY_HOURS = 173.33;
+
+/**
+ * Chiffres de synthèse d'un bulletin (colonnes « Cumuls ») : salaire brut imposable, prime de transport
+ * non imposable, charges salariales (cotisations + ITS), charges patronales, net, et heures travaillées
+ * (durée légale au prorata des jours payés).
+ */
+export function slipFigures(s: { lines: PayslipLine[]; totals: Record<string, number>; taxable: number; net: number }) {
+  const gain = (code: string) => s.lines.find((l) => l.code === code)?.gain ?? 0;
+  const contract = gain('BASE') + gain('SUR');
+  const paidRatio = contract > 0 ? Math.max(0, (contract + gain('ABS')) / contract) : 1;
+  const t = s.totals;
+  return {
+    taxable: s.taxable, transport: gain('TRA'), net: s.net, paidRatio,
+    employeeCharges: (t.socialEmployee ?? 0) + (t.its ?? 0), employerCharges: (t.socialEmployer ?? 0) + (t.taxesEmployer ?? 0),
+    minutes: Math.round(MONTHLY_HOURS * paidRatio * 60),
+  };
+}

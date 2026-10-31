@@ -8,7 +8,7 @@ import { DatabaseService, TenantTrx } from '../../db/database.service';
 import type { LeaveType } from '../../db/schema';
 import { AuditService } from '../audit/audit.service';
 import { MailService } from '../mail/mail.service';
-import { DEFAULT_PAYROLL_PARAMS } from '../payroll/payroll.calc';
+import { DEFAULT_PAYROLL_PARAMS, PayslipLine, slipFigures } from '../payroll/payroll.calc';
 import { fullMonths, workingDays } from './workdays';
 
 export const LEAVE_TYPES: Record<LeaveType, string> = {
@@ -216,6 +216,29 @@ export class LeaveService {
     });
   }
 
+  /**
+   * Compléments d'un bulletin : cumuls de la période et de l'année (bulletins validés de janvier au mois
+   * du bulletin, plus celui-ci), et situation des congés à la fin du mois.
+   */
+  async payslipExtras(trx: TenantTrx, employeeId: string, period: string, runId: string) {
+    const rows = await trx.selectFrom('payslip as p').innerJoin('payroll_run as r', (j) => j.onRef('r.id', '=', 'p.run_id').onRef('r.company_id', '=', 'p.company_id'))
+      .select(['p.lines', 'p.totals', 'p.taxable', 'p.net', 'r.id as runId']).where('p.employee_id', '=', employeeId)
+      .where('r.period', '>=', `${period.slice(0, 4)}-01`).where('r.period', '<=', period)
+      .where((eb) => eb.or([eb('r.status', '=', 'validated'), eb('r.id', '=', runId)])).execute();
+    const figures = rows.map((r) => ({ runId: r.runId, ...slipFigures({ lines: r.lines as PayslipLine[], totals: r.totals as Record<string, number>, taxable: Number(r.taxable), net: Number(r.net) }) }));
+    const keys = ['taxable', 'transport', 'employeeCharges', 'employerCharges', 'net', 'minutes'] as const;
+    const year = Object.fromEntries(keys.map((k) => [k, figures.reduce((s, f) => s + f[k], 0)]));
+    const end = new Date(Date.UTC(Number(period.slice(0, 4)), Number(period.slice(5, 7)), 0)).toISOString().slice(0, 10);
+    const e = await this.employee(trx, employeeId);
+    const b = await this.balance(trx, e, end);
+    const run = await trx.selectFrom('payroll_run').select('params').where('id', '=', runId).executeTakeFirst();
+    return {
+      refDays: Number((run?.params as { workingDays?: number } | undefined)?.workingDays ?? DEFAULT_PAYROLL_PARAMS.workingDays),
+      cumuls: { period: figures.find((f) => f.runId === runId) ?? null, year },
+      leave: { acquired: round1(b.opening + b.accrued), taken: b.taken, remaining: b.available },
+    };
+  }
+
   /** Bulletins validés de l'employé connecté, et seulement les siens. */
   async myPayslips(t: TenantInfo) {
     return this.db.tenant(t.ctx, async (trx) => {
@@ -233,8 +256,9 @@ export class LeaveService {
       const p = await trx.selectFrom('payslip as p').innerJoin('payroll_run as r', (j) => j.onRef('r.id', '=', 'p.run_id').onRef('r.company_id', '=', 'p.company_id'))
         .selectAll('p').select('r.period').where('p.id', '=', id).where('p.employee_id', '=', e.id).where('r.status', '=', 'validated').executeTakeFirst();
       if (!p) throw notFound('Bulletin');
-      const company = await trx.selectFrom('company').select(['name', 'address', 'city', 'tax_id']).where('id', '=', t.companyId).executeTakeFirstOrThrow();
-      return { company, period: p.period, slip: { id: p.id, employee: p.employee, lines: p.lines, totals: p.totals, gross: Number(p.gross), net: Number(p.net), employerCost: Number(p.employer_cost), paidAt: p.paid_at } };
+      const company = await trx.selectFrom('company').select(['name', 'address', 'city', 'tax_id', 'rccm', 'phone', 'email']).where('id', '=', t.companyId).executeTakeFirstOrThrow();
+      return { company, period: p.period, slip: { id: p.id, employee: p.employee, lines: p.lines, totals: p.totals, gross: Number(p.gross), taxable: Number(p.taxable), net: Number(p.net),
+        employerCost: Number(p.employer_cost), paidAt: p.paid_at, ...(await this.payslipExtras(trx, e.id, p.period, p.run_id)) } };
     });
   }
 }

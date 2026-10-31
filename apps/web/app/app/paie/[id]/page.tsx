@@ -77,7 +77,7 @@ export default function PayrollRunPage() {
 
       {modal && (
         <div className="modal-back" onClick={() => setModal(null)}>
-          <form className="modal" style={{ width: modal.type === 'slip' ? 'min(820px, 100%)' : 'min(480px, 100%)' }} onClick={(e) => e.stopPropagation()} onSubmit={(e) => {
+          <form className="modal" style={{ width: modal.type === 'slip' ? 'min(960px, 100%)' : 'min(480px, 100%)' }} onClick={(e) => e.stopPropagation()} onSubmit={(e) => {
             e.preventDefault();
             run(async () => {
               if (modal.type === 'inputs') setR(await api(`/company/payroll/runs/${id}/payslips/${modal.slip.id}`, { method: 'PATCH', body: Object.fromEntries(INPUTS.map(([k]) => [k, Number(modal[k] || 0)])) }));
@@ -100,7 +100,7 @@ export default function PayrollRunPage() {
               <Field label="Date du paiement" type="date" required max={new Date().toISOString().slice(0, 10)} value={modal.date} onChange={(e) => setModal({ ...modal, date: e.target.value })} />
               <div className="row"><button className="btn primary" disabled={busy}>Enregistrer le paiement</button><button type="button" className="btn" onClick={() => setModal(null)}>Annuler</button></div>
             </>}
-            {modal.type === 'slip' && <Payslip slip={modal.slip} label={r.label} company={company} onClose={() => setModal(null)} />}
+            {modal.type === 'slip' && <Payslip slip={modal.slip} period={r.period} company={company} onClose={() => setModal(null)} />}
           </form>
         </div>
       )}

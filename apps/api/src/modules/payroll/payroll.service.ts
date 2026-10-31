@@ -190,7 +190,7 @@ export class PayrollService {
     }, params);
     if (result.net < 0) throw badRequest(`Le net à payer de ${e.first_name} ${e.last_name} serait négatif : réduisez les retenues.`, undefined, 'negative_net');
     const employee = { number: e.number, name: `${e.first_name} ${e.last_name}`, jobTitle: e.job_title, department: e.department, hireDate: e.hire_date,
-      contractType: e.contract_type, cnpsNumber: e.cnps_number, maritalStatus: e.marital_status, children: e.children, parts, paymentMethod: e.payment_method };
+      contractType: e.contract_type, cnpsNumber: e.cnps_number, maritalStatus: e.marital_status, children: e.children, parts, paymentMethod: e.payment_method, category: e.category };
     return { employee, result };
   }
 
@@ -240,10 +240,11 @@ export class PayrollService {
     return this.db.tenant(t.ctx, async (trx) => {
       const r = await this.run(trx, id);
       const slips = await trx.selectFrom('payslip').selectAll().where('run_id', '=', id).execute();
-      const payslips = slips.map((s) => ({
+      const payslips = (await Promise.all(slips.map(async (s) => ({
         id: s.id, employeeId: s.employee_id, employee: s.employee as any, inputs: s.inputs as PayslipInputs, lines: s.lines, totals: s.totals as any,
         gross: Number(s.gross), taxable: Number(s.taxable), net: Number(s.net), employerCost: Number(s.employer_cost), paidAt: s.paid_at,
-      })).sort((a, b) => a.employee.name.localeCompare(b.employee.name));
+        ...(await this.leave.payslipExtras(trx, s.employee_id, r.period, r.id)),
+      })))).sort((a, b) => a.employee.name.localeCompare(b.employee.name));
       const sum = (f: (p: (typeof payslips)[number]) => number) => payslips.reduce((s, p) => s + f(p), 0);
       const tot = (k: string) => sum((p) => Number(p.totals[k] ?? 0));
       return {
