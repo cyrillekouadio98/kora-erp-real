@@ -407,6 +407,31 @@ export class AccountingService {
     });
   }
 
+  /** Grand livre de tous les comptes mouvementés sur la période (ou ayant un solde à l'ouverture), compte par compte. */
+  async generalLedger(t: TenantInfo, f: { from?: string; to?: string }) {
+    return this.db.tenant(t.ctx, async (trx) => {
+      const rows = await this.linesQuery(trx, f.to)
+        .leftJoin('contact as c', (j) => j.onRef('c.id', '=', 'l.contact_id').onRef('c.company_id', '=', 'l.company_id'))
+        .select(['l.id', 'e.date', 'e.number', 'l.account_code as account', 'l.label', 'c.name as contactName', 'l.debit', 'l.credit'])
+        .orderBy('l.account_code').orderBy('e.date').orderBy('e.number').execute();
+      const names = new Map((await trx.selectFrom('ledger_account').select(['code', 'name']).execute()).map((a) => [a.code, a.name]));
+      const byAccount = new Map<string, { opening: number; lines: { id: string; date: string; number: string | null; label: string; contactName: string | null; debit: number; credit: number }[] }>();
+      for (const r of rows) {
+        const a = byAccount.get(r.account) ?? { opening: 0, lines: [] };
+        if (f.from && r.date < f.from) a.opening += Number(r.debit) - Number(r.credit);
+        else a.lines.push({ id: r.id, date: r.date, number: r.number, label: r.label, contactName: r.contactName, debit: Number(r.debit), credit: Number(r.credit) });
+        byAccount.set(r.account, a);
+      }
+      const accounts = [...byAccount.entries()].filter(([, a]) => a.lines.length || round(a.opening)).map(([code, a]) => {
+        let running = round(a.opening);
+        const lines = a.lines.map((l) => ({ ...l, balance: round((running += l.debit - l.credit)) }));
+        return { code, name: names.get(code) ?? '', opening: round(a.opening), lines,
+          totalDebit: round(lines.reduce((s, l) => s + l.debit, 0)), totalCredit: round(lines.reduce((s, l) => s + l.credit, 0)), closing: round(running) };
+      });
+      return { accounts, totalDebit: round(accounts.reduce((s, a) => s + a.totalDebit, 0)), totalCredit: round(accounts.reduce((s, a) => s + a.totalCredit, 0)) };
+    });
+  }
+
   /** Balance générale : soldes d'ouverture, mouvements de la période, soldes de clôture, par compte. */
   async trialBalance(t: TenantInfo, f: { from?: string; to?: string }) {
     return this.db.tenant(t.ctx, async (trx) => {

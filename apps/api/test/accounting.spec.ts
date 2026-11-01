@@ -103,6 +103,15 @@ describe('Comptabilité SYSCOHADA', () => {
     }
     expect(row('471000')).toMatchObject({ closingCredit: 1_000_000 }); // contrepartie du solde d'ouverture de la banque, à solder par le comptable
 
+    // Le grand livre complet reprend chaque compte de la balance, avec les mêmes mouvements et soldes.
+    const gl = (await owner.agent.get('/company/accounting/general-ledger')).body;
+    expect(gl.accounts.map((a: any) => a.code)).toEqual(tb.accounts.filter((a: any) => a.debit || a.credit).map((a: any) => a.account));
+    for (const a of gl.accounts) expect([a.code, a.totalDebit, a.totalCredit, a.closing]).toEqual([a.code, row(a.code).debit, row(a.code).credit, row(a.code).closingDebit - row(a.code).closingCredit]);
+    expect(gl.accounts.find((a: any) => a.code === '411000').lines.at(-1).balance).toBe(88200);
+    expect([gl.totalDebit, gl.totalCredit]).toEqual([tb.totals.debit, tb.totals.credit]);
+    const later = (await owner.agent.get('/company/accounting/general-ledger').query({ from: addDays(today(), 1), to: addDays(today(), 1) })).body;
+    expect(later.accounts.find((a: any) => a.code === '411000')).toMatchObject({ opening: 88200, lines: [], closing: 88200 });
+
     const vat = (await owner.agent.get('/company/accounting/vat').query({ from: addDays(today(), -30), to: today() })).body;
     expect(vat).toMatchObject({ collected: 25200, deductible: 7200, due: 18000, credit: 0, revenueHt: 140000 });
     expect(vat.collectedByRate).toEqual([{ rate: 18, amount: 25200 }]);

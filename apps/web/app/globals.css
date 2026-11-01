@@ -250,3 +250,33 @@ a.chain-step:hover { border-color: var(--accent); }
   .stock-print input.input { border: none; border-bottom: 1px dotted #999; border-radius: 0; background: none; }
   .stock-print input::-webkit-inner-spin-button, .stock-print input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 }
+
+/* États comptables imprimables : en-tête d'entreprise, A4 (paysage pour les états larges), numéros de page */
+.report { display: grid; gap: 12px; }
+.report-head { display: none; }
+@media print {
+  .report { page: report; gap: 8px; }
+  .report.wide { page: report-wide; }
+  .report-head { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: start; border-bottom: 2px solid #000; padding-bottom: 8px; font-size: 10.5px; line-height: 1.4; }
+  .report-head .t { text-align: center; }
+  .report-head .t h2 { margin: 0 0 2px; font-size: 16px; text-transform: uppercase; letter-spacing: .04em; }
+  .report-head .e { text-align: right; color: #444; }
+  .report table, .report table.vat, .report table .small, .report code.k { font-size: 10px; }
+  .report th { font-size: 9px; }
+  .report th, .report td, .report table.vat td, .report table.vat th { padding: 3px 6px; }
+  .report td.n { white-space: nowrap; }
+  .report p.small { font-size: 9.5px; }
+  .report code.k { padding: 0 3px; }
+  .report thead { display: table-header-group; }
+  .report tfoot { display: table-row-group; }
+  .report tr { break-inside: avoid; }
+  .report .card header { margin-bottom: 4px; }
+  .report .kpi { border: 1px solid #bbb; padding: 8px 10px; }
+  .report .kpi .v { font-size: 16px; }
+  .report .gl-account { break-inside: avoid-page; }
+  .report .gl-account + .gl-account { margin-top: 6px; }
+  .report-cols { flex-wrap: nowrap; }
+  .report-cols > .card { min-width: 0 !important; }
+}
+@page report { size: A4; margin: 12mm 10mm 14mm; @bottom-right { content: "Page " counter(page) " / " counter(pages); font-size: 9px; color: #555; } }
+@page report-wide { size: A4 landscape; margin: 10mm 10mm 12mm; @bottom-right { content: "Page " counter(page) " / " counter(pages); font-size: 9px; color: #555; } }

@@ -128,6 +128,11 @@ export class AccountingController {
     return this.accounting.ledger(t, parse(Period.extend({ account: accountCode, contactId: z.string().uuid().optional() }), query));
   }
 
+  /** Grand livre complet : tous les comptes de la période, pour l'impression. */
+  @Permission('accounting.read') @AllowWhenReadOnly()
+  @Get('general-ledger')
+  generalLedger(@Tenant() t: TenantInfo, @Query() query: unknown) { return this.accounting.generalLedger(t, parse(Period, query)); }
+
   @Permission('accounting.read') @AllowWhenReadOnly()
   @Get('trial-balance')
   trialBalance(@Tenant() t: TenantInfo, @Query() query: unknown) { return this.accounting.trialBalance(t, parse(Period, query)); }

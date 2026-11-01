@@ -1,7 +1,7 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { date, JOURNALS, money } from '@/lib/format';
+import { date, date as fmtDate, JOURNALS, money } from '@/lib/format';
 import { useSession } from '@/components/session';
 import { Alert, Field, Pill, useAction } from '@/components/ui';
 
@@ -11,6 +11,38 @@ const TABS = [['entries', 'Écritures'], ['ledger', 'Grand livre'], ['balance', 
   ['vat', 'TVA'], ['closing', 'Clôture d\u2019exercice'], ['chart', 'Plan comptable']] as const;
 type Tab = (typeof TABS)[number][0];
 const num = (n: number) => (n ? money(n) : '');
+const between = (p: { from: string; to: string }) => `du ${date(p.from)} au ${date(p.to)}`;
+const CompanyCtx = createContext<any>(null);
+
+/**
+ * Enveloppe d'un état comptable : barre d'outils (filtres + « Imprimer / PDF ») à l'écran,
+ * en-tête d'impression (entreprise, titre, période, date d'édition) sur papier.
+ * « wide » imprime en paysage (balance, journal).
+ */
+function Report({ title, period, wide, tools, children }: { title: string; period: string; wide?: boolean; tools?: React.ReactNode; children: React.ReactNode }) {
+  const company = useContext(CompanyCtx);
+  const print = () => {
+    // Le titre de la page devient le nom proposé pour le fichier PDF.
+    const previous = document.title;
+    document.title = `${title} ${period} - ${company?.name ?? ''}`.trim();
+    window.addEventListener('afterprint', () => { document.title = previous; }, { once: true });
+    window.print();
+  };
+  return (
+    <div className={`report${wide ? ' wide' : ''}`}>
+      <div className="row no-print" style={{ alignItems: 'flex-end' }}>{tools}
+        <button className="btn sm" style={{ marginLeft: 'auto' }} onClick={print}>Imprimer / PDF</button></div>
+      <header className="report-head">
+        <div><b>{company?.name}</b>
+          {(company?.address || company?.city) && <div>{[company.address, company.city].filter(Boolean).join(' - ')}</div>}
+          {(company?.rccm || company?.tax_id) && <div>{[company.rccm && `RCCM ${company.rccm}`, company.tax_id && `NCC ${company.tax_id}`].filter(Boolean).join(' · ')}</div>}</div>
+        <div className="t"><h2>{title}</h2><div>{period}</div></div>
+        <div className="e">Édité le {date(today())}<div>Montants en FCFA</div></div>
+      </header>
+      {children}
+    </div>
+  );
+}
 
 /** Charge une donnée et ignore les réponses arrivées après un changement de filtre (sinon une réponse ancienne écrase la bonne). */
 function useLatest<T>(url: string | null, deps: unknown[]) {
@@ -34,7 +66,9 @@ export default function AccountingPage() {
   const [period, setPeriod] = useState({ from: yearStart(), to: today() });
   const [modal, setModal] = useState<any>(null);
   const [version, setVersion] = useState(0);
+  const [company, setCompany] = useState<any>(null);
   const { busy, error, run, setError } = useAction();
+  useEffect(() => { api('/company').then(setCompany, () => {}); }, []);
 
   const loadStatus = useCallback(() => api('/company/accounting/status').then(setStatus), []);
   useEffect(() => { loadStatus(); api('/company/accounting/accounts').then(setAccounts); }, [loadStatus, version]);
@@ -42,8 +76,8 @@ export default function AccountingPage() {
   const accountName = (code: string) => accounts.find((a) => a.code === code)?.name ?? '';
 
   return (
-    <>
-      <div className="page-head"><h1>Comptabilité</h1>
+    <CompanyCtx.Provider value={company}>
+      <div className="page-head no-print"><h1>Comptabilité</h1>
         <div className="row">
           {status?.lockedUntil && <Pill tone="mute">Clôturée jusqu'au {date(status.lockedUntil)}</Pill>}
           {can('accounting.export') && <a className="btn" href={`/api/company/accounting/entries/export?from=${period.from}&to=${period.to}`}>Exporter les écritures</a>}
@@ -56,9 +90,9 @@ export default function AccountingPage() {
         <Alert kind="warn">{status.pending} opération{status.pending > 1 ? 's' : ''} saisie{status.pending > 1 ? 's' : ''} avant l'activation de la comptabilité {status.pending > 1 ? 'ne sont' : "n'est"} pas encore comptabilisée{status.pending > 1 ? 's' : ''}.
           {can('accounting.admin') && writable && <> <button className="btn sm" disabled={busy} onClick={() => run(async () => { await api('/company/accounting/sync', { body: {} }); changed(); })}>Comptabiliser maintenant</button></>}</Alert>
       )}
-      <p className="small muted" style={{ margin: 0 }}>Les factures, avoirs, règlements et mouvements de trésorerie sont comptabilisés automatiquement selon le plan SYSCOHADA révisé. Saisissez ici les opérations diverses (reclassements, amortissements, salaires…).</p>
+      <p className="small muted no-print" style={{ margin: 0 }}>Les factures, avoirs, règlements et mouvements de trésorerie sont comptabilisés automatiquement selon le plan SYSCOHADA révisé. Saisissez ici les opérations diverses (reclassements, amortissements, salaires…).</p>
 
-      <div className="row" role="tablist" style={{ gap: 6 }}>
+      <div className="row no-print" role="tablist" style={{ gap: 6 }}>
         {TABS.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={`btn sm${tab === k ? ' primary' : ''}`} onClick={() => setTab(k)}>{l}</button>)}
         {!['chart', 'vat', 'sheet', 'closing'].includes(tab) && <div className="row" style={{ marginLeft: 'auto', gap: 8 }}>
           <Field label="Du" type="date" value={period.from} onChange={(e) => setPeriod({ ...period, from: e.target.value })} />
@@ -115,7 +149,7 @@ export default function AccountingPage() {
           </form>
         </div>
       )}
-    </>
+    </CompanyCtx.Provider>
   );
 }
 
@@ -159,9 +193,12 @@ function Entries({ period, version, onEdit, onReverse, changed }: { period: any;
   const { busy, error, run } = useAction();
   const params = new URLSearchParams(Object.entries({ ...period, ...f }).filter(([, v]) => v) as [string, string][]).toString();
   const { data: rows } = useLatest<any[]>(`/company/accounting/entries?${params}`, [version]);
+  const total = (k: 'debit' | 'credit') => (rows ?? []).reduce((s, e) => s + e.lines.reduce((t: number, l: any) => t + Number(l[k] || 0), 0), 0);
+  const subtitle = [between(period), f.journal && `journal ${f.journal} — ${JOURNALS[f.journal]}`, f.status && (f.status === 'posted' ? 'écritures validées' : 'brouillons'), f.q && `« ${f.q} »`].filter(Boolean).join(' · ');
   return (
+    <Report title="Journal des écritures" period={subtitle} wide>
     <div className="card">
-      <div className="row" style={{ marginBottom: 12 }}>
+      <div className="row no-print" style={{ marginBottom: 12 }}>
         <label className="field" style={{ minWidth: 200 }}>Journal<select className="input" value={f.journal} onChange={(e) => setF({ ...f, journal: e.target.value })}>
           <option value="">Tous les journaux</option>{Object.entries(JOURNALS).map(([k, v]) => <option key={k} value={k}>{k} — {v}</option>)}</select></label>
         <label className="field" style={{ minWidth: 140 }}>État<select className="input" value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>
@@ -177,7 +214,7 @@ function Entries({ period, version, onEdit, onReverse, changed }: { period: any;
               <td style={{ whiteSpace: 'nowrap' }}>{date(e.date)}</td>
               <td style={{ whiteSpace: 'nowrap' }}>{e.number ?? <Pill tone="warn">Brouillon</Pill>}</td>
               <td colSpan={2}><b>{e.label}</b>{e.reference && <span className="small muted"> · pièce {e.reference}</span>}{e.reversedBy && <> <Pill>Contre-passée</Pill></>}</td>
-              <td colSpan={2} className="n"><div className="row" style={{ justifyContent: 'flex-end', gap: 6, flexWrap: 'nowrap' }}>
+              <td colSpan={2} className="n"><div className="row no-print" style={{ justifyContent: 'flex-end', gap: 6, flexWrap: 'nowrap' }}>
                 {e.status === 'draft' && writable && can('accounting.update') && <button className="btn sm" onClick={() => api(`/company/accounting/entries/${e.id}`).then(onEdit)}>Modifier</button>}
                 {e.status === 'draft' && writable && can('accounting.validate') && <button className="btn sm primary" disabled={busy} onClick={() => run(async () => { await api(`/company/accounting/entries/${e.id}/post`, { body: {} }); changed(); })}>Valider</button>}
                 {e.status === 'draft' && writable && can('accounting.cancel') && <button className="btn sm danger" disabled={busy} onClick={() => run(async () => { await api(`/company/accounting/entries/${e.id}`, { method: 'DELETE' }); changed(); })}>Supprimer</button>}
@@ -192,37 +229,59 @@ function Entries({ period, version, onEdit, onReverse, changed }: { period: any;
           </tbody>
         ))}
         {rows && !rows.length && <tbody><tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 24 }}>Aucune écriture sur cette période.</td></tr></tbody>}
+        {rows && rows.length > 0 && <tfoot><tr><td colSpan={4}><b>Totaux · {rows.length} écriture(s)</b></td><td className="n" style={{ whiteSpace: 'nowrap' }}><b>{money(total('debit'))}</b></td><td className="n" style={{ whiteSpace: 'nowrap' }}><b>{money(total('credit'))}</b></td></tr></tfoot>}
       </table></div>
     </div>
+    </Report>
   );
 }
 
 function Ledger({ period, accounts, version }: { period: any; accounts: any[]; version: number }) {
   const [account, setAccount] = useState('411000');
-  const { data, error } = useLatest<any>(/^\d{2,}$/.test(account) ? `/company/accounting/ledger?account=${account}&from=${period.from}&to=${period.to}` : null, [version]);
+  const all = account === '*';
+  const { data, error } = useLatest<any>(all ? null : /^\d{2,}$/.test(account) ? `/company/accounting/ledger?account=${account}&from=${period.from}&to=${period.to}` : null, [version]);
+  const { data: gl, error: glError } = useLatest<any>(all ? `/company/accounting/general-ledger?from=${period.from}&to=${period.to}` : null, [version]);
+  const tools = (
+    <label className="field" style={{ minWidth: 320 }}>Compte
+      <select className="input" value={account} onChange={(e) => setAccount(e.target.value)}>
+        <option value="*">Tous les comptes (grand livre complet)</option>
+        {accounts.filter((a) => a.used || a.code === account).map((a) => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
+      </select></label>
+  );
   return (
-    <div className="card">
-      <div className="row" style={{ marginBottom: 12 }}>
-        <label className="field" style={{ minWidth: 320 }}>Compte
-          <select className="input" value={account} onChange={(e) => setAccount(e.target.value)}>
-            {accounts.filter((a) => a.used || a.code === account).map((a) => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
-          </select></label>
-        <span className="small muted">Un compte inclut ses sous-comptes (ex. 571000 regroupe toutes les caisses : 571100, 571200…).</span>
-      </div>
-      <Alert>{error}</Alert>
-      {data && <>
-        <p className="small" style={{ margin: '0 0 8px' }}>Solde d'ouverture : <b>{money(data.opening)}</b> · solde de clôture : <b>{money(data.closing)}</b> {data.closing >= 0 ? '(débiteur)' : '(créditeur)'}</p>
-        <div className="table-wrap"><table>
-          <thead><tr><th>Date</th><th>Écriture</th><th>Libellé</th><th className="n">Débit</th><th className="n">Crédit</th><th className="n">Solde</th></tr></thead>
-          <tbody>{data.lines.map((l: any) => (
-            <tr key={l.id}><td style={{ whiteSpace: 'nowrap' }}>{date(l.date)}</td><td style={{ whiteSpace: 'nowrap' }} className="small">{l.number}{l.account !== data.account.code && <div className="muted">{l.account}</div>}</td>
-              <td className="small">{l.label}{l.contactName && <span className="muted"> · {l.contactName}</span>}</td>
-              <td className="n">{num(l.debit)}</td><td className="n">{num(l.credit)}</td><td className="n" style={{ whiteSpace: 'nowrap' }}>{money(l.balance)}</td></tr>))}
-            {!data.lines.length && <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 24 }}>Aucun mouvement sur cette période.</td></tr>}</tbody>
-          <tfoot><tr><td colSpan={3}><b>Totaux de la période</b></td><td className="n"><b>{money(data.totalDebit)}</b></td><td className="n"><b>{money(data.totalCredit)}</b></td><td></td></tr></tfoot>
-        </table></div>
+    <Report title="Grand livre" period={all ? between(period) : `${data ? `${data.account.code} — ${data.account.name} · ` : ''}${between(period)}`} tools={tools}>
+      <p className="small muted no-print" style={{ margin: 0 }}>Un compte inclut ses sous-comptes (ex. 571000 regroupe toutes les caisses : 571100, 571200…).</p>
+      <Alert>{error || glError}</Alert>
+      {!all && data && <div className="card"><LedgerTable account={data} showAccount={(code) => code !== data.account.code} /></div>}
+      {all && gl && <>
+        {gl.accounts.map((a: any) => (
+          <div key={a.code} className="card gl-account">
+            <header style={{ marginBottom: 6 }}><h2 style={{ fontSize: 15 }}><code className="k">{a.code}</code> {a.name}</h2></header>
+            <LedgerTable account={a} />
+          </div>))}
+        {!gl.accounts.length && <div className="card muted" style={{ textAlign: 'center' }}>Aucun mouvement sur cette période.</div>}
+        {gl.accounts.length > 0 && <div className="card"><div className="row" style={{ justifyContent: 'space-between' }}><b>Total général · {gl.accounts.length} compte(s)</b>
+          <span>Débit <b>{money(gl.totalDebit)}</b> · Crédit <b>{money(gl.totalCredit)}</b></span></div></div>}
       </>}
-    </div>
+    </Report>
+  );
+}
+
+/** Mouvements d'un compte avec solde progressif, encadrés par les soldes d'ouverture et de clôture. */
+function LedgerTable({ account: a, showAccount }: { account: any; showAccount?: (code: string) => boolean }) {
+  return (
+    <div className="table-wrap"><table>
+      <thead><tr><th>Date</th><th>Écriture</th><th>Libellé</th><th className="n">Débit</th><th className="n">Crédit</th><th className="n">Solde</th></tr></thead>
+      <tbody>
+        <tr className="muted"><td colSpan={5}>Solde d'ouverture</td><td className="n" style={{ whiteSpace: 'nowrap' }}>{money(a.opening)}</td></tr>
+        {a.lines.map((l: any) => (
+          <tr key={l.id}><td style={{ whiteSpace: 'nowrap' }}>{date(l.date)}</td><td style={{ whiteSpace: 'nowrap' }} className="small">{l.number}{showAccount?.(l.account) && <div className="muted">{l.account}</div>}</td>
+            <td className="small">{l.label}{l.contactName && <span className="muted"> · {l.contactName}</span>}</td>
+            <td className="n" style={{ whiteSpace: 'nowrap' }}>{num(l.debit)}</td><td className="n" style={{ whiteSpace: 'nowrap' }}>{num(l.credit)}</td><td className="n" style={{ whiteSpace: 'nowrap' }}>{money(l.balance)}</td></tr>))}
+        {!a.lines.length && <tr><td colSpan={6} className="muted" style={{ textAlign: 'center' }}>Aucun mouvement sur cette période.</td></tr>}</tbody>
+      <tfoot><tr><td colSpan={3}><b>Totaux · solde de clôture {a.closing >= 0 ? 'débiteur' : 'créditeur'}</b></td><td className="n" style={{ whiteSpace: 'nowrap' }}><b>{money(a.totalDebit)}</b></td><td className="n" style={{ whiteSpace: 'nowrap' }}><b>{money(a.totalCredit)}</b></td>
+        <td className="n" style={{ whiteSpace: 'nowrap' }}><b>{money(a.closing)}</b></td></tr></tfoot>
+    </table></div>
   );
 }
 
@@ -231,8 +290,9 @@ function TrialBalance({ period, version }: { period: any; version: number }) {
   if (!data) return null;
   const cols = ['openingDebit', 'openingCredit', 'debit', 'credit', 'closingDebit', 'closingCredit'];
   return (
+    <Report title="Balance générale" period={between(period)} wide>
     <div className="card">
-      <header><h2>Balance générale</h2>{data.balanced ? <Pill tone="ok">Équilibrée</Pill> : <Pill tone="crit">Déséquilibrée</Pill>}</header>
+      <header><h2 className="no-print">Balance générale</h2>{data.balanced ? <Pill tone="ok">Équilibrée</Pill> : <Pill tone="crit">Déséquilibrée</Pill>}</header>
       <div className="table-wrap"><table>
         <thead>
           <tr><th rowSpan={2}>Compte</th><th rowSpan={2}>Intitulé</th><th colSpan={2} style={{ textAlign: 'center' }}>Soldes à l'ouverture</th><th colSpan={2} style={{ textAlign: 'center' }}>Mouvements</th><th colSpan={2} style={{ textAlign: 'center' }}>Soldes de clôture</th></tr>
@@ -243,6 +303,7 @@ function TrialBalance({ period, version }: { period: any; version: number }) {
         <tfoot><tr><td colSpan={2}><b>Totaux</b></td>{cols.map((c) => <td key={c} className="n" style={{ whiteSpace: 'nowrap' }}><b>{money(data.totals[c])}</b></td>)}</tr></tfoot>
       </table></div>
     </div>
+    </Report>
   );
 }
 
@@ -250,9 +311,10 @@ function Vat({ version }: { version: number }) {
   const [month, setMonth] = useState(today().slice(0, 7));
   const [y, m] = month.split('-').map(Number);
   const { data } = useLatest<any>(month ? `/company/accounting/vat?from=${month}-01&to=${new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)}` : null, [version]);
+  const label = month ? new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' }) : '';
   return (
+    <Report title="Déclaration de TVA" period={`mois de ${label}`} tools={<Field label="Mois" type="month" value={month} onChange={(e) => setMonth(e.target.value)} />}>
     <div className="card">
-      <header><h2>Déclaration de TVA</h2><Field label="Mois" type="month" value={month} onChange={(e) => setMonth(e.target.value)} /></header>
       {data && <>
         <div className="kpis">
           <div className="card kpi"><div className="l">Chiffre d'affaires HT</div><div className="v">{money(data.revenueHt)}</div></div>
@@ -261,9 +323,16 @@ function Vat({ version }: { version: number }) {
           <div className="card kpi"><div className="l">TVA récupérable (445…)</div><div className="v">{money(data.deductible)}</div></div>
           <div className="card kpi"><div className="l">{data.credit ? 'Crédit de TVA' : 'TVA à payer'}</div><div className="v" style={{ color: data.due ? 'var(--crit)' : 'var(--ok)' }}>{money(data.due || data.credit)}</div></div>
         </div>
+        <table className="vat" style={{ marginTop: 12 }}><tbody>
+          {data.collectedByRate.map((r: any) => <tr key={r.rate}><td>TVA facturée à {r.rate} %</td><td className="n">{money(r.amount)}</td></tr>)}
+          <tr><td><b>Total TVA facturée</b> (443100)</td><td className="n"><b>{money(data.collected)}</b></td></tr>
+          <tr><td>Moins : TVA récupérable (445…)</td><td className="n">− {money(data.deductible)}</td></tr>
+          <tr><td><b>{data.credit ? 'Crédit de TVA à reporter' : 'TVA nette à payer'}</b></td><td className="n"><b>{money(data.due || data.credit)}</b></td></tr>
+        </tbody></table>
         <p className="small muted" style={{ marginBottom: 0 }}>Montants issus des écritures validées du mois. À reporter sur la déclaration mensuelle de la DGI (e-impôts) ; un crédit de TVA se reporte sur le mois suivant.</p>
       </>}
     </div>
+    </Report>
   );
 }
 
@@ -276,11 +345,11 @@ function IncomeStatement({ period, version }: { period: any; version: number }) 
       <table><tbody>{data.lines.filter((l: any) => l.kind === kind).map((l: any) => <tr key={l.code}><td><code className="k">{l.code}</code></td><td>{l.label}</td><td className="n">{money(l.amount)}</td></tr>)}</tbody></table>
     </div>
   );
-  return <>
-    <div className="row" style={{ alignItems: 'stretch' }}>{block('income', 'Produits', data.income)}{block('charge', 'Charges', data.charges)}</div>
+  return <Report title="Compte de résultat" period={between(period)}>
+    <div className="row report-cols" style={{ alignItems: 'stretch' }}>{block('income', 'Produits', data.income)}{block('charge', 'Charges', data.charges)}</div>
     <div className="card"><header><h2>Résultat de la période</h2><b style={{ fontSize: 22, color: data.result >= 0 ? 'var(--ok)' : 'var(--crit)' }}>{data.result >= 0 ? 'Bénéfice' : 'Perte'} : {money(Math.abs(data.result))}</b></header>
       <p className="small muted" style={{ margin: 0 }}>Résultat avant écritures d'inventaire (stocks, amortissements, provisions) et impôt sur les bénéfices.</p></div>
-  </>;
+  </Report>;
 }
 
 function Chart({ accounts, changed }: { accounts: any[]; changed: () => void }) {
@@ -290,16 +359,17 @@ function Chart({ accounts, changed }: { accounts: any[]; changed: () => void }) 
   const { busy, error, run } = useAction();
   const shown = accounts.filter((a) => !q || a.code.startsWith(q) || a.name.toLowerCase().includes(q.toLowerCase()));
   return (
+    <Report title="Plan comptable" period={`SYSCOHADA révisé${q ? ` · « ${q} »` : ''} · ${shown.length} compte(s)`}>
     <div className="card">
       {can('accounting.admin') && !ctx?.readOnly && (
-        <form className="row" style={{ marginBottom: 12 }} onSubmit={(e) => { e.preventDefault(); run(async () => { await api('/company/accounting/accounts', { body: form }); setForm({ code: '', name: '' }); changed(); }); }}>
+        <form className="row no-print" style={{ marginBottom: 12 }} onSubmit={(e) => { e.preventDefault(); run(async () => { await api('/company/accounting/accounts', { body: form }); setForm({ code: '', name: '' }); changed(); }); }}>
           <div style={{ width: 140 }}><Field label="Nouveau sous-compte" required inputMode="numeric" pattern="[1-9][0-9]{5}" maxLength={6} title="6 chiffres, ex. 601100" placeholder="Ex. 601100" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} /></div>
           <div style={{ flex: 1, minWidth: 220 }}><Field label="Intitulé" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
           <button className="btn" disabled={busy} style={{ alignSelf: 'flex-end' }}>Ajouter</button>
         </form>
       )}
       <Alert>{error}</Alert>
-      <Field label="Rechercher" type="search" placeholder="Numéro ou intitulé" value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="no-print"><Field label="Rechercher" type="search" placeholder="Numéro ou intitulé" value={q} onChange={(e) => setQ(e.target.value)} /></div>
       <div className="table-wrap" style={{ marginTop: 12 }}><table>
         <thead><tr><th>Compte</th><th>Intitulé</th><th>Classe</th><th></th></tr></thead>
         <tbody>{shown.map((a) => (
@@ -308,6 +378,7 @@ function Chart({ accounts, changed }: { accounts: any[]; changed: () => void }) 
             <td>{a.used && <Pill tone="ok">Mouvementé</Pill>}{!a.isSystem && <> <Pill>Ajouté</Pill></>}</td></tr>))}</tbody>
       </table></div>
     </div>
+    </Report>
   );
 }
 
@@ -315,6 +386,7 @@ function Chart({ accounts, changed }: { accounts: any[]; changed: () => void }) 
 function BalanceSheet({ version }: { version: number }) {
   const [date, setDate] = useState(today());
   const [open, setOpen] = useState<string | null>(null);
+  const [detail, setDetail] = useState(false);
   const { data } = useLatest<any>(`/company/accounting/balance-sheet?date=${date}`, [version]);
   const side = (title: string, sections: any[], total: number, isAssets: boolean) => (
     <div className="card" style={{ flex: 1, minWidth: 340 }}>
@@ -326,10 +398,10 @@ function BalanceSheet({ version }: { version: number }) {
             <tr><td colSpan={isAssets ? 3 : 1}><b>{s.section}</b></td><td className="n"><b>{money(s.total)}</b></td></tr>
             {s.rows.filter((r: any) => r.net || r.gross).map((r: any) => [
               <tr key={r.key} style={{ cursor: r.accounts?.length ? 'pointer' : undefined }} onClick={() => setOpen(open === r.key ? null : r.key)}>
-                <td style={{ paddingLeft: 18 }}>{r.label}{r.accounts?.length ? <span className="muted small"> {open === r.key ? '▾' : '▸'}</span> : null}</td>
+                <td style={{ paddingLeft: 18 }}>{r.label}{r.accounts?.length ? <span className="muted small no-print"> {detail || open === r.key ? '▾' : '▸'}</span> : null}</td>
                 {isAssets && <><td className="n">{r.gross !== undefined ? money(r.gross) : ''}</td><td className="n">{r.depreciation ? money(r.depreciation) : ''}</td></>}
                 <td className="n" style={{ color: r.net < 0 ? 'var(--crit)' : undefined }}>{money(r.net)}</td></tr>,
-              ...(open === r.key ? r.accounts.map((a: any) => <tr key={`${r.key}-${a.code}`} className="small muted"><td style={{ paddingLeft: 32 }}><code className="k">{a.code}</code> {a.name}</td>{isAssets && <><td></td><td></td></>}<td className="n">{money(a.amount)}</td></tr>) : []),
+              ...(detail || open === r.key ? r.accounts.map((a: any) => <tr key={`${r.key}-${a.code}`} className="small muted"><td style={{ paddingLeft: 32 }}><code className="k">{a.code}</code> {a.name}</td>{isAssets && <><td></td><td></td></>}<td className="n">{money(a.amount)}</td></tr>) : []),
             ])}
           </tbody>
         ))}
@@ -337,13 +409,13 @@ function BalanceSheet({ version }: { version: number }) {
     </div>
   );
   return (
-    <>
-      <div className="row no-print"><Field label="Bilan arrêté au" type="date" max={today()} value={date} onChange={(e) => setDate(e.target.value)} />
-        {data && (data.balanced ? <Pill tone="ok">Actif = passif</Pill> : <Pill tone="crit">Bilan déséquilibré</Pill>)}
-        <button className="btn sm" onClick={() => window.print()}>Imprimer / PDF</button></div>
-      {data && <div className="row" style={{ alignItems: 'flex-start' }}>{side('Actif', data.assets, data.totalAssets, true)}{side('Passif', data.liabilities, data.totalLiabilities, false)}</div>}
+    <Report title="Bilan" period={`arrêté au ${fmtDate(date)}`} wide tools={<>
+      <Field label="Bilan arrêté au" type="date" max={today()} value={date} onChange={(e) => setDate(e.target.value)} />
+      <label className="row small" style={{ gap: 6 }}><input type="checkbox" checked={detail} onChange={(e) => setDetail(e.target.checked)} /> Détail des comptes</label>
+      {data && (data.balanced ? <Pill tone="ok">Actif = passif</Pill> : <Pill tone="crit">Bilan déséquilibré</Pill>)}</>}>
+      {data && <div className="row report-cols" style={{ alignItems: 'flex-start' }}>{side('Actif', data.assets, data.totalAssets, true)}{side('Passif', data.liabilities, data.totalLiabilities, false)}</div>}
       <p className="small muted" style={{ margin: 0 }}>Présentation simplifiée du système normal SYSCOHADA révisé. Les comptes de tiers et de trésorerie figurent à l'actif ou au passif selon le sens de leur solde. Les états officiels (DSF) restent établis par votre expert-comptable.</p>
-    </>
+    </Report>
   );
 }
 
@@ -353,8 +425,9 @@ function ManagementBalances({ period, version }: { period: any; version: number 
   if (!data) return null;
   const strong = ['revenue', 'addedValue', 'ebitda', 'operatingResult', 'netResult'];
   return (
+    <Report title="Soldes significatifs de gestion" period={between(data)}>
     <div className="card">
-      <header><h2>Soldes significatifs de gestion</h2><span className="small muted">du {date(data.from)} au {date(data.to)}</span></header>
+      <header className="no-print"><h2>Soldes significatifs de gestion</h2><span className="small muted">du {date(data.from)} au {date(data.to)}</span></header>
       <table className="vat" style={{ width: '100%' }}><tbody>
         {data.lines.map((l: any) => (
           <tr key={l.key}><td>{strong.includes(l.key) ? <b>{l.label}</b> : l.label}
@@ -363,6 +436,7 @@ function ManagementBalances({ period, version }: { period: any; version: number 
       </tbody></table>
       <p className="small muted" style={{ marginBottom: 0 }}>Marge commerciale = ventes de marchandises − achats de marchandises ± variation de stock. Valeur ajoutée = chiffre d'affaires et autres produits − consommations (60 à 65). EBE = valeur ajoutée − charges de personnel.</p>
     </div>
+    </Report>
   );
 }
 
