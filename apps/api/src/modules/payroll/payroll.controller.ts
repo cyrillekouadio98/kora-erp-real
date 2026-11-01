@@ -1,10 +1,11 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { AllowWhenReadOnly, Permission, Tenant } from '../../common/decorators';
 import type { TenantInfo } from '../../common/request-context';
 import { parse } from '../../common/validation';
 import { isoDate } from '../sales/sales.controller';
+import { PayrollInsightsService, SETTLEMENT_REASONS, SettlementReason } from './payroll-insights.service';
 import { PayrollService } from './payroll.service';
 
 const money = z.coerce.number().min(0, { message: 'Le montant ne peut pas être négatif' }).max(1e12).transform((v) => Math.round(v));
@@ -48,7 +49,7 @@ const NetToGrossSchema = z.object({
 @ApiTags('Employés et paie')
 @Controller('company')
 export class PayrollController {
-  constructor(private readonly payroll: PayrollService) {}
+  constructor(private readonly payroll: PayrollService, private readonly insights: PayrollInsightsService) {}
 
   @Permission('employees.read') @AllowWhenReadOnly()
   @Get('employees')
@@ -73,6 +74,44 @@ export class PayrollController {
   @Permission('employees.read') @AllowWhenReadOnly() @HttpCode(200)
   @Post('payroll/net-to-gross')
   netToGross(@Tenant() t: TenantInfo, @Body() body: unknown) { return this.payroll.netToGross(t, parse(NetToGrossSchema, body)); }
+
+  // ------------------------------------------------------------------ pilotage de la paie
+  @Permission('payroll.read') @AllowWhenReadOnly()
+  @Get('payroll/dashboard')
+  dashboard(@Tenant() t: TenantInfo) { return this.insights.dashboard(t); }
+
+  /** Notes partagées de l'équipe paie (onglets du tableau de bord). */
+  @Permission('payroll.update')
+  @Put('payroll/notes')
+  saveNotes(@Tenant() t: TenantInfo, @Body() body: unknown) {
+    return this.insights.saveNotes(t, parse(z.object({ notes: z.array(z.object({
+      id: z.string().max(40).optional(), title: z.string().trim().min(1, { message: 'Donnez un titre à la note' }).max(40), body: z.string().max(5000),
+    }).strict()).max(10) }).strict(), body).notes);
+  }
+
+  @Permission('payroll.read') @AllowWhenReadOnly()
+  @Get('payroll/contracts')
+  contracts(@Tenant() t: TenantInfo) { return this.insights.contracts(t); }
+
+  @Permission('payroll.read') @AllowWhenReadOnly()
+  @Get('payroll/work-entries')
+  workEntries(@Tenant() t: TenantInfo, @Query() query: unknown) { return this.insights.workEntries(t, parse(z.object({ period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, { message: 'Période au format AAAA-MM' }) }), query).period); }
+
+  @Permission('payroll.read') @AllowWhenReadOnly()
+  @Get('payroll/payslips')
+  payslips(@Tenant() t: TenantInfo, @Query() query: unknown) {
+    return this.insights.payslips(t, parse(z.object({ from: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, { message: 'Période au format AAAA-MM' }).optional(), to: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, { message: 'Période au format AAAA-MM' }).optional(), employeeId: z.string().uuid().optional() }), query));
+  }
+
+  /** Solde de tout compte : calcul indicatif, rien n'est enregistré. */
+  @Permission('payroll.read') @AllowWhenReadOnly()
+  @Get('payroll/final-settlement')
+  finalSettlement(@Tenant() t: TenantInfo, @Query() query: unknown) {
+    return this.insights.finalSettlement(t, parse(z.object({
+      employeeId: z.string().uuid({ message: "Choisissez l'employé" }), endDate: isoDate,
+      reason: z.enum(Object.keys(SETTLEMENT_REASONS) as [SettlementReason, ...SettlementReason[]]), noticeMonths: z.coerce.number().min(0).max(12).optional(), leaveDays: z.coerce.number().min(0).max(400).optional(),
+    }), query));
+  }
 
   @Permission('payroll.read') @AllowWhenReadOnly()
   @Get('payroll/settings')

@@ -27,7 +27,8 @@ function niceScale(min: number, max: number, ticks = 4) {
   if (lo === hi) return { lo: 0, hi: 1, steps: [0, 1] };
   const raw = (hi - lo) / ticks;
   const pow = 10 ** Math.floor(Math.log10(raw));
-  const step = [1, 2, 2.5, 5, 10].map((m) => m * pow).find((s) => s >= raw)!;
+  // Pas d'au moins 1 : les petites séries (effectifs) gardent des graduations entières et distinctes.
+  const step = raw <= 1 ? 1 : [1, 2, 2.5, 5, 10].map((m) => m * pow).find((s) => s >= raw)!;
   const a = Math.floor(lo / step) * step, b = Math.ceil(hi / step) * step;
   const steps = [];
   for (let v = a; v <= b + step / 2; v += step) steps.push(Math.round(v));
@@ -83,17 +84,25 @@ export function ChartCard({ title, subtitle, legend, table, children }: {
 }
 
 /** Colonnes groupées par mois (une à trois séries comparées sur un même axe). */
-export function ColumnChart({ categories, series, height = 220 }: { categories: string[]; series: Series[]; height?: number }) {
+/**
+ * stacked : une colonne par période, séries empilées (2 px d'écart entre segments, bout arrondi au sommet).
+ * tick / long / format : libellés et valeurs (par défaut mois et FCFA).
+ */
+export function ColumnChart({ categories, series, height = 220, stacked = false, tick = monthTick, long = monthLong, format = fcfa }: {
+  categories: string[]; series: Series[]; height?: number; stacked?: boolean;
+  tick?: (c: string, first: boolean) => string; long?: (c: string) => string; format?: (n: number) => string;
+}) {
   const { ref, width } = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
   const m = { top: 8, right: 4, bottom: 24, left: 44 };
   const plotW = width - m.left - m.right, plotH = height - m.top - m.bottom;
-  const all = series.flatMap((s) => s.values.filter((v): v is number => v !== null));
+  const all = stacked ? categories.map((_, i) => series.reduce((t, s) => t + (s.values[i] ?? 0), 0)) : series.flatMap((s) => s.values.filter((v): v is number => v !== null));
   const { lo, hi, steps } = niceScale(Math.min(0, ...all), Math.max(0, ...all));
   const y = (v: number) => m.top + plotH - ((v - lo) / (hi - lo)) * plotH;
   const band = plotW / categories.length;
-  const barW = Math.max(3, Math.min(24, (band * 0.7 - 2 * (series.length - 1)) / series.length));
-  const groupW = barW * series.length + 2 * (series.length - 1);
+  const bars = stacked ? 1 : series.length;
+  const barW = Math.max(3, Math.min(stacked ? 40 : 24, (band * 0.7 - 2 * (bars - 1)) / bars));
+  const groupW = barW * bars + 2 * (bars - 1);
   const every = band < 34 ? 2 : 1;
   return (
     <div className="chart" ref={ref} onMouseLeave={() => setHover(null)}>
@@ -104,23 +113,34 @@ export function ColumnChart({ categories, series, height = 220 }: { categories: 
           const x0 = m.left + i * band + (band - groupW) / 2;
           return <g key={c}>
             {hover === i && <rect x={m.left + i * band} y={m.top} width={band} height={plotH} fill="var(--surface-2)" opacity={0.6} />}
-            {series.map((s, k) => s.values[i] ? <path key={s.key} d={barPath(x0 + k * (barW + 2), barW, y(0), y(s.values[i]!))} fill={s.color} /> : null)}
-            {i % every === 0 && <text x={m.left + i * band + band / 2} y={height - 6} textAnchor="middle">{monthTick(c, i === 0)}</text>}
+            {stacked ? stack(series, i).map((seg) => (
+              <path key={seg.key} fill={seg.color} d={seg.top ? barPath(x0, barW, y(seg.from) - (seg.first ? 0 : 2), y(seg.to)) : `M${x0},${y(seg.from) - (seg.first ? 0 : 2)} V${y(seg.to)} H${x0 + barW} V${y(seg.from) - (seg.first ? 0 : 2)} Z`} />))
+              : series.map((s, k) => s.values[i] ? <path key={s.key} d={barPath(x0 + k * (barW + 2), barW, y(0), y(s.values[i]!))} fill={s.color} /> : null)}
+            {i % every === 0 && <text x={m.left + i * band + band / 2} y={height - 6} textAnchor="middle">{tick(c, i === 0)}</text>}
             {/* Zone de survol : toute la colonne du mois, pas seulement les barres */}
             <rect x={m.left + i * band} y={m.top} width={band} height={plotH} fill="transparent" tabIndex={0}
-              aria-label={`${monthLong(c)} : ${series.map((s) => `${s.label} ${fcfa(s.values[i] ?? 0)}`).join(', ')}`}
+              aria-label={`${long(c)} : ${series.map((s) => `${s.label} ${format(s.values[i] ?? 0)}`).join(', ')}`}
               onMouseEnter={() => setHover(i)} onFocus={() => setHover(i)} onBlur={() => setHover(null)} />
           </g>;
         })}
       </svg>
       {hover !== null && (
         <div className="chart-tip" style={{ left: Math.min(width - 244, Math.max(0, m.left + hover * band + band / 2 - 120)), top: 0 }}>
-          <div className="t">{monthLong(categories[hover])}</div>
-          {series.map((s) => <div key={s.key} className="r"><span><span className="k" style={{ background: s.color }} />{s.label}</span><b>{fcfa(s.values[hover] ?? 0)}</b></div>)}
+          <div className="t">{long(categories[hover])}</div>
+          {series.map((s) => <div key={s.key} className="r"><span><span className="k" style={{ background: s.color }} />{s.label}</span><b>{format(s.values[hover] ?? 0)}</b></div>)}
+          {stacked && series.length > 1 && <div className="r"><span>Total</span><b>{format(series.reduce((t, s) => t + (s.values[hover] ?? 0), 0))}</b></div>}
         </div>
       )}
     </div>
   );
+}
+
+/** Segments empilés d'une colonne : de bas en haut, le dernier segment non nul porte le bout arrondi. */
+function stack(series: Series[], i: number) {
+  let cum = 0;
+  const segs = series.filter((s) => (s.values[i] ?? 0) > 0).map((s, k) => ({ key: s.key, color: s.color, from: cum, to: (cum += s.values[i]!), first: k === 0, top: false }));
+  if (segs.length) segs[segs.length - 1].top = true;
+  return segs;
 }
 
 /** Courbe d'une seule série (fond léger), avec réticule qui se cale sur le mois le plus proche. */

@@ -27,6 +27,7 @@ import { FinancialService } from './modules/accounting/financial.service';
 import { StockController } from './modules/stock/stock.controller';
 import { StockService } from './modules/stock/stock.service';
 import { PayrollController } from './modules/payroll/payroll.controller';
+import { PayrollInsightsService } from './modules/payroll/payroll-insights.service';
 import { PayrollService } from './modules/payroll/payroll.service';
 import { MailService } from './modules/mail/mail.service';
 import { EmailsController } from './modules/mail/emails.controller';
@@ -56,7 +57,7 @@ import { PlatformSupportController, SupportAccessController } from './modules/su
     ContactsController, ProductsController, SalesController, PurchasesController, TreasuryController, AccountingController, StockController, PayrollController, PublicDocumentsController, EmailsController, LeaveController, DashboardController,
   ],
   providers: [
-    AuditService, SessionService, AuthService, ProvisioningService, EntitlementService, QuotaService, BillingService, BillingScheduler, SalesService, PurchasesService, TreasuryService, AccountingService, FinancialService, StockService, PayrollService, MailService, LeaveService, DashboardService,
+    AuditService, SessionService, AuthService, ProvisioningService, EntitlementService, QuotaService, BillingService, BillingScheduler, SalesService, PurchasesService, TreasuryService, AccountingService, FinancialService, StockService, PayrollService, PayrollInsightsService, MailService, LeaveService, DashboardService,
     { provide: APP_GUARD, useClass: AccessGuard },
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
   ],

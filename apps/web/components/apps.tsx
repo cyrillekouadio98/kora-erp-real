@@ -114,7 +114,11 @@ export const APPS: App[] = [
   { key: 'contacts', label: 'Contacts', href: '/app/contacts', perm: 'contacts.read' },
   { key: 'employees', label: 'Employés', href: '/app/employes', perm: 'employees.read', module: 'hr' },
   { key: 'leave', label: 'Congés', href: '/app/conges', perm: 'leave.read', module: 'hr' },
-  { key: 'payroll', label: 'Paie', href: '/app/paie', perm: 'payroll.read', module: 'payroll' },
+  { key: 'payroll', label: 'Paie', href: '/app/paie', perm: 'payroll.read', module: 'payroll', pages: [
+    { href: '/app/paie', label: 'Tableau de bord' }, { href: '/app/paie/contrats', label: 'Contrats' }, { href: '/app/paie/prestations', label: 'Prestations' },
+    { href: '/app/paie/fiches', label: 'Fiches de paie' }, { href: '/app/paie/solde', label: 'Solde de tout compte' }, { href: '/app/paie/analyse', label: 'Analyse' },
+    { href: '/app/paie/configuration', label: 'Configuration' },
+  ] },
   { key: 'me', label: 'Mon espace', href: '/app/moi', perm: 'employees.self', module: 'hr' },
   { key: 'company', label: 'Entreprise', href: '/app/entreprise', perm: 'settings.read' },
   { key: 'users', label: 'Utilisateurs', href: '/app/utilisateurs', perm: 'users.read' },

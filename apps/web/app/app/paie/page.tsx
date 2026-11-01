@@ -3,97 +3,152 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
-import { money } from '@/lib/format';
+import { LOT_STATES } from '@/lib/format';
 import { useSession } from '@/components/session';
-import { Alert, Field, Pill, useAction } from '@/components/ui';
+import { Alert, Pill, useAction } from '@/components/ui';
+import { ChartCard, ColumnChart, fcfa, monthLong, monthTick } from '@/components/charts';
 
-const PARAM_LABELS: [string, string, string][] = [
-  ['cnpsEmployeeRate', 'CNPS retraite — part salariale', '%'], ['cnpsEmployerRate', 'CNPS retraite — part patronale', '%'], ['cnpsCeiling', 'Plafond mensuel retraite CNPS', 'FCFA'],
-  ['familyBenefitsRate', 'Prestations familiales (employeur)', '%'], ['workAccidentRate', 'Accident du travail (employeur)', '%'], ['smallBenefitsCeiling', 'Plafond PF / AT', 'FCFA'],
-  ['cmuPerPerson', 'CMU par bénéficiaire', 'FCFA'], ['cmuEmployerShare', 'CMU prise en charge par l’employeur', 'FCFA'],
-  ['employerTaxRate', 'Contribution employeur sur salaires', '%'], ['apprenticeshipTaxRate', "Taxe d'apprentissage", '%'], ['trainingTaxRate', 'Taxe formation continue', '%'],
-  ['transportExemptCap', 'Transport exonéré par mois', 'FCFA'], ['workingDays', 'Jours de référence (absences)', 'j'], ['smig', 'SMIG mensuel', 'FCFA'],
-];
+const count = (n: number) => n.toLocaleString('fr-FR');
+const yearTick = (c: string) => c;
+const thisMonth = () => new Date().toISOString().slice(0, 7);
 
-export default function PayrollPage() {
+/** Tableau de bord de la paie : avertissements, derniers lots, notes de l'équipe, coût employeur, effectifs. */
+export default function PayrollDashboard() {
   const { can, ctx } = useSession();
   const router = useRouter();
   const writable = !ctx?.readOnly;
-  const [runs, setRuns] = useState<any[] | null>(null);
-  const [period, setPeriod] = useState(new Date().toISOString().slice(0, 7));
-  const [settings, setSettings] = useState<any>(null);
+  const [d, setD] = useState<any>(null);
+  const [costYearly, setCostYearly] = useState(false);
+  const [staffYearly, setStaffYearly] = useState(false);
   const { busy, error, run } = useAction();
-  const load = useCallback(() => api('/company/payroll/runs').then(setRuns, () => setRuns([])), []);
-  useEffect(() => { load(); }, [load]);
+  const load = useCallback(() => api('/company/payroll/dashboard').then(setD), []);
+  useEffect(() => { if (can('payroll.salaries')) load(); }, [load]); // eslint-disable-line
 
-  if (!can('payroll.salaries')) return <><div className="page-head"><h1>Paie</h1></div><Alert kind="info">La paie est réservée aux personnes disposant de la permission sensible « voir les salaires et bulletins ».</Alert></>;
+  if (!can('payroll.salaries')) return <Alert kind="info">Le tableau de bord de la paie est réservé aux personnes disposant de la permission sensible « voir les salaires et bulletins ». Les <Link href="/app/paie/contrats">contrats</Link> et les <Link href="/app/paie/prestations">prestations</Link> restent consultables.</Alert>;
+  if (!d) return null;
+  const warnings = d.warnings.filter((w: any) => w.count > 0);
+  const cost = costYearly ? d.cost.yearly : d.cost.monthly;
+  const staff = staffYearly ? d.headcount.yearly : d.headcount.monthly;
+  const moves = staffYearly ? d.moves.yearly : d.moves.monthly;
+  const tick = (yearly: boolean) => (yearly ? yearTick : monthTick);
+  const long = (yearly: boolean) => (yearly ? (c: string) => `année ${c}` : monthLong);
+  const costSeries = [
+    { key: 'net', label: 'Net versé aux salariés', color: 'var(--series-1)', values: cost.map((c: any) => c.net) },
+    { key: 'charges', label: 'Cotisations, impôts et taxes', color: 'var(--series-2)', values: cost.map((c: any) => c.charges) },
+  ];
+  const month = thisMonth();
+  const canPrepare = can('payroll.create') && writable && !d.lots.some((l: any) => l.period === month);
+
   return (
     <>
-      <div className="page-head"><h1>Paie</h1>
-        <div className="row">
-          <button className="btn" onClick={() => api('/company/payroll/settings').then((s) => setSettings({ ...s.params, _defaults: s.defaults }))}>Paramètres de calcul</button>
-          {can('payroll.create') && writable && <form className="row" onSubmit={(e) => { e.preventDefault(); run(async () => { const r = await api('/company/payroll/runs', { body: { period } }); router.push(`/app/paie/${r.id}`); }); }}>
-            <input className="input" type="month" value={period} max={new Date().toISOString().slice(0, 7)} onChange={(e) => setPeriod(e.target.value)} aria-label="Mois de paie" style={{ width: 170 }} />
-            <button className="btn primary" disabled={busy}>Préparer la paie</button></form>}
-        </div>
-      </div>
-      <Alert>{!settings && error}</Alert>
-      <Alert kind="warn">Les taux et barèmes (ITS 2024, CNPS, CMU, taxes) sont des valeurs par défaut <b>à faire valider par votre expert-comptable</b> avant usage réel ; ils se modifient dans « Paramètres de calcul ». Chaque paie validée garde les paramètres avec lesquels elle a été calculée.</Alert>
-      <div className="table-wrap"><table>
-        <thead><tr><th>Mois</th><th>Statut</th><th className="n">Employés</th><th className="n">Brut</th><th className="n">Net à payer</th><th className="n">Coût employeur</th><th>Paiement</th></tr></thead>
-        <tbody>
-          {runs?.map((r) => (
-            <tr key={r.id}><td><Link href={`/app/paie/${r.id}`}><b style={{ textTransform: 'capitalize' }}>{r.label}</b></Link></td>
-              <td>{r.status === 'validated' ? <Pill tone="ok">Validée</Pill> : <Pill tone="warn">Brouillon</Pill>}</td>
-              <td className="n">{r.employees}</td><td className="n">{money(r.gross)}</td><td className="n">{money(r.net)}</td><td className="n">{money(r.employerCost)}</td>
-              <td>{r.status !== 'validated' ? '—' : r.paid === r.employees ? <Pill tone="ok">Payée</Pill> : <Pill tone="warn">{r.paid}/{r.employees} payé(s)</Pill>}</td></tr>
-          ))}
-          {runs && !runs.length && <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 24 }}>Aucune paie. Enregistrez vos <Link href="/app/employes">employés</Link>, puis préparez la paie du mois.</td></tr>}
-        </tbody>
-      </table></div>
+      <Alert>{error}</Alert>
+      <div className="payroll-dash">
+        <section className="card pd-warnings">
+          <header><h2>Avertissements</h2></header>
+          {warnings.length ? <div className="pd-list">{warnings.map((w: any) => (
+            <Link key={w.key} href={w.href} className="pd-row"><b className="pd-count">{count(w.count)}</b><span>{w.label}</span></Link>))}</div>
+            : <p className="muted" style={{ margin: 0 }}>✓ Aucun point à signaler : fiches complètes et salaires payés.</p>}
+        </section>
 
-      {settings && (
-        <div className="modal-back" onClick={() => setSettings(null)}>
-          <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={(e) => {
-            e.preventDefault();
-            run(async () => {
-              const body = Object.fromEntries(PARAM_LABELS.map(([k]) => [k, Number(settings[k])]));
-              await api('/company/payroll/settings', { method: 'PATCH', body: { ...body, itsBrackets: settings.itsBrackets, itsFamilyReduction: settings.itsFamilyReduction,
-                categories: settings.categories.filter((c: any) => c.code.trim()).map((c: any) => ({ code: c.code.trim(), label: c.label.trim() || c.code.trim(), minSalary: Number(c.minSalary || 0) })) } });
-              setSettings(null);
-            });
-          }}>
-            <h2>Paramètres de calcul de la paie</h2>
-            <Alert kind="warn">Valeurs à faire valider par votre expert-comptable. Une modification s'applique aux paies préparées ou recalculées ensuite, jamais aux paies validées.</Alert>
-            <Alert>{error}</Alert>
-            <div className="grid2">{PARAM_LABELS.map(([k, label, unit]) => (
-              <Field key={k} label={`${label} (${unit})`} type="number" step="any" min={0} disabled={!can('payroll.admin')} value={settings[k]} onChange={(e) => setSettings({ ...settings, [k]: e.target.value })} />))}</div>
-            <h3>Grille des catégories</h3>
-            <p className="small muted" style={{ margin: 0 }}>Salaire catégoriel mensuel de chaque catégorie, selon la convention collective de votre branche (barèmes revalorisés par l'arrêté n° 50/MEPS/CAB de 2023). Il sert de salaire de base au bouton « Calculer la fiche » des employés ; le sursalaire complète jusqu'au net demandé.</p>
-            <div className="table-wrap"><table>
-              <thead><tr><th style={{ width: 90 }}>Code</th><th>Intitulé</th><th className="n" style={{ width: 170 }}>Salaire catégoriel</th><th></th></tr></thead>
-              <tbody>{settings.categories.map((c: any, i: number) => {
-                const setCat = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => setSettings({ ...settings, categories: settings.categories.map((x: any, j: number) => (j === i ? { ...x, [k]: e.target.value } : x)) });
-                return (
-                  <tr key={i}>
-                    <td><input className="input" aria-label="Code" required maxLength={20} disabled={!can('payroll.admin')} value={c.code} onChange={setCat('code')} /></td>
-                    <td><input className="input" aria-label="Intitulé" maxLength={80} disabled={!can('payroll.admin')} value={c.label} onChange={setCat('label')} /></td>
-                    <td><input className="input n" aria-label="Salaire catégoriel" type="number" min={0} disabled={!can('payroll.admin')} placeholder="non renseigné" value={c.minSalary || ''} onChange={setCat('minSalary')} /></td>
-                    <td className="n">{can('payroll.admin') && <button type="button" className="btn sm" aria-label={`Retirer ${c.label}`} onClick={() => setSettings({ ...settings, categories: settings.categories.filter((_: any, j: number) => j !== i) })}>Retirer</button>}</td>
-                  </tr>
-                );
-              })}</tbody></table></div>
-            {can('payroll.admin') && <div><button type="button" className="btn sm" onClick={() => setSettings({ ...settings, categories: [...settings.categories, { code: '', label: '', minSalary: 0 }] })}>+ Ajouter une catégorie</button></div>}
-            <h3>Barème mensuel de l'ITS</h3>
-            <table className="vat"><thead><tr><th>Jusqu'à</th><th className="n">Taux</th></tr></thead>
-              <tbody>{settings.itsBrackets.map(([ceiling, rate]: [number | null, number], i: number) => (
-                <tr key={i}><td>{ceiling === null ? 'Au-delà' : money(ceiling)}</td><td className="n">{rate} %</td></tr>))}</tbody></table>
-            <h3>Réduction d'ITS pour charges de famille (par mois)</h3>
-            <p className="small" style={{ margin: 0 }}>{Object.entries(settings.itsFamilyReduction).map(([parts, amount]) => `${parts} part${Number(parts) > 1 ? 's' : ''} : ${money(amount as number)}`).join(' · ')}</p>
-            <div className="row">{can('payroll.admin') && writable && <button className="btn primary" disabled={busy}>Enregistrer</button>}<button type="button" className="btn" onClick={() => setSettings(null)}>Fermer</button></div>
-          </form>
-        </div>
-      )}
+        <section className="card pd-lots">
+          <header><h2>Lots</h2><Link href="/app/paie/fiches">Tous</Link></header>
+          {d.lots.length ? <div className="pd-list">{d.lots.map((l: any) => (
+            <Link key={l.id} href={`/app/paie/fiches/${l.id}`} className="pd-row" style={{ justifyContent: 'space-between' }}>
+              <Pill tone={LOT_STATES[l.state][1]}>{LOT_STATES[l.state][0]}</Pill>
+              <span style={{ textAlign: 'right' }}><span style={{ textTransform: 'capitalize' }}>{l.label}</span> ({l.period.slice(5, 7)}/{l.period.slice(0, 4)})
+                <div className="small muted">{l.payslips} fiche(s) de paie</div></span>
+            </Link>))}</div> : <p className="muted" style={{ margin: 0 }}>Aucune paie préparée pour l'instant.</p>}
+          {canPrepare && <div><button className="btn primary sm" disabled={busy} onClick={() => run(async () => { const r = await api('/company/payroll/runs', { body: { period: month } }); router.push(`/app/paie/fiches/${r.id}`); })}>
+            Préparer la paie de {monthLong(month)}</button></div>}
+        </section>
+
+        <Notes initial={d.notes} editable={can('payroll.update') && writable} />
+
+        <ChartCard title="Coût pour l'employeur" subtitle={costYearly ? 'par année' : 'par mois, 6 derniers mois'}
+          legend={costSeries.map((s) => ({ label: s.label, color: s.color, kind: 'box' as const }))}
+          table={{ head: [costYearly ? 'Année' : 'Mois', 'Net versé', 'Cotisations, impôts et taxes', 'Coût employeur'], rows: cost.map((c: any) => [long(costYearly)(c.period), fcfa(c.net), fcfa(c.charges), fcfa(c.employerCost)]) }}>
+          <Toggle yearly={costYearly} onChange={setCostYearly} />
+          <ColumnChart stacked categories={cost.map((c: any) => c.period)} series={costSeries} tick={tick(costYearly)} long={long(costYearly)} height={200} />
+          {cost.some((c: any) => c.draft) && <p className="small muted" style={{ margin: 0 }}>Les périodes dont la paie est encore en brouillon sont des estimations.</p>}
+        </ChartCard>
+
+        <ChartCard title="Tendance des employés" subtitle={staffYearly ? 'effectif en fin d’année' : 'effectif en fin de mois'}
+          table={{ head: [staffYearly ? 'Année' : 'Mois', 'Effectif'], rows: staff.map((s: any) => [long(staffYearly)(s.period), count(s.count)]) }}>
+          <Toggle yearly={staffYearly} onChange={setStaffYearly} />
+          <div className="small" style={{ display: 'grid', gap: 2 }}>
+            <Link href="/app/paie/contrats?statut=running">{count(moves.arrivals)} nouvel(aux) employé(s) {staffYearly ? 'cette année' : 'ce mois-ci'}</Link>
+            <Link href="/app/paie/contrats?statut=ended">{count(moves.departures)} départ(s) {staffYearly ? 'cette année' : 'ce mois-ci'}</Link>
+          </div>
+          <ColumnChart categories={staff.map((s: any) => s.period)} series={[{ key: 'count', label: 'Effectif', color: 'var(--series-1)', values: staff.map((s: any) => s.count) }]}
+            tick={tick(staffYearly)} long={long(staffYearly)} format={(n) => `${count(n)} employé(s)`} height={200} />
+        </ChartCard>
+      </div>
     </>
   );
+}
+
+/** Interrupteur « Annuel / Mensuel ». */
+function Toggle({ yearly, onChange }: { yearly: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="pd-toggle small">
+      <span>Annuel</span>
+      <button type="button" role="switch" aria-checked={!yearly} aria-label="Vue mensuelle" className="switch" onClick={() => onChange(!yearly)}><span /></button>
+      <span>Mensuel</span>
+    </div>
+  );
+}
+
+/**
+ * Notes de l'équipe paie, en onglets. Une ligne « [ ] … » ou « [x] … » devient une case à cocher,
+ * une adresse web devient un lien. Les notes sont partagées par toute l'équipe paie.
+ */
+function Notes({ initial, editable }: { initial: any[]; editable: boolean }) {
+  const [notes, setNotes] = useState<any[]>(initial.length ? initial : [{ title: 'Note', body: '' }]);
+  const [active, setActive] = useState(0);
+  const [editing, setEditing] = useState(false);
+  const [saved, setSaved] = useState('');
+  const { busy, error, run } = useAction();
+  const note = notes[Math.min(active, notes.length - 1)];
+  const save = (next: any[]) => run(async () => { setNotes(await api('/company/payroll/notes', { method: 'PUT', body: { notes: next } })); setSaved('Enregistré'); setTimeout(() => setSaved(''), 1500); });
+  const update = (patch: any) => setNotes(notes.map((n, i) => (i === active ? { ...n, ...patch } : n)));
+  const toggleLine = (k: number) => {
+    const lines = note.body.split('\n');
+    lines[k] = lines[k].replace(/^(\s*)\[( |x)\]/i, (_: string, sp: string, c: string) => `${sp}[${c === ' ' ? 'x' : ' '}]`);
+    const next = notes.map((n, i) => (i === active ? { ...n, body: lines.join('\n') } : n));
+    setNotes(next); save(next);
+  };
+  return (
+    <section className="card pd-notes">
+      <div className="pd-tabs" role="tablist">
+        {notes.map((n, i) => (
+          <span key={n.id ?? i} className="pd-tab" aria-selected={i === active}>
+            <button type="button" role="tab" aria-selected={i === active} onClick={() => { setActive(i); setEditing(false); }}>{n.title}</button>
+            {editable && notes.length > 1 && <button type="button" aria-label={`Supprimer la note ${n.title}`} onClick={() => { if (window.confirm(`Supprimer la note « ${n.title} » ?`)) { const next = notes.filter((_, j) => j !== i); setActive(0); save(next); } }}>✕</button>}
+          </span>))}
+        {editable && notes.length < 10 && <button type="button" className="pd-add" aria-label="Ajouter une note" onClick={() => { setNotes([...notes, { title: `Note ${notes.length + 1}`, body: '' }]); setActive(notes.length); setEditing(true); }}>+</button>}
+      </div>
+      <Alert>{error}</Alert>
+      {editing ? <>
+        <input className="input" aria-label="Titre de la note" maxLength={40} value={note.title} onChange={(e) => update({ title: e.target.value })} />
+        <textarea className="input" rows={14} maxLength={5000} aria-label="Contenu de la note" value={note.body} onChange={(e) => update({ body: e.target.value })}
+          placeholder={'Ex.\nPoints à suivre :\n[ ] Relancer la CNPS pour les nouveaux employés\n[ ] Revoir la grille des catégories'} />
+        <div className="row"><button className="btn primary sm" disabled={busy || !note.title.trim()} onClick={() => { save(notes); setEditing(false); }}>Enregistrer</button>
+          <button className="btn sm" onClick={() => setEditing(false)}>Fermer</button>
+          <span className="small muted">« [ ] » en début de ligne crée une case à cocher.</span></div>
+      </> : <>
+        <div className="pd-note-body" onDoubleClick={() => editable && setEditing(true)}>
+          {note.body.trim() ? note.body.split('\n').map((line: string, k: number) => {
+            const box = line.match(/^\s*\[( |x)\]\s?(.*)$/i);
+            if (box) return <label key={k} className="pd-check"><input type="checkbox" checked={box[1].toLowerCase() === 'x'} disabled={!editable || busy} onChange={() => toggleLine(k)} /><span>{linkify(box[2])}</span></label>;
+            return <p key={k}>{line ? linkify(line) : ' '}</p>;
+          }) : <p className="muted">Notez ici les points à suivre de l'équipe paie : rappels, décisions, liens utiles.</p>}
+        </div>
+        {editable && <div className="row"><button className="btn sm" onClick={() => setEditing(true)}>Modifier</button><span className="small muted">{saved}</span></div>}
+      </>}
+    </section>
+  );
+}
+
+function linkify(text: string) {
+  return text.split(/(https?:\/\/\S+)/g).map((part, i) => (/^https?:\/\//.test(part) ? <a key={i} href={part} target="_blank" rel="noreferrer">{part}</a> : part));
 }

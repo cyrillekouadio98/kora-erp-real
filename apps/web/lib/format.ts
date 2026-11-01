@@ -128,3 +128,14 @@ export const ISSUE_REASONS: Record<string, string> = {
 };
 export const stockReason = (type: string, reason: string) =>
   type === 'receipt' ? RECEIPT_REASONS[reason]?.split(' (')[0] : type === 'issue' ? ISSUE_REASONS[reason] : null;
+
+/** Paie : état d'un lot (une paie mensuelle), type et situation des contrats, motifs de départ. */
+export const LOT_STATES: Record<string, [string, 'ok' | 'warn' | 'mute']> = {
+  draft: ['Brouillon', 'warn'], validated: ['Validé', 'mute'], partly_paid: ['Partiellement payé', 'warn'], paid: ['Payé', 'ok'],
+};
+export const CONTRACT_STATUS: Record<string, [string, 'ok' | 'warn' | 'mute' | 'crit']> = {
+  running: ['En cours', 'ok'], ending: ['Se termine bientôt', 'warn'], upcoming: ['À venir', 'mute'], ended: ['Terminé', 'mute'],
+};
+export const SETTLEMENT_REASONS: Record<string, string> = {
+  dismissal: 'Licenciement', resignation: 'Démission', end_of_contract: 'Fin de CDD', mutual: "Rupture d'un commun accord", retirement: 'Départ à la retraite', serious_misconduct: 'Licenciement pour faute lourde',
+};

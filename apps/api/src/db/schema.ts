@@ -192,7 +192,7 @@ export interface LeaveRequestTable {
   status: Generated<'pending' | 'approved' | 'refused' | 'cancelled'>; decided_by: string | null; decided_at: TsNullable; decision_note: string | null;
   created_by: string | null; created_at: Generated<Date>;
 }
-export interface PayrollSettingsTable { company_id: string; params: Json; updated_by: string | null; updated_at: Generated<Date>; }
+export interface PayrollSettingsTable { company_id: string; params: Json; notes: JsonDefault<unknown[]>; updated_by: string | null; updated_at: Generated<Date>; }
 export interface PayrollRunTable {
   company_id: string; id: Generated<string>; period: string; status: Generated<'draft' | 'validated'>; params: Json;
   validated_at: TsNullable; validated_by: string | null; created_by: string | null; created_at: Generated<Date>;

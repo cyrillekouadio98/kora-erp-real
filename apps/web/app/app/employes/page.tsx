@@ -1,5 +1,6 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { CONTRACTS, date, MARITAL, money, PAYMENT_METHODS } from '@/lib/format';
 import { useSession } from '@/components/session';
@@ -37,6 +38,10 @@ function SimulatedSlip({ slip }: { slip: any }) {
 const toForm = (e: any) => ({ ...Object.fromEntries(Object.keys(EMPTY).map((k) => [k, e[k] ?? (EMPTY as any)[k]])), partsOverride: e.partsOverride ?? '', endDate: e.endDate ?? '', id: e.id });
 
 export default function EmployeesPage() {
+  return <Suspense><Employees /></Suspense>;
+}
+
+function Employees() {
   const { can, ctx } = useSession();
   const salaries = can('payroll.salaries');
   const bank = can('employees.bank_details');
@@ -55,6 +60,9 @@ export default function EmployeesPage() {
   useEffect(() => { const h = setTimeout(load, 250); return () => clearTimeout(h); }, [load]);
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => { if (SIM_FIELDS.includes(k)) setSim(null); setEdit({ ...edit, [k]: e.target.value }); };
   const open = (e: any) => { setSim(null); setEdit(e); };
+  // Ouverture directe d'une fiche : /app/employes?id=… (liens depuis la paie)
+  const direct = useSearchParams().get('id');
+  useEffect(() => { if (direct) api(`/company/employees/${direct}`).then((e) => open(toForm(e)), () => {}); }, [direct]); // eslint-disable-line
 
   // « Calculer la fiche » : salaire de base et sursalaire qui donnent le net demandé (rien n'est enregistré avant « Enregistrer »).
   const calculate = () => run(async () => {
