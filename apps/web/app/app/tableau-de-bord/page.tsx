@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { date, money, SUB_STATUS } from '@/lib/format';
+import { date, money, qty, SUB_STATUS } from '@/lib/format';
 import { useSession } from '@/components/session';
 import { Alert, Field, Pill, useAction } from '@/components/ui';
 import { ChartCard, ColumnChart, fcfa, LineChart, monthLong, RankedBars } from '@/components/charts';
@@ -111,11 +111,11 @@ export default function Dashboard() {
           )}
         </div>
       )}
-      {(sales || purchases || stock) && (
+      {stock && <StockState stock={stock} />}
+      {(sales || purchases) && (
         <div className="kpis">
           {sales && <div className="card kpi"><div className="l">Devis en cours</div><div className="v">{sales.openQuotes}</div><div className="small muted"><Link href="/app/ventes/devis">voir les devis</Link></div></div>}
           {purchases && <div className="card kpi"><div className="l">Commandes fournisseurs en cours</div><div className="v">{purchases.openOrders}</div><div className="small muted"><Link href="/app/achats/commandes">voir les commandes</Link></div></div>}
-          {stock && <div className="card kpi"><div className="l">Valeur du stock</div><div className="v">{money(stock.totalValue)}</div><div className="small muted"><Link href="/app/stocks">voir les stocks</Link></div></div>}
         </div>
       )}
       {sub && (
@@ -147,6 +147,66 @@ export default function Dashboard() {
         </ul>
       </div>
     </>
+  );
+}
+
+const STOCK_ALERT_ORDER = (i: any) => (i.alert === 'out' ? 0 : i.alert === 'low' ? 1 : 2);
+
+/** État des stocks : valeur, alertes, flux du mois et articles à surveiller (ruptures, stocks bas, à commander). */
+function StockState({ stock }: { stock: any }) {
+  const multi = stock.warehouses.length > 1;
+  const watch = stock.items.filter((i: any) => i.alert || i.toOrder).sort((a: any, b: any) => STOCK_ALERT_ORDER(a) - STOCK_ALERT_ORDER(b) || a.available - b.available);
+  // Valeur par entrepôt (quantité × coût moyen) ; avec un seul entrepôt, les articles qui pèsent le plus.
+  const byWarehouse = stock.warehouses.map((w: any) => ({
+    label: `${w.code} · ${w.name}`,
+    value: stock.items.reduce((s: number, i: any) => s + (i.byWarehouse.find((b: any) => b.warehouseId === w.id)?.quantity ?? 0) * i.avgCost, 0),
+  })).filter((w: any) => w.value > 0).sort((a: any, b: any) => b.value - a.value);
+  const topItems = [...stock.items].filter((i: any) => i.value > 0).sort((a: any, b: any) => b.value - a.value).slice(0, 6)
+    .map((i: any) => ({ label: i.name, value: i.value, detail: `${qty(i.quantity)} ${i.unit ?? ''}` }));
+  const bars = multi && byWarehouse.length > 1 ? byWarehouse : topItems;
+  const tile = (label: string, n: number, tone: string | undefined, hint: string) => (
+    <Link className="card kpi" href="/app/stocks" style={{ textDecoration: 'none', color: 'inherit' }}>
+      <div className="l">{label}</div><div className="v" style={{ color: n ? tone : undefined }}>{n}</div><div className="small muted">{hint}</div></Link>
+  );
+  return (
+    <section style={{ display: 'grid', gap: 12 }}>
+      <div className="row" style={{ justifyContent: 'space-between' }}><h2 style={{ margin: 0 }}>État des stocks</h2><Link href="/app/stocks">Ouvrir Stocks →</Link></div>
+      {stock.draftDocuments > 0 && <Alert kind="info">{stock.draftDocuments} bon(s) de stock en brouillon : <Link href="/app/stocks/operations">à valider</Link> pour que les quantités soient à jour.</Alert>}
+      <div className="kpis">
+        <Link className="card kpi" href="/app/stocks/valorisation" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <div className="l">Valeur du stock</div><div className="v">{money(stock.totalValue)}</div><div className="small muted">{stock.items.length} article(s) suivi(s) · CMUP</div></Link>
+        {tile('En rupture', stock.outOfStock, 'var(--crit)', 'stock à zéro')}
+        {tile("Sous le seuil d'alerte", stock.lowStock, 'var(--warn)', 'stock bas')}
+        {tile('À commander', stock.toOrder, 'var(--warn)', 'prévisionnel sous le seuil')}
+        <Link className="card kpi" href="/app/stocks/mouvements" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <div className="l">30 derniers jours</div><div className="small">Entrées <b>{money(stock.in30)}</b></div><div className="small">Sorties <b>{money(stock.out30)}</b></div></Link>
+      </div>
+      <div className="dash-grid">
+        {bars.length > 0 && (
+          <ChartCard title={bars === byWarehouse ? 'Valeur du stock par entrepôt' : 'Articles les plus valorisés'} subtitle="au coût moyen pondéré"
+            table={{ head: [bars === byWarehouse ? 'Entrepôt' : 'Article', 'Valeur'], rows: bars.map((b: any) => [b.label, fcfa(b.value)]) }}>
+            <RankedBars items={bars} />
+          </ChartCard>
+        )}
+        <div className="card" style={{ display: 'grid', alignContent: 'start', gap: 10 }}>
+          <header style={{ marginBottom: 0 }}><div><h2>Articles à surveiller</h2><div className="small muted">ruptures, stocks bas et réapprovisionnements</div></div>
+            {watch.length > 0 && <span className="small muted">{watch.length} article(s)</span>}</header>
+          {watch.length ? <div className="table-wrap"><table>
+            <thead><tr><th>Article</th><th className="n" title="Quantité présente">Physique</th><th className="n" title="Commandes clients confirmées">Réservé</th><th className="n">Disponible</th><th className="n">Seuil</th></tr></thead>
+            <tbody>{watch.slice(0, 8).map((i: any) => (
+              <tr key={i.id}>
+                <td><b>{i.name}</b> {i.alert === 'out' ? <Pill tone="crit">Rupture</Pill> : i.alert === 'low' ? <Pill tone="warn">Stock bas</Pill> : null}
+                  {i.toOrder && <div className="small muted">à commander : {qty(i.suggested)} {i.unit}{i.incoming ? ` · ${qty(i.incoming)} déjà en commande` : ''}</div>}</td>
+                <td className="n" style={{ whiteSpace: 'nowrap' }}>{qty(i.quantity)} {i.unit}</td>
+                <td className="n">{i.reserved ? qty(i.reserved) : '—'}</td>
+                <td className="n" style={{ color: i.available <= 0 ? 'var(--crit)' : undefined }}>{qty(i.available)}</td>
+                <td className="n">{i.minStock ?? '—'}</td>
+              </tr>))}</tbody>
+          </table></div> : <p className="small muted" style={{ margin: 0 }}>✓ Aucun article en rupture ni sous son seuil d'alerte.</p>}
+          {watch.length > 8 && <Link className="small" href="/app/stocks">Voir les {watch.length} articles →</Link>}
+        </div>
+      </div>
+    </section>
   );
 }
 
