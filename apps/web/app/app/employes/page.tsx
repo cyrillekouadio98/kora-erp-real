@@ -35,7 +35,53 @@ function SimulatedSlip({ slip }: { slip: any }) {
   );
 }
 
-const toForm = (e: any) => ({ ...Object.fromEntries(Object.keys(EMPTY).map((k) => [k, e[k] ?? (EMPTY as any)[k]])), partsOverride: e.partsOverride ?? '', endDate: e.endDate ?? '', id: e.id });
+/** Teinte stable tirée d'un texte : même service, même couleur d'étiquette. */
+const hue = (text: string) => [...text].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+const initials = (e: any) => `${(e.firstName ?? '')[0] ?? ''}${(e.lastName ?? '')[0] ?? ''}`.toUpperCase();
+
+/** Photo de l'employé, ou ses initiales sur une teinte qui lui est propre. */
+function Avatar({ e, src = e.photo && `/api${e.photo}` }: { e: any; src?: string | null }) {
+  if (src) return <img className="emp-photo" src={src} alt="" loading="lazy" />;
+  return <div className="emp-photo emp-initials" style={{ '--h': hue(e.fullName ?? `${e.firstName} ${e.lastName}`) } as React.CSSProperties} aria-hidden>{initials(e)}</div>;
+}
+
+/** Réduit la photo choisie à une vignette carrée de 320 px (JPEG), centrée. */
+function shrink(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const side = Math.min(img.width, img.height), size = Math.min(320, side);
+      const canvas = Object.assign(document.createElement('canvas'), { width: size, height: size });
+      canvas.getContext('2d')!.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
+      URL.revokeObjectURL(img.src); resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => reject(new Error('Image illisible : choisissez une photo JPEG, PNG ou WebP.'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+/** Vignette d'un employé : photo, poste, contacts, matricule et service. */
+function EmployeeCard({ e, onOpen }: { e: any; onOpen?: () => void }) {
+  const body = <>
+    <Avatar e={e} />
+    <div className="emp-body">
+      <b>{e.fullName}</b>
+      <span className="muted">{e.jobTitle ?? 'Poste non renseigné'}</span>
+      {e.email && <span className="muted" title={e.email}>✉ {e.email}</span>}
+      {e.phone && <span className="muted">☎ {e.phone}</span>}
+      <div className="emp-tags">
+        <span className="emp-badge">{e.number} · {CONTRACTS[e.contractType]}</span>
+        {e.department && <span className="emp-tag" style={{ '--h': hue(e.department) } as React.CSSProperties}>{e.department}</span>}
+        {!e.active && <Pill>Sorti le {date(e.endDate)}</Pill>}
+        {e.linked && <Pill tone="ok">Espace employé</Pill>}
+      </div>
+    </div>
+  </>;
+  const cls = `emp-card${e.active ? '' : ' left'}`;
+  return onOpen ? <button type="button" className={cls} onClick={onOpen}>{body}</button> : <div className={cls}>{body}</div>;
+}
+
+const toForm = (e: any) => ({ ...Object.fromEntries(Object.keys(EMPTY).map((k) => [k, e[k] ?? (EMPTY as any)[k]])), partsOverride: e.partsOverride ?? '', endDate: e.endDate ?? '', id: e.id, photo: e.photo ?? null });
 
 export default function EmployeesPage() {
   return <Suspense><Employees /></Suspense>;
@@ -53,13 +99,17 @@ function Employees() {
   const [notice, setNotice] = useState('');
   const [categories, setCategories] = useState<{ code: string; label: string; minSalary: number }[]>([]);
   const [sim, setSim] = useState<any>(null);
+  const [view, setView] = useState<'cards' | 'list'>(() => { try { return localStorage.getItem('kora.employes.vue') === 'list' ? 'list' : 'cards'; } catch { return 'cards'; } });
+  const [dept, setDept] = useState<string | null>(null);
+  const [photo, setPhoto] = useState<string | null | undefined>(undefined);
+  const pickView = (v: 'cards' | 'list') => { setView(v); try { localStorage.setItem('kora.employes.vue', v); } catch { /* sans stockage */ } };
   useEffect(() => { if (salaries) api('/company/payroll/settings').then((s) => setCategories(s.params.categories ?? []), () => {}); }, [salaries]);
   const catLabel = (code: string | null) => categories.find((c) => c.code === code)?.label ?? code;
   const { busy, error, run } = useAction();
   const load = useCallback(() => api(`/company/employees?includeLeft=${includeLeft}${q ? `&q=${encodeURIComponent(q)}` : ''}`).then(setRows), [q, includeLeft]);
   useEffect(() => { const h = setTimeout(load, 250); return () => clearTimeout(h); }, [load]);
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => { if (SIM_FIELDS.includes(k)) setSim(null); setEdit({ ...edit, [k]: e.target.value }); };
-  const open = (e: any) => { setSim(null); setEdit(e); };
+  const open = (e: any) => { setSim(null); setPhoto(undefined); setEdit(e); };
   // Ouverture directe d'une fiche : /app/employes?id=… (liens depuis la paie)
   const direct = useSearchParams().get('id');
   useEffect(() => { if (direct) api(`/company/employees/${direct}`).then((e) => open(toForm(e)), () => {}); }, [direct]); // eslint-disable-line
@@ -84,9 +134,15 @@ function Employees() {
       body[k] = ['children', ...MONEY_FIELDS].includes(k) ? Number(v || 0)
         : k === 'partsOverride' || k === 'targetNet' ? (v === '' || v === null ? null : Number(v)) : k === 'endDate' || k === 'category' ? v || null : v;
     }
-    if (edit.id) await api(`/company/employees/${edit.id}`, { method: 'PATCH', body }); else await api('/company/employees', { body });
+    const saved = edit.id ? await api(`/company/employees/${edit.id}`, { method: 'PATCH', body }) : await api('/company/employees', { body });
+    if (photo !== undefined) await api(`/company/employees/${saved.id}/photo`, { method: 'PUT', body: { photo } });
     setEdit(null); await load();
   });
+
+  const departments = Object.entries((rows ?? []).reduce<Record<string, number>>((acc, e) => { const k = e.department ?? ''; acc[k] = (acc[k] ?? 0) + 1; return acc; }, {}))
+    .sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b, 'fr')));
+  const shown = (rows ?? []).filter((e) => dept === null || (e.department ?? '') === dept);
+  const editable = can('employees.update') && writable;
 
   return (
     <>
@@ -98,14 +154,29 @@ function Employees() {
       <div className="row">
         <div style={{ flex: 2, minWidth: 220 }}><Field label="Rechercher" type="search" placeholder="Nom, matricule, poste…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
         <label className="row small" style={{ alignSelf: 'flex-end' }}><input type="checkbox" checked={includeLeft} onChange={(e) => setIncludeLeft(e.target.checked)} /> Inclure les employés sortis</label>
+        <span className="small muted" style={{ alignSelf: 'flex-end', marginLeft: 'auto' }}>{rows ? `${shown.length} employé${shown.length > 1 ? 's' : ''}` : ''}</span>
+        <div className="seg" style={{ alignSelf: 'flex-end' }} role="group" aria-label="Affichage">
+          <button type="button" aria-pressed={view === 'cards'} onClick={() => pickView('cards')}>Vignettes</button>
+          <button type="button" aria-pressed={view === 'list'} onClick={() => pickView('list')}>Liste</button></div>
       </div>
-      <div className="table-wrap"><table>
+      <div className="emp-layout">
+      <nav className="emp-side" aria-label="Services">
+        <h3>Service</h3>
+        <button type="button" aria-pressed={dept === null} onClick={() => setDept(null)}><span>Tous</span><span>{rows?.length ?? ''}</span></button>
+        {departments.map(([d, n]) => <button key={d} type="button" aria-pressed={dept === d} onClick={() => setDept(dept === d ? null : d)}><span>{d || 'Sans service'}</span><span>{n}</span></button>)}
+      </nav>
+      {view === 'cards' ? (
+        <div className="emp-grid">
+          {shown.map((e) => <EmployeeCard key={e.id} e={e} onOpen={editable ? () => open(toForm(e)) : undefined} />)}
+          {rows && !shown.length && <p className="muted">Aucun employé.</p>}
+        </div>
+      ) : <div className="table-wrap"><table>
         <thead><tr><th>Matricule</th><th>Employé</th><th>Contrat</th>{salaries && <th>Catégorie</th>}<th>Embauche</th><th className="n">Parts</th>{salaries && <th className="n">Salaire de base</th>}<th>Paiement</th><th></th></tr></thead>
         <tbody>
-          {rows?.map((e) => (
+          {shown.map((e) => (
             <tr key={e.id} style={e.active ? undefined : { opacity: 0.6 }}>
-              <td><code className="k">{e.number}</code></td>
-              <td><b>{e.fullName}</b>{!e.active && <> <Pill>Sorti le {date(e.endDate)}</Pill></>}{e.linked && <> <Pill tone="ok">Espace employé</Pill></>}<div className="small muted">{[e.jobTitle, e.department].filter(Boolean).join(' · ')}</div></td>
+              <td style={{ whiteSpace: 'nowrap' }}><code className="k">{e.number}</code></td>
+              <td><div className="row" style={{ flexWrap: 'nowrap' }}><span className="emp-mini"><Avatar e={e} /></span><div><b>{e.fullName}</b>{!e.active && <> <Pill>Sorti le {date(e.endDate)}</Pill></>}{e.linked && <> <Pill tone="ok">Espace employé</Pill></>}<div className="small muted">{[e.jobTitle, e.department].filter(Boolean).join(' · ')}</div></div></div></td>
               <td>{CONTRACTS[e.contractType]}</td>
               {salaries && <td className="small">{e.category ? catLabel(e.category) : '—'}</td>}
               <td style={{ whiteSpace: 'nowrap' }}>{date(e.hireDate)}</td>
@@ -118,15 +189,24 @@ function Employees() {
                 {can('employees.update') && writable && <button className="btn sm" onClick={() => open(toForm(e))}>Modifier</button>}</div></td>
             </tr>
           ))}
-          {rows && !rows.length && <tr><td colSpan={9} className="muted" style={{ textAlign: 'center', padding: 24 }}>Aucun employé.</td></tr>}
+          {rows && !shown.length && <tr><td colSpan={9} className="muted" style={{ textAlign: 'center', padding: 24 }}>Aucun employé.</td></tr>}
         </tbody>
-      </table></div>
+      </table></div>}
+      </div>
 
       {edit && (
         <div className="modal-back" onClick={() => setEdit(null)}>
           <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); save(); }}>
             <h2>{edit.id ? `${edit.firstName} ${edit.lastName}` : 'Nouvel employé'}</h2>
             <Alert>{error}</Alert>
+            <div className="emp-avatar-edit">
+              <Avatar e={{ ...edit, fullName: `${edit.firstName} ${edit.lastName}` }} src={photo === undefined ? edit.photo && `/api${edit.photo}` : photo} />
+              <div className="row">
+                <label className="btn sm">{edit.photo || photo ? 'Changer la photo' : 'Ajouter une photo'}
+                  <input type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(ev) => { const f = ev.target.files?.[0]; if (f) run(async () => setPhoto(await shrink(f))); ev.target.value = ''; }} /></label>
+                {(photo || (edit.photo && photo === undefined)) && <button type="button" className="btn sm" onClick={() => setPhoto(null)}>Retirer</button>}
+              </div>
+            </div>
             <div className="grid2">
               <Field label="Prénom" required value={edit.firstName} onChange={set('firstName')} />
               <Field label="Nom" required value={edit.lastName} onChange={set('lastName')} />

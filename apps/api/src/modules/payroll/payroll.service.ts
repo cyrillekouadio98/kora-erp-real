@@ -73,7 +73,7 @@ export class PayrollService {
     return e;
   }
 
-  private present(t: TenantInfo, e: EmployeeRow) {
+  private present(t: TenantInfo, e: EmployeeRow, photo?: Date | null) {
     const salaries = t.permissions.has('payroll.salaries');
     const bank = t.permissions.has('employees.bank_details');
     const parts = e.parts_override !== null ? Number(e.parts_override) : familyParts(e.marital_status, e.children);
@@ -82,6 +82,7 @@ export class PayrollService {
       hireDate: e.hire_date, endDate: e.end_date, contractType: e.contract_type, cnpsNumber: e.cnps_number, maritalStatus: e.marital_status, children: e.children,
       partsOverride: e.parts_override === null ? null : Number(e.parts_override), parts, category: e.category, paymentMethod: e.payment_method, phone: e.phone, email: e.email,
       active: !e.end_date || e.end_date >= today(), linked: !!e.user_id,
+      photo: photo ? `/company/employees/${e.id}/photo?v=${new Date(photo).getTime()}` : null,
       ...(salaries ? { baseSalary: Number(e.base_salary), extraSalary: Number(e.extra_salary), targetNet: e.target_net === null ? null : Number(e.target_net),
         housingAllowance: Number(e.housing_allowance), transportAllowance: Number(e.transport_allowance), otherAllowances: Number(e.other_allowances) } : {}),
       bankDetails: bank ? (e.bank_details_enc ? decrypt(e.bank_details_enc) : null) : e.bank_details_enc ? '••••' : null,
@@ -105,18 +106,50 @@ export class PayrollService {
 
   async employees(t: TenantInfo, f: { includeLeft?: boolean; q?: string }) {
     return this.db.tenant(t.ctx, async (trx) => {
-      let q = trx.selectFrom('employee').selectAll().orderBy('last_name').orderBy('first_name');
+      let q = trx.selectFrom('employee').selectAll('employee')
+        .leftJoin('employee_photo as ph', (j) => j.onRef('ph.employee_id', '=', 'employee.id').onRef('ph.company_id', '=', 'employee.company_id'))
+        .select('ph.updated_at as photo_at').orderBy('last_name').orderBy('first_name');
       if (!f.includeLeft) q = q.where((eb) => eb.or([eb('end_date', 'is', null), eb('end_date', '>=', today())]));
       if (f.q) {
         const like = `%${f.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
         q = q.where((eb) => eb.or([eb('first_name', 'ilike', like), eb('last_name', 'ilike', like), eb('number', 'ilike', like), eb('job_title', 'ilike', like)]));
       }
-      return (await q.execute()).map((e) => this.present(t, e));
+      return (await q.execute()).map((e) => this.present(t, e, e.photo_at));
     });
   }
 
   async getEmployee(t: TenantInfo, id: string) {
-    return this.db.tenant(t.ctx, async (trx) => this.present(t, await this.employeeRow(trx, id)));
+    return this.db.tenant(t.ctx, async (trx) => this.present(t, await this.employeeRow(trx, id), await this.photoAt(trx, id)));
+  }
+
+  private async photoAt(trx: TenantTrx, id: string) {
+    return (await trx.selectFrom('employee_photo').select('updated_at').where('employee_id', '=', id).executeTakeFirst())?.updated_at ?? null;
+  }
+
+  async photo(t: TenantInfo, id: string) {
+    if (!isUuid(id)) throw notFound('Photo');
+    const p = await this.db.tenant(t.ctx, (trx) => trx.selectFrom('employee_photo').select(['mime', 'data']).where('employee_id', '=', id).executeTakeFirst());
+    if (!p) throw notFound('Photo');
+    return p;
+  }
+
+  /** Photo envoyée en data URL (déjà réduite par le navigateur) ; null la retire. */
+  async setPhoto(t: TenantInfo, id: string, dataUrl: string | null) {
+    return this.db.tenant(t.ctx, async (trx) => {
+      const e = await this.employeeRow(trx, id);
+      if (dataUrl) {
+        const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+        if (!m) throw badRequest('Image non reconnue : utilisez une photo JPEG, PNG ou WebP.', undefined, 'invalid_photo');
+        const data = Buffer.from(m[2], 'base64');
+        if (data.length > 300_000) throw badRequest('Photo trop lourde.', undefined, 'photo_too_large');
+        await trx.insertInto('employee_photo').values({ company_id: t.companyId, employee_id: id, mime: m[1], data })
+          .onConflict((oc) => oc.columns(['company_id', 'employee_id']).doUpdateSet({ mime: m[1], data, updated_at: new Date() })).execute();
+      } else {
+        await trx.deleteFrom('employee_photo').where('employee_id', '=', id).execute();
+      }
+      await this.audit.tenant(trx, t.ctx, { action: dataUrl ? 'employee.photo_updated' : 'employee.photo_removed', entityType: 'employee', entityId: id, data: { number: e.number } });
+      return this.present(t, e, await this.photoAt(trx, id));
+    });
   }
 
   async createEmployee(t: TenantInfo, input: EmployeeInput) {
@@ -139,7 +172,7 @@ export class PayrollService {
       const after = Object.keys(patch).length ? await trx.updateTable('employee').set(patch).where('id', '=', id).returningAll().executeTakeFirstOrThrow() : before;
       // Le journal ne garde que la liste des champs modifiés : ni salaire ni RIB en clair.
       await this.audit.tenant(trx, t.ctx, { action: 'employee.updated', entityType: 'employee', entityId: id, data: { number: before.number, fields: Object.keys(input) } });
-      return this.present(t, after);
+      return this.present(t, after, await this.photoAt(trx, id));
     });
   }
 

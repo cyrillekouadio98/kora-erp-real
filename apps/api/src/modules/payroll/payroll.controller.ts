@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { AllowWhenReadOnly, Permission, Tenant } from '../../common/decorators';
@@ -69,6 +70,21 @@ export class PayrollController {
   @Permission('employees.update')
   @Patch('employees/:id')
   updateEmployee(@Tenant() t: TenantInfo, @Param('id') id: string, @Body() body: unknown) { return this.payroll.updateEmployee(t, id, parse(EmployeeSchema.partial(), body)); }
+
+  @Permission('employees.read') @AllowWhenReadOnly()
+  @Get('employees/:id/photo')
+  async photo(@Tenant() t: TenantInfo, @Param('id') id: string, @Res() res: Response) {
+    const p = await this.payroll.photo(t, id);
+    res.setHeader('Content-Type', p.mime);
+    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+    res.send(p.data);
+  }
+
+  @Permission('employees.update')
+  @Put('employees/:id/photo')
+  setPhoto(@Tenant() t: TenantInfo, @Param('id') id: string, @Body() body: unknown) {
+    return this.payroll.setPhoto(t, id, parse(z.object({ photo: z.string().max(100_000, { message: 'Photo trop lourde' }).nullable() }).strict(), body).photo);
+  }
 
   /** Calcul du brut à partir du net : ne modifie rien, renvoie le bulletin simulé. */
   @Permission('employees.read') @AllowWhenReadOnly() @HttpCode(200)
