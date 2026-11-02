@@ -1,6 +1,7 @@
 'use client';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { errorMessage } from '@/lib/api';
+import { date, money } from '@/lib/format';
 
 export function Alert({ kind = 'err', children }: { kind?: 'err' | 'warn' | 'ok' | 'info'; children: React.ReactNode }) {
   if (!children) return null;
@@ -24,4 +25,10 @@ export function useAction() {
 
 export function Field({ label, ...props }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
   return <label className="field">{label}<input className="input" {...props} /></label>;
+}
+
+/** Lignes « Déjà réglé » d'une facture dans le bloc des totaux : une par paiement, datée. */
+export function PaidRows({ payments }: { payments: { id?: string; paidOn: string; amount: number }[] }) {
+  return <>{payments.map((p, i) => (
+    <Fragment key={p.id ?? i}><dt>Déjà réglé le {date(p.paidOn)}</dt><dd>− {money(p.amount)}</dd></Fragment>))}</>;
 }

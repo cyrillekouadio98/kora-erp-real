@@ -6,7 +6,7 @@ import { api } from '@/lib/api';
 import { CHAIN_ORDER, date, dateTime, DOC_LABEL, docStatus, DocType, money, PAYMENT_METHODS, paymentStamp, REMINDER_CHANNELS } from '@/lib/format';
 import { useSession } from '@/components/session';
 import { SalesEditor } from '@/components/sales-editor';
-import { Alert, Field, Pill, useAction } from '@/components/ui';
+import { Alert, Field, PaidRows, Pill, useAction } from '@/components/ui';
 import { AccountSelect } from '@/components/account-select';
 
 const LIST_HREF: Record<DocType, [string, string]> = { quote: ['/app/ventes/devis', 'Devis'], order: ['/app/ventes/commandes', 'Bons de commande'], invoice: ['/app/ventes/factures', 'Factures'], credit_note: ['/app/ventes/avoirs', 'Avoirs'] };
@@ -152,7 +152,7 @@ export default function SalesDocumentPage() {
                 <tbody>{doc.vatBreakdown.map((v: any) => <tr key={v.rate}><td>{v.rate} %</td><td className="n">{money(v.base)}</td><td className="n">{money(v.vat)}</td></tr>)}</tbody></table>
               <dl className="totals"><dt>Total HT</dt><dd>{money(doc.totalHt)}</dd><dt>TVA</dt><dd>{money(doc.totalVat)}</dd><dt className="grand">Total TTC</dt><dd className="grand">{money(doc.totalTtc)}</dd>
                 {isInvoice && doc.creditedAmount > 0 && <><dt>Avoirs</dt><dd>− {money(doc.creditedAmount)}</dd></>}
-                {isInvoice && doc.paidAmount > 0 && <><dt>Déjà réglé</dt><dd>− {money(doc.paidAmount)}</dd></>}
+                {isInvoice && <PaidRows payments={doc.payments} />}
                 {isInvoice && (doc.paidAmount > 0 || doc.creditedAmount > 0) && <><dt className="grand">Reste à payer</dt><dd className="grand">{money(doc.remaining)}</dd></>}</dl>
             </div>
             {doc.notes && <p className="small" style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{doc.notes}</p>}

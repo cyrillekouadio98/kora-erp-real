@@ -478,6 +478,7 @@ export class SalesService {
         company, type: v.type, number: v.number, status: v.status, issueDate: v.issueDate, dueDate: v.dueDate, validUntil: v.validUntil, deliveryDate: v.deliveryDate, customerRef: v.customerRef, customer: v.customer, notes: v.notes,
         lines: v.lines, vatBreakdown: v.vatBreakdown, totalHt: v.totalHt, totalVat: v.totalVat, totalTtc: v.totalTtc, paidAmount: v.paidAmount,
         creditedAmount: v.creditedAmount, remaining: v.remaining, lastPaidOn: v.lastPaidOn,
+        payments: v.payments.map((p) => ({ paidOn: p.paidOn, amount: p.amount })),
       };
     });
   }
