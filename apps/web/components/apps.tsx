@@ -1,88 +1,40 @@
+import { useId } from 'react';
+
 /** Applications de l'écran d'accueil : une tuile et une icône par domaine de Kora. */
 
-const P = '#8a4f7d', T = '#5ccfb8', O = '#f08a3c', C = '#ef7b7b', Y = '#f4bf4f', N = '#2c5d7c', B = '#4f9be8', G = '#2f9a72', W = '#ffffff';
+/**
+ * Identité Kora : chaque application a sa couleur (tuile pleine en dégradé, du foncé au clair)
+ * et un pictogramme blanc au trait, dessiné sur une grille de 48.
+ */
+const TILES: Record<string, [string, string]> = {
+  dashboard: ['#0f766e', '#14b8a6'], sales: ['#c2410c', '#fb923c'], purchases: ['#0369a1', '#38bdf8'], treasury: ['#15803d', '#22c55e'],
+  accounting: ['#1e3a8a', '#3b82f6'], stock: ['#a16207', '#eab308'], products: ['#a21caf', '#d946ef'], contacts: ['#3f6212', '#65a30d'],
+  employees: ['#4338ca', '#818cf8'], leave: ['#0e7490', '#06b6d4'], payroll: ['#6d28d9', '#a855f7'], me: ['#be185d', '#f472b6'],
+  company: ['#334155', '#64748b'], users: ['#44403c', '#78716c'], roles: ['#b91c1c', '#f87171'], billing: ['#065f46', '#10b981'],
+  emails: ['#0f172a', '#475569'], audit: ['#78350f', '#d97706'], support: ['#be123c', '#fb7185'], security: ['#14532d', '#16a34a'],
+};
 
-const ICONS: Record<string, React.ReactNode> = {
-  dashboard: <>
-    <rect x="6" y="26" width="10" height="16" rx="2" fill={P} /><rect x="19" y="16" width="10" height="26" rx="2" fill={C} /><rect x="32" y="6" width="10" height="36" rx="2" fill={Y} />
-  </>,
-  sales: <>
-    <path d="M8 16h32l-3 26H11z" fill={O} /><path d="M8 16h32l-1.4 12H9.4z" fill={C} opacity=".85" />
-    <path d="M17 19v-6a7 7 0 0 1 14 0v6" stroke={P} strokeWidth="3.5" fill="none" strokeLinecap="round" />
-  </>,
-  purchases: <>
-    <rect x="15" y="13" width="24" height="14" rx="2" fill={T} />
-    <path d="M4 7h6l5 23h23" stroke={N} strokeWidth="3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-    <circle cx="18" cy="38" r="4" fill={P} /><circle cx="34" cy="38" r="4" fill={P} />
-  </>,
-  treasury: <>
-    <rect x="4" y="8" width="30" height="20" rx="3" fill={T} /><circle cx="19" cy="18" r="5" fill={W} opacity=".55" />
-    <path d="M24 30h20v8a10 4 0 0 1-20 0z" fill={O} /><ellipse cx="34" cy="30" rx="10" ry="4" fill={Y} />
-  </>,
-  accounting: <>
-    <rect x="10" y="4" width="28" height="40" rx="4" fill={N} /><rect x="14" y="8" width="20" height="9" rx="1.5" fill={T} />
-    {[24, 31, 38].map((y, r) => [17, 24, 31].map((x, c) => <circle key={`${x}-${y}`} cx={x} cy={y} r="2.6" fill={r === 2 && c === 2 ? O : [Y, C, W][c]} opacity={c === 2 && r < 2 ? .8 : 1} />))}
-  </>,
-  stock: <>
-    <rect x="6" y="24" width="18" height="18" rx="2" fill={O} /><rect x="24" y="24" width="18" height="18" rx="2" fill={T} /><rect x="15" y="6" width="18" height="18" rx="2" fill={P} />
-    <rect x="13" y="24" width="4" height="6" fill={W} opacity=".55" /><rect x="31" y="24" width="4" height="6" fill={W} opacity=".55" /><rect x="22" y="6" width="4" height="6" fill={W} opacity=".55" />
-  </>,
-  products: <>
-    <path d="M6 8v14l20 20 16-16L22 6H8a2 2 0 0 0-2 2z" fill={C} /><path d="M26 42l16-16-9-9-16 16z" fill={Y} opacity=".85" /><circle cx="14" cy="14" r="3.5" fill={W} />
-  </>,
-  contacts: <>
-    <circle cx="18" cy="16" r="7" fill={P} /><path d="M4 42a14 13 0 0 1 28 0z" fill={P} />
-    <circle cx="32" cy="18" r="6" fill={T} opacity=".9" /><path d="M20 42a12 11 0 0 1 24 0z" fill={T} opacity=".9" />
-  </>,
-  employees: <>
-    <rect x="8" y="8" width="32" height="36" rx="4" fill={B} /><rect x="19" y="4" width="10" height="8" rx="2" fill={N} />
-    <circle cx="24" cy="22" r="6" fill={W} /><rect x="14" y="33" width="20" height="4" rx="2" fill={Y} />
-  </>,
-  leave: <>
-    <circle cx="30" cy="16" r="10" fill={Y} />
-    <path d="M4 31c6-5 10-5 16 0s10 5 16 0 8-4 8-4v17H4z" fill={B} /><path d="M4 38c6-5 10-5 16 0s10 5 16 0 8-4 8-4v10H4z" fill={T} />
-  </>,
-  payroll: <>
-    <rect x="8" y="4" width="26" height="36" rx="3" fill={P} /><rect x="13" y="11" width="16" height="3" rx="1.5" fill={W} opacity=".6" /><rect x="13" y="18" width="11" height="3" rx="1.5" fill={W} opacity=".6" />
-    <circle cx="34" cy="34" r="10" fill={G} /><path d="M29 34l3.5 3.5L39 31" stroke={W} strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-  </>,
-  me: <>
-    <circle cx="24" cy="24" r="20" fill={T} /><circle cx="24" cy="19" r="7" fill={W} />
-    <path d="M12 38c2-7 7-10 12-10s10 3 12 10c-3.5 3-7.6 4.6-12 4.6S15.5 41 12 38z" fill={W} />
-  </>,
-  company: <>
-    <rect x="8" y="8" width="20" height="36" rx="2" fill={N} /><rect x="26" y="20" width="14" height="24" rx="2" fill={O} />
-    {[14, 21, 28].map((y) => [12, 19].map((x) => <rect key={`${x}-${y}`} x={x} y={y} width="5" height="4" rx="1" fill={Y} />))}
-    <rect x="30" y="26" width="6" height="4" rx="1" fill={W} opacity=".6" /><rect x="30" y="33" width="6" height="4" rx="1" fill={W} opacity=".6" />
-  </>,
-  users: <>
-    <circle cx="11" cy="20" r="5" fill={Y} /><path d="M2 38a9 9 0 0 1 18 0z" fill={Y} />
-    <circle cx="37" cy="20" r="5" fill={T} /><path d="M28 38a9 9 0 0 1 18 0z" fill={T} />
-    <circle cx="24" cy="15" r="7" fill={P} /><path d="M12 42a12 12 0 0 1 24 0z" fill={P} />
-  </>,
-  roles: <>
-    <path d="M24 21h18v6h-4v6h-6v-6h-8z" fill={P} /><circle cx="16" cy="24" r="11" fill={Y} /><circle cx="16" cy="24" r="4" fill={W} />
-  </>,
-  billing: <>
-    <path d="M39 18A16 16 0 0 0 9 18" stroke={T} strokeWidth="5" fill="none" strokeLinecap="round" /><path d="M41 12l-1 9-8-4z" fill={T} />
-    <path d="M9 30a16 16 0 0 0 30 0" stroke={O} strokeWidth="5" fill="none" strokeLinecap="round" /><path d="M7 36l1-9 8 4z" fill={O} />
-  </>,
-  emails: <>
-    <rect x="4" y="10" width="38" height="28" rx="4" fill={C} /><path d="M6 14l17 13 17-13" stroke={W} strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-    <circle cx="40" cy="11" r="6" fill={Y} />
-  </>,
-  audit: <>
-    <rect x="8" y="6" width="26" height="36" rx="3" fill={B} /><rect x="13" y="13" width="16" height="3" rx="1.5" fill={W} opacity=".6" /><rect x="13" y="20" width="12" height="3" rx="1.5" fill={W} opacity=".6" />
-    <path d="M37 36l6 6" stroke={N} strokeWidth="4.5" strokeLinecap="round" /><circle cx="32" cy="31" r="7" stroke={N} strokeWidth="4" fill={W} />
-  </>,
-  support: <>
-    <circle cx="24" cy="24" r="18" fill={C} /><circle cx="24" cy="24" r="13" stroke={W} strokeWidth="10" fill="none" strokeDasharray="10.4 10" strokeDashoffset="5.2" opacity=".9" />
-    <circle cx="24" cy="24" r="7" fill={W} />
-  </>,
-  security: <>
-    <path d="M24 4l16 6v12c0 10-7 18-16 22C15 40 8 32 8 22V10z" fill={G} /><path d="M24 4l16 6v12c0 10-7 18-16 22z" fill={T} opacity=".8" />
-    <path d="M17 24l5 5 9-10" stroke={W} strokeWidth="3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-  </>,
+const GLYPHS: Record<string, React.ReactNode> = {
+  dashboard: <><path d="M12 36h24" /><path d="M15 32v-6M21 32V18M27 32v-9M33 32V14" /></>,
+  sales: <><path d="M14.5 19h19l-1.6 16.5H16.1z" /><path d="M19 19v-2.5a5 5 0 0 1 10 0V19" /></>,
+  purchases: <><path d="M10 15h17v15H10z" /><path d="M27 21h6l5 5v4H27" /><circle cx="16" cy="33" r="2.6" /><circle cx="32" cy="33" r="2.6" /></>,
+  treasury: <><path d="M12 18h22.5a1.5 1.5 0 0 1 1.5 1.5v13a1.5 1.5 0 0 1-1.5 1.5h-21A1.5 1.5 0 0 1 12 32.5z" /><path d="M12 18l17-5.5V18" /><path d="M36 23h-6a3 3 0 0 0 0 6h6" /></>,
+  accounting: <><path d="M24 13v22M18 35h12M13 17h22" /><path d="M13 17l-4 8a4 3 0 0 0 8 0zM35 17l-4 8a4 3 0 0 0 8 0z" /></>,
+  stock: <><path d="M24 11.5l11.5 6v13l-11.5 6-11.5-6v-13z" /><path d="M12.5 17.5l11.5 6 11.5-6M24 23.5v13" /></>,
+  products: <><path d="M12.5 12.5h11l12 12-11 11-12-12z" /><circle cx="18.5" cy="18.5" r="2" /></>,
+  contacts: <><path d="M16 12h17a2 2 0 0 1 2 2v20a2 2 0 0 1-2 2H16z" /><path d="M12 17h4M12 24h4M12 31h4" /><circle cx="25.5" cy="21" r="3.2" /><path d="M20 31a5.5 5 0 0 1 11 0" /></>,
+  employees: <><rect x="14" y="13" width="20" height="23" rx="2.5" /><path d="M21 10h6" /><circle cx="24" cy="21.5" r="3.4" /><path d="M18.5 31.5a5.5 4.5 0 0 1 11 0" /></>,
+  leave: <><circle cx="24" cy="21" r="5" /><path d="M24 11v2M15 21h-2M35 21h-2M17 14l1.4 1.4M31 14l-1.4 1.4" /><path d="M11 31c4.3-3 8.7-3 13 0s8.7 3 13 0M15 36.5c3-2 6-2 9 0s6 2 9 0" /></>,
+  payroll: <><rect x="10" y="15" width="28" height="18" rx="2.5" /><circle cx="24" cy="24" r="4" /><path d="M15 20v.01M33 28v.01" /></>,
+  me: <><circle cx="24" cy="24" r="12.5" /><circle cx="24" cy="21" r="4" /><path d="M16.5 32.5c1.6-3.2 4.2-4.8 7.5-4.8s5.9 1.6 7.5 4.8" /></>,
+  company: <><path d="M15 36V12.5h12V36M27 20h7v16M12 36h24" /><path d="M19.5 18h3M19.5 23h3M19.5 28h3M30.5 25h0M30.5 30h0" /></>,
+  users: <><circle cx="19" cy="20" r="4.2" /><path d="M11 34a8 7.5 0 0 1 16 0" /><circle cx="30.5" cy="19" r="3.3" /><path d="M28.5 26.3a7 6.5 0 0 1 8.5 6.7" /></>,
+  roles: <><circle cx="18" cy="24" r="5.5" /><path d="M23.5 24H37M32 24v4.5M36.5 24v4" /></>,
+  billing: <><rect x="11" y="15" width="26" height="18" rx="2.5" /><path d="M11 21h26M16 28h6" /></>,
+  emails: <><rect x="11" y="15" width="26" height="18" rx="2.5" /><path d="M11.5 16.5l12.5 9 12.5-9" /></>,
+  audit: <><path d="M15 12h12.5l5.5 5.5V36H15z" /><path d="M27 12v6h6" /><circle cx="23.5" cy="26" r="3.6" /><path d="M26.2 28.7l3.3 3.3" /></>,
+  support: <><circle cx="24" cy="24" r="11.5" /><circle cx="24" cy="24" r="5" /><path d="M16 16l4.5 4.5M32 16l-4.5 4.5M16 32l4.5-4.5M32 32l-4.5-4.5" /></>,
+  security: <><path d="M24 11l11 4v8c0 7-4.8 11.5-11 14-6.2-2.5-11-7-11-14v-8z" /><path d="M19 24l3.5 3.5L29.5 21" /></>,
 };
 
 export interface AppPage { href: string; label: string; perm?: string; module?: string }
@@ -138,6 +90,15 @@ export const currentApp = (path: string) => {
   return APPS.find((a) => (a.base ?? a.href) === base);
 };
 
+/** Tuile de l'application : fond en dégradé à sa couleur, pictogramme blanc. */
 export function AppIcon({ name, size = 62 }: { name: string; size?: number }) {
-  return <svg viewBox="0 0 48 48" width={size} height={size} aria-hidden="true">{ICONS[name]}</svg>;
+  const id = `tile-${useId().replace(/:/g, '')}`;
+  const [from, to] = TILES[name] ?? TILES.dashboard;
+  return (
+    <svg viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" style={{ display: 'block' }}>
+      <defs><linearGradient id={id} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor={from} /><stop offset="1" stopColor={to} /></linearGradient></defs>
+      <rect width="48" height="48" rx="12" fill={`url(#${id})`} />
+      <g fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">{GLYPHS[name]}</g>
+    </svg>
+  );
 }
