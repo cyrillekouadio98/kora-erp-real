@@ -236,17 +236,98 @@ function Entries({ period, version, onEdit, onReverse, changed }: { period: any;
   );
 }
 
+const VIEWS = [['account', 'Par compte'], ['customer', 'Clients'], ['supplier', 'Fournisseurs']] as const;
+
 function Ledger({ period, accounts, version }: { period: any; accounts: any[]; version: number }) {
+  const [view, setView] = useState<'account' | 'customer' | 'supplier'>('account');
+  const viewPicker = (
+    <label className="field">Vue
+      <select className="input" value={view} onChange={(e) => setView(e.target.value as any)}>
+        {VIEWS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+  );
+  return view === 'account'
+    ? <AccountLedger period={period} accounts={accounts} version={version} viewPicker={viewPicker} />
+    : <PartyLedger key={view} kind={view} period={period} version={version} viewPicker={viewPicker} />;
+}
+
+/** Situation d'un tiers d'après le solde de son compte (411 débiteur : le client doit ; 401 créditeur : on doit au fournisseur). */
+function situation(kind: 'customer' | 'supplier', closing: number): [string, 'ok' | 'warn' | 'crit' | undefined] {
+  if (!closing) return ['Soldé', 'ok'];
+  if (kind === 'customer') return closing > 0 ? ['À recevoir', 'warn'] : ['Avance du client', undefined];
+  return closing < 0 ? ['À payer', 'warn'] : ['Avance au fournisseur', undefined];
+}
+
+/**
+ * Grand livre auxiliaire : un tableau de l'état de chaque client (ou fournisseur) sur la période,
+ * puis le détail des écritures du tiers choisi, ou de tous les tiers pour l'impression.
+ */
+function PartyLedger({ kind, period, version, viewPicker }: { kind: 'customer' | 'supplier'; period: any; version: number; viewPicker: React.ReactNode }) {
+  const [party, setParty] = useState('');
+  const [detail, setDetail] = useState(false);
+  const [onlyOpen, setOnlyOpen] = useState(false);
+  const { data, error } = useLatest<any>(`/company/accounting/third-party-ledger?kind=${kind}&from=${period.from}&to=${period.to}`, [version]);
+  const who = kind === 'customer' ? 'client' : 'fournisseur';
+  const title = kind === 'customer' ? 'Grand livre des clients' : 'Grand livre des fournisseurs';
+  const key = (p: any) => p.id ?? 'none';
+  const parties = (data?.parties ?? []).filter((p: any) => !onlyOpen || p.closing);
+  const selected = party && data?.parties.find((p: any) => key(p) === party);
+  const shown = selected ? [selected] : detail ? parties : [];
+  const tools = <>
+    {viewPicker}
+    <label className="field" style={{ minWidth: 280 }}>{kind === 'customer' ? 'Client' : 'Fournisseur'}
+      <select className="input" value={party} onChange={(e) => setParty(e.target.value)}>
+        <option value="">Tous les {who}s</option>
+        {data?.parties.map((p: any) => <option key={key(p)} value={key(p)}>{p.code ? `${p.code} · ` : ''}{p.name}</option>)}</select></label>
+    {!party && <>
+      <label className="row small" style={{ gap: 6, paddingBottom: 8 }}><input type="checkbox" checked={onlyOpen} onChange={(e) => setOnlyOpen(e.target.checked)} />Soldes non nuls seulement</label>
+      <label className="row small" style={{ gap: 6, paddingBottom: 8 }}><input type="checkbox" checked={detail} onChange={(e) => setDetail(e.target.checked)} />Détail des écritures</label></>}
+  </>;
+  return (
+    <Report title={title} period={`${selected ? `${selected.code ? `${selected.code} — ` : ''}${selected.name} · ` : ''}${between(period)}`} tools={tools}>
+      <Alert>{error}</Alert>
+      {data && !selected && <div className="card">
+        <header><h2 style={{ fontSize: 15 }}>État des {who}s <span className="muted small">· compte {data.account.code} et sous-comptes</span></h2></header>
+        <div className="table-wrap"><table>
+          <thead><tr><th>{kind === 'customer' ? 'Client' : 'Fournisseur'}</th><th className="n">Solde d'ouverture</th><th className="n">Débit</th><th className="n">Crédit</th><th className="n">Solde</th><th>Situation</th></tr></thead>
+          <tbody>
+            {parties.map((p: any) => {
+              const [label, tone] = situation(kind, p.closing);
+              return (
+                <tr key={key(p)} style={{ cursor: 'pointer' }} onClick={() => setParty(key(p))} title="Voir le détail des écritures">
+                  <td><b>{p.name}</b>{p.code && <div className="small muted">{p.code}</div>}</td>
+                  <td className="n" style={{ whiteSpace: 'nowrap' }}>{money(p.opening)}</td><td className="n" style={{ whiteSpace: 'nowrap' }}>{num(p.totalDebit)}</td><td className="n" style={{ whiteSpace: 'nowrap' }}>{num(p.totalCredit)}</td>
+                  <td className="n" style={{ whiteSpace: 'nowrap' }}><b>{money(Math.abs(p.closing))}</b></td><td><Pill tone={tone}>{label}</Pill></td></tr>);
+            })}
+            {!parties.length && <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 24 }}>Aucun {who} avec un mouvement ou un solde sur cette période.</td></tr>}
+          </tbody>
+          {parties.length > 0 && <tfoot><tr><td><b>Total · {parties.length} {who}(s)</b></td>
+            {(['opening', 'totalDebit', 'totalCredit'] as const).map((k) => <td key={k} className="n" style={{ whiteSpace: 'nowrap' }}><b>{money(parties.reduce((s: number, p: any) => s + p[k], 0))}</b></td>)}
+            <td className="n" style={{ whiteSpace: 'nowrap' }}><b>{money(Math.abs(parties.reduce((s: number, p: any) => s + p.closing, 0)))}</b></td>
+            <td><Pill tone={situation(kind, parties.reduce((s: number, p: any) => s + p.closing, 0))[1]}>{situation(kind, parties.reduce((s: number, p: any) => s + p.closing, 0))[0]}</Pill></td></tr></tfoot>}
+        </table></div>
+      </div>}
+      {selected && <div className="row no-print"><button className="btn sm" onClick={() => setParty('')}>← Tous les {who}s</button>
+        <span className="small">Situation : <Pill tone={situation(kind, selected.closing)[1]}>{situation(kind, selected.closing)[0]}</Pill> <b>{money(Math.abs(selected.closing))}</b></span></div>}
+      {shown.map((p: any) => (
+        <div key={key(p)} className="card gl-account">
+          {!selected && <header style={{ marginBottom: 6 }}><h2 style={{ fontSize: 15 }}>{p.code && <code className="k">{p.code}</code>} {p.name}</h2></header>}
+          <LedgerTable account={p} showAccount={(code) => code !== data.account.code} />
+        </div>))}
+    </Report>
+  );
+}
+
+function AccountLedger({ period, accounts, version, viewPicker }: { period: any; accounts: any[]; version: number; viewPicker: React.ReactNode }) {
   const [account, setAccount] = useState('411000');
   const all = account === '*';
   const { data, error } = useLatest<any>(all ? null : /^\d{2,}$/.test(account) ? `/company/accounting/ledger?account=${account}&from=${period.from}&to=${period.to}` : null, [version]);
   const { data: gl, error: glError } = useLatest<any>(all ? `/company/accounting/general-ledger?from=${period.from}&to=${period.to}` : null, [version]);
-  const tools = (
+  const tools = (<>{viewPicker}
     <label className="field" style={{ minWidth: 320 }}>Compte
       <select className="input" value={account} onChange={(e) => setAccount(e.target.value)}>
         <option value="*">Tous les comptes (grand livre complet)</option>
         {accounts.filter((a) => a.used || a.code === account).map((a) => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
-      </select></label>
+      </select></label></>
   );
   return (
     <Report title="Grand livre" period={all ? between(period) : `${data ? `${data.account.code} — ${data.account.name} · ` : ''}${between(period)}`} tools={tools}>

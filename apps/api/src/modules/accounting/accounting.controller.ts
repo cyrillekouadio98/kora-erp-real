@@ -133,6 +133,13 @@ export class AccountingController {
   @Get('general-ledger')
   generalLedger(@Tenant() t: TenantInfo, @Query() query: unknown) { return this.accounting.generalLedger(t, parse(Period, query)); }
 
+  /** Grand livre auxiliaire : état de chaque client ou fournisseur. */
+  @Permission('accounting.read') @AllowWhenReadOnly()
+  @Get('third-party-ledger')
+  thirdPartyLedger(@Tenant() t: TenantInfo, @Query() query: unknown) {
+    return this.accounting.thirdPartyLedger(t, parse(Period.extend({ kind: z.enum(['customer', 'supplier']), contactId: z.string().uuid().optional() }), query));
+  }
+
   @Permission('accounting.read') @AllowWhenReadOnly()
   @Get('trial-balance')
   trialBalance(@Tenant() t: TenantInfo, @Query() query: unknown) { return this.accounting.trialBalance(t, parse(Period, query)); }

@@ -112,6 +112,18 @@ describe('Comptabilité SYSCOHADA', () => {
     const later = (await owner.agent.get('/company/accounting/general-ledger').query({ from: addDays(today(), 1), to: addDays(today(), 1) })).body;
     expect(later.accounts.find((a: any) => a.code === '411000')).toMatchObject({ opening: 88200, lines: [], closing: 88200 });
 
+    // Grand livre auxiliaire : l'état de chaque client et fournisseur, dont la somme redonne les comptes 411 et 401.
+    const tiers = async (kind: string, q: Record<string, string> = {}) => (await owner.agent.get('/company/accounting/third-party-ledger').query({ kind, ...q })).body;
+    const clients = await tiers('customer');
+    expect(clients.parties.find((p: any) => p.id === customer)).toMatchObject({ name: 'Client Comptable', closing: 88200 });
+    expect(clients.totals.closing).toBe(row('411000').closingDebit - row('411000').closingCredit);
+    const fournisseurs = await tiers('supplier');
+    expect(fournisseurs.parties.map((p: any) => p.id)).toContain(supplier);
+    expect(fournisseurs.totals.closing).toBe(row('401000').closingDebit - row('401000').closingCredit);
+    const one = await tiers('customer', { contactId: customer, from: addDays(today(), 1), to: addDays(today(), 1) });
+    expect(one.parties).toEqual([expect.objectContaining({ id: customer, opening: 88200, lines: [], closing: 88200 })]);
+    expect((await owner.agent.get('/company/accounting/third-party-ledger').query({ kind: 'staff' })).status).toBe(400);
+
     const vat = (await owner.agent.get('/company/accounting/vat').query({ from: addDays(today(), -30), to: today() })).body;
     expect(vat).toMatchObject({ collected: 25200, deductible: 7200, due: 18000, credit: 0, revenueHt: 140000 });
     expect(vat.collectedByRate).toEqual([{ rate: 18, amount: 25200 }]);

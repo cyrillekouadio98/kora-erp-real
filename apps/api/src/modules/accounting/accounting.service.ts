@@ -452,6 +452,42 @@ export class AccountingService {
     });
   }
 
+  /**
+   * Grand livre auxiliaire des clients (411…) ou des fournisseurs (401…) : pour chaque tiers, solde d'ouverture,
+   * écritures de la période avec solde progressif et solde final. Les lignes sans tiers sont regroupées à part.
+   */
+  async thirdPartyLedger(t: TenantInfo, f: { kind: 'customer' | 'supplier'; from?: string; to?: string; contactId?: string }) {
+    return this.db.tenant(t.ctx, async (trx) => {
+      const root = ACCOUNTS[f.kind].replace(/0+$/, '');
+      const rows = await this.linesQuery(trx, f.to).where('l.account_code', 'like', `${root}%`)
+        .$if(!!f.contactId, (q) => q.where('l.contact_id', '=', f.contactId!))
+        .select(['l.id', 'e.id as entryId', 'e.date', 'e.number', 'e.journal_code as journal', 'l.account_code as account', 'l.label', 'l.contact_id as contactId', 'l.debit', 'l.credit'])
+        .orderBy('e.date').orderBy('e.number').execute();
+      const ids = [...new Set(rows.map((r) => r.contactId).filter((x): x is string => !!x))];
+      const contacts = new Map((ids.length ? await trx.selectFrom('contact').select(['id', 'code', 'name']).where('id', 'in', ids).execute() : []).map((c) => [c.id, c]));
+      const by = new Map<string, { opening: number; lines: any[] }>();
+      for (const r of rows) {
+        const key = r.contactId ?? '';
+        const a = by.get(key) ?? { opening: 0, lines: [] };
+        const debit = Number(r.debit), credit = Number(r.credit);
+        if (f.from && r.date < f.from) a.opening += debit - credit;
+        else a.lines.push({ id: r.id, entryId: r.entryId, date: r.date, number: r.number, journal: r.journal, account: r.account, label: r.label, debit, credit });
+        by.set(key, a);
+      }
+      const parties = [...by.entries()].filter(([, a]) => a.lines.length || round(a.opening)).map(([id, a]) => {
+        let running = round(a.opening);
+        const lines = a.lines.map((l) => ({ ...l, balance: round((running += l.debit - l.credit)) }));
+        const c = contacts.get(id);
+        return { id: id || null, code: c?.code ?? null, name: c?.name ?? 'Sans tiers', opening: round(a.opening), lines,
+          totalDebit: round(lines.reduce((s, l) => s + l.debit, 0)), totalCredit: round(lines.reduce((s, l) => s + l.credit, 0)), closing: round(running) };
+      }).sort((a, b) => (a.id ? 0 : 1) - (b.id ? 0 : 1) || a.name.localeCompare(b.name, 'fr'));
+      const sum = (k: 'opening' | 'totalDebit' | 'totalCredit' | 'closing') => round(parties.reduce((s, p) => s + p[k], 0));
+      const account = await trx.selectFrom('ledger_account').select(['code', 'name']).where('code', '=', ACCOUNTS[f.kind]).executeTakeFirst();
+      return { kind: f.kind, account: account ?? { code: ACCOUNTS[f.kind], name: '' }, parties,
+        totals: { opening: sum('opening'), debit: sum('totalDebit'), credit: sum('totalCredit'), closing: sum('closing') } };
+    });
+  }
+
   /** Balance générale : soldes d'ouverture, mouvements de la période, soldes de clôture, par compte. */
   async trialBalance(t: TenantInfo, f: { from?: string; to?: string }) {
     return this.db.tenant(t.ctx, async (trx) => {
