@@ -1,10 +1,10 @@
 'use client';
 import Link from 'next/link';
 import { useState } from 'react';
-import { AppIcon, APPS, FAMILIES, familyOf } from '@/components/apps';
+import { AppIcon, APPS } from '@/components/apps';
 import { useSession } from '@/components/session';
 
-/** Écran d'accueil : les applications accessibles à l'utilisateur, rangées par famille. */
+/** Écran d'accueil : la grille des applications accessibles à l'utilisateur. */
 export default function Home() {
   const { me, ctx, can } = useSession();
   const [q, setQ] = useState('');
@@ -22,19 +22,12 @@ export default function Home() {
           onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && apps[0]) (document.querySelector('.apps a') as HTMLElement | null)?.click(); }} />
       </div>
       <nav className="apps" aria-label="Applications">
-        {FAMILIES.map(([fam, title]) => {
-          const mine = apps.filter((a) => familyOf(a.key) === fam);
-          return mine.length > 0 && (
-            <section key={fam} className={`app-family fam-${fam}`}>
-              <h2>{title}</h2>
-              <div className="app-row">{mine.map((a) => (
-                <Link key={a.key} href={a.href} className="app">
-                  <span className="app-ico"><AppIcon name={a.key} /></span>
-                  <span className="app-name">{a.label}</span>
-                </Link>))}</div>
-            </section>
-          );
-        })}
+        {apps.map((a) => (
+          <Link key={a.key} href={a.href} className="app">
+            <span className="app-ico"><AppIcon name={a.key} /></span>
+            <span className="app-name">{a.label}</span>
+          </Link>
+        ))}
         {!apps.length && <p className="muted">Aucune application ne correspond à « {q} ».</p>}
       </nav>
     </div>
