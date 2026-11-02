@@ -62,7 +62,7 @@ function Contracts() {
                 {c.warnings.filter((w: string) => w !== 'ending_soon').length > 0 && <div className="small" style={{ color: 'var(--warn)', marginTop: 4 }}>{c.warnings.filter((w: string) => w !== 'ending_soon').map((w: string) => WARNINGS[w]).join(' · ')}</div>}</td>
               <td className="n"><div className="row" style={{ justifyContent: 'flex-end', gap: 6, flexWrap: 'nowrap' }}>
                 <Link className="btn sm" href={`/app/employes?id=${c.id}`}>Fiche</Link>
-                {salaries && c.status !== 'upcoming' && <Link className="btn sm" href={`/app/paie/solde?employe=${c.id}`}>Solde de tout compte</Link>}</div></td>
+                {salaries && c.status !== 'upcoming' && <Link className="btn sm" href={`/app/paie/solde?employe=${c.id}`}>Départ</Link>}</div></td>
             </tr>))}
           {rows && !shown.length && <tr><td colSpan={8} className="muted" style={{ textAlign: 'center', padding: 24 }}>Aucun contrat dans cette sélection.</td></tr>}
         </tbody>

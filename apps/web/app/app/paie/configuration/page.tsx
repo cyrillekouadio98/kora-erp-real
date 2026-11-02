@@ -24,7 +24,7 @@ export default function PayrollSettingsPage() {
   if (!settings) return null;
   return (
     <>
-      <div className="page-head"><h1>Configuration de la paie</h1></div>
+      <div className="page-head"><h1>Paramètres de la paie</h1></div>
       {!can('payroll.admin') && <Alert kind="info">Consultation seule : la modification des paramètres demande la permission d'administration de la paie.</Alert>}
       <form className="card" style={{ display: 'grid', gap: 14 }} onSubmit={(e) => {
         e.preventDefault();

@@ -33,7 +33,7 @@ export default function PayrollRunPage() {
   return (
     <>
       <div className="page-head no-print">
-        <div><Link href="/app/paie/fiches" className="small">← Fiches de paie</Link>
+        <div><Link href="/app/paie/fiches" className="small">← Bulletins de paie</Link>
           <h1>Paie de {r.label} {draft ? <Pill tone="warn">Brouillon</Pill> : <Pill tone="ok">Validée</Pill>}</h1></div>
         <div className="row">
           {draft && writable && can('payroll.cancel') && <button className="btn danger" disabled={busy} onClick={() => { if (window.confirm('Supprimer cette paie en brouillon ?')) run(async () => { await api(`/company/payroll/runs/${id}`, { method: 'DELETE' }); router.replace('/app/paie/fiches'); }); }}>Supprimer</button>}

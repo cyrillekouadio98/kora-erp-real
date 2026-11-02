@@ -281,32 +281,21 @@ a.chain-step:hover { border-color: var(--accent); }
 @page report { size: A4; margin: 12mm 10mm 14mm; @bottom-right { content: "Page " counter(page) " / " counter(pages); font-size: 9px; color: #555; } }
 @page report-wide { size: A4 landscape; margin: 10mm 10mm 12mm; @bottom-right { content: "Page " counter(page) " / " counter(pages); font-size: 9px; color: #555; } }
 
-/* Paie : tableau de bord (avertissements, lots, notes sur deux rangées, graphiques) */
-.payroll-dash { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; align-items: stretch; }
-.payroll-dash > .pd-notes { grid-column: 3; grid-row: 1 / span 2; }
-.payroll-dash > .card { display: grid; align-content: start; gap: 12px; }
-.payroll-dash > .card > header { margin-bottom: 0; }
-@media (max-width: 1100px) { .payroll-dash { grid-template-columns: repeat(2, minmax(0, 1fr)); } .payroll-dash > .pd-notes { grid-column: 1 / -1; grid-row: auto; } }
-@media (max-width: 700px) { .payroll-dash { grid-template-columns: minmax(0, 1fr); } }
-.pd-list { display: grid; }
-.pd-row { display: flex; gap: 14px; align-items: center; padding: 10px 4px; border-bottom: 1px solid var(--line); color: var(--ink); text-decoration: none; }
-.pd-row:last-child { border-bottom: 0; }
-.pd-row:hover { background: var(--surface-2); }
-.pd-count { min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; font-size: 16px; }
-.pd-toggle { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
-.switch { width: 36px; height: 20px; border-radius: 10px; border: 1px solid var(--accent); background: var(--surface); padding: 0; position: relative; cursor: pointer; }
-.switch span { position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); transition: left .15s; }
-.switch[aria-checked="true"] span { left: 19px; }
-.pd-tabs { display: flex; align-items: stretch; border-bottom: 1px solid var(--line); gap: 2px; flex-wrap: wrap; }
-.pd-tab { display: inline-flex; align-items: center; border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; margin-bottom: -1px; }
-.pd-tab[aria-selected="true"] { border-color: var(--line); background: var(--surface); }
-.pd-tab button { border: 0; background: none; padding: 8px 10px; cursor: pointer; color: var(--ink); font-weight: 600; }
-.pd-tab button + button { padding-left: 0; color: var(--muted); font-weight: 400; }
-.pd-add { margin-left: auto; border: 0; background: none; font-size: 20px; padding: 0 10px; cursor: pointer; color: var(--ink); }
-.pd-note-body { display: grid; gap: 4px; line-height: 1.55; overflow-wrap: anywhere; }
-.pd-note-body p { margin: 0; }
-.pd-check { display: flex; gap: 8px; align-items: flex-start; }
-.pd-check input { margin-top: 5px; }
+/* Paie : déroulé de la paie du mois et pense-bête */
+.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; counter-reset: step; }
+.steps li { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--radius); background: var(--surface-2); position: relative; }
+.steps li .dot { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px; border: 2px solid var(--line); background: var(--surface); color: var(--muted); }
+.steps li.done .dot { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.steps li.current { background: var(--accent-soft); outline: 1.5px solid var(--accent); }
+.steps li.current .dot { border-color: var(--accent); color: var(--accent); }
+@media (max-width: 800px) { .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .steps { grid-template-columns: minmax(0, 1fr); } }
+.todo { list-style: none; margin: 0; padding: 0; display: grid; }
+.todo li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.todo li:last-child { border-bottom: 0; }
+.todo li label { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
+.todo li label input { margin-top: 4px; }
+.todo li.done label span { text-decoration: line-through; color: var(--muted); }
 
 /* Solde de tout compte imprimable */
 .settlement { display: grid; gap: 14px; }

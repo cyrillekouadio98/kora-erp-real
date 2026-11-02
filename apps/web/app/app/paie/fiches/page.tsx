@@ -29,7 +29,7 @@ function Payslips() {
   }, []);
   useEffect(() => { if (can('payroll.salaries')) load(); }, [load]); // eslint-disable-line
 
-  if (!can('payroll.salaries')) return <Alert kind="info">Les fiches de paie sont réservées aux personnes disposant de la permission sensible « voir les salaires et bulletins ».</Alert>;
+  if (!can('payroll.salaries')) return <Alert kind="info">Les bulletins de paie sont réservés aux personnes disposant de la permission sensible « voir les salaires et bulletins ».</Alert>;
   const lotState = (r: any) => (r.status === 'draft' ? 'draft' : r.paid === r.employees ? 'paid' : r.paid ? 'partly_paid' : 'validated');
   const shown = (slips ?? []).filter((s) => (!f.period || s.period === f.period)
     && (!f.q || `${s.name} ${s.number} ${s.department ?? ''} ${s.jobTitle ?? ''}`.toLowerCase().includes(f.q.toLowerCase()))
@@ -39,19 +39,19 @@ function Payslips() {
 
   return (
     <>
-      <div className="page-head"><h1>Fiches de paie</h1>
+      <div className="page-head"><h1>Bulletins de paie</h1>
         {can('payroll.create') && writable && <form className="row" onSubmit={(e) => { e.preventDefault(); run(async () => { const r = await api('/company/payroll/runs', { body: { period } }); router.push(`/app/paie/fiches/${r.id}`); }); }}>
           <input className="input" type="month" value={period} max={new Date().toISOString().slice(0, 7)} onChange={(e) => setPeriod(e.target.value)} aria-label="Mois de paie" style={{ width: 170 }} />
           <button className="btn primary" disabled={busy}>Préparer la paie</button></form>}
       </div>
       <Alert>{error}</Alert>
       <div className="seg" role="group" aria-label="Affichage" style={{ alignSelf: 'flex-start' }}>
-        <button aria-pressed={view === 'lots'} onClick={() => setView('lots')}>Lots</button>
-        <button aria-pressed={view === 'slips'} onClick={() => setView('slips')}>Toutes les fiches</button>
+        <button aria-pressed={view === 'lots'} onClick={() => setView('lots')}>Paies mensuelles</button>
+        <button aria-pressed={view === 'slips'} onClick={() => setView('slips')}>Tous les bulletins</button>
       </div>
 
       {view === 'lots' && <div className="table-wrap"><table>
-        <thead><tr><th>Mois</th><th>État</th><th className="n">Fiches</th><th className="n">Brut</th><th className="n">Net à payer</th><th className="n">Coût employeur</th></tr></thead>
+        <thead><tr><th>Mois</th><th>État</th><th className="n">Bulletins</th><th className="n">Brut</th><th className="n">Net à payer</th><th className="n">Coût employeur</th></tr></thead>
         <tbody>
           {runs?.map((r) => (
             <tr key={r.id}><td><Link href={`/app/paie/fiches/${r.id}`}><b style={{ textTransform: 'capitalize' }}>{r.label}</b></Link></td>
@@ -81,9 +81,9 @@ function Payslips() {
                 <td className="n">{money(s.gross)}</td><td className="n">{money(s.employeeCharges)}</td><td className="n"><b>{money(s.net)}</b></td><td className="n">{money(s.employerCost)}</td>
                 <td className="n"><Link className="btn sm" href={`/app/paie/fiches/${s.runId}?fiche=${s.id}`}>Bulletin</Link></td>
               </tr>))}
-            {slips && !shown.length && <tr><td colSpan={8} className="muted" style={{ textAlign: 'center', padding: 24 }}>Aucune fiche de paie dans cette sélection.</td></tr>}
+            {slips && !shown.length && <tr><td colSpan={8} className="muted" style={{ textAlign: 'center', padding: 24 }}>Aucun bulletin dans cette sélection.</td></tr>}
           </tbody>
-          {shown.length > 1 && <tfoot><tr><td colSpan={3}><b>Total · {shown.length} fiches</b></td><td className="n"><b>{money(sum('gross'))}</b></td><td className="n"><b>{money(sum('employeeCharges'))}</b></td>
+          {shown.length > 1 && <tfoot><tr><td colSpan={3}><b>Total · {shown.length} bulletins</b></td><td className="n"><b>{money(sum('gross'))}</b></td><td className="n"><b>{money(sum('employeeCharges'))}</b></td>
             <td className="n"><b>{money(sum('net'))}</b></td><td className="n"><b>{money(sum('employerCost'))}</b></td><td /></tr></tfoot>}
         </table></div>
       </>}

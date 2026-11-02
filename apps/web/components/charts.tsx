@@ -144,7 +144,10 @@ function stack(series: Series[], i: number) {
 }
 
 /** Courbe d'une seule série (fond léger), avec réticule qui se cale sur le mois le plus proche. */
-export function LineChart({ categories, values, color, label, height = 200 }: { categories: string[]; values: (number | null)[]; color: string; label: string; height?: number }) {
+export function LineChart({ categories, values, color, label, height = 200, tick = monthTick, long = (c: string) => `fin ${monthLong(c)}`, format = fcfa }: {
+  categories: string[]; values: (number | null)[]; color: string; label: string; height?: number;
+  tick?: (c: string, first: boolean) => string; long?: (c: string) => string; format?: (n: number) => string;
+}) {
   const { ref, width } = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
   const m = { top: 12, right: 12, bottom: 24, left: 44 };
@@ -167,7 +170,7 @@ export function LineChart({ categories, values, color, label, height = 200 }: { 
       <svg width={width} height={height} role="img" aria-label={label}>
         {steps.map((s) => <g key={s}><line x1={m.left} x2={width - m.right} y1={y(s)} y2={y(s)} stroke={s === 0 ? 'var(--chart-axis)' : 'var(--chart-grid)'} strokeWidth={1} />
           <text x={m.left - 6} y={y(s) + 4} textAnchor="end">{axisLabel(s)}</text></g>)}
-        {categories.map((c, i) => i % every === 0 && <text key={c} x={x(i)} y={height - 6} textAnchor="middle">{monthTick(c, i === 0)}</text>)}
+        {categories.map((c, i) => i % every === 0 && <text key={c} x={x(i)} y={height - 6} textAnchor="middle">{tick(c, i === 0)}</text>)}
         <path d={area} fill={color} opacity={0.1} />
         <path d={line} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
         {hover !== null && <line x1={x(hover)} x2={x(hover)} y1={m.top} y2={m.top + plotH} stroke="var(--chart-axis)" strokeWidth={1} />}
@@ -177,8 +180,8 @@ export function LineChart({ categories, values, color, label, height = 200 }: { 
       </svg>
       {hover !== null && (
         <div className="chart-tip" style={{ left: Math.min(width - 244, Math.max(0, x(hover) - 120)), top: 0 }}>
-          <div className="t">fin {monthLong(categories[hover])}</div>
-          <div className="r"><span><span className="k" style={{ background: color }} />{label}</span><b>{values[hover] === null ? '—' : fcfa(values[hover]!)}</b></div>
+          <div className="t">{long(categories[hover])}</div>
+          <div className="r"><span><span className="k" style={{ background: color }} />{label}</span><b>{values[hover] === null ? '—' : format(values[hover]!)}</b></div>
         </div>
       )}
     </div>

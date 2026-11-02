@@ -46,7 +46,7 @@ function FinalSettlement() {
 
   return (
     <>
-      <div className="page-head no-print"><h1>Solde de tout compte</h1></div>
+      <div className="page-head no-print"><div><h1>Départ d'un salarié</h1><div className="small muted">Indemnités de fin de contrat et reçu pour solde de tout compte</div></div></div>
       <form className="card no-print" style={{ display: 'grid', gap: 12 }} onSubmit={(ev) => { ev.preventDefault(); compute(); }}>
         <div className="grid2">
           <label className="field">Employé<select className="input" required value={f.employeeId} onChange={set('employeeId')}>
@@ -99,7 +99,7 @@ function FinalSettlement() {
           {r.suggestedNotice > 0 && Number(f.noticeMonths) !== r.suggestedNotice && <p className="small muted no-print" style={{ margin: 0 }}>Préavis légal proposé pour cette ancienneté : {r.suggestedNotice} mois.</p>}
           <p className="small" style={{ margin: 0 }}>Je soussigné(e) <b>{e.name}</b> reconnais avoir reçu de <b>{company?.name}</b> la somme de <b>{money(r.total)}</b> (montant brut, avant retenues fiscales et sociales sur les éléments soumis) pour solde de tout compte, en paiement des salaires, accessoires et indemnités de toute nature dus au titre de l'exécution et de la cessation de mon contrat de travail. Ce reçu peut être dénoncé dans les délais prévus par la loi.</p>
           <div className="signatures" style={{ gridTemplateColumns: '1fr 1fr' }}><div>L'employeur<br />(cachet et signature)</div><div>Le salarié<br />« Pour solde de tout compte », date et signature</div></div>
-          <p className="small muted no-print" style={{ margin: 0 }}>Pensez au certificat de travail et à l'attestation de la CNPS. Les fiches et paies passées restent consultables dans <Link href="/app/paie/fiches">Fiches de paie</Link>.</p>
+          <p className="small muted no-print" style={{ margin: 0 }}>Pensez au certificat de travail et à l'attestation de la CNPS. Les bulletins passés restent consultables dans <Link href="/app/paie/fiches">Bulletins</Link>.</p>
         </article>
       )}
     </>

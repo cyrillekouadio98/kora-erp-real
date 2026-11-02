@@ -25,7 +25,7 @@ export default function WorkEntriesPage() {
 
   return (
     <>
-      <div className="page-head"><h1>Prestations</h1>
+      <div className="page-head"><h1>Temps et absences</h1>
         <input className="input" type="month" value={period} onChange={(e) => e.target.value && setPeriod(e.target.value)} aria-label="Mois" style={{ width: 170 }} /></div>
       <Alert>{error}</Alert>
       {d && <>

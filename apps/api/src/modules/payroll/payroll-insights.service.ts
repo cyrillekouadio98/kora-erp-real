@@ -107,10 +107,11 @@ export class PayrollInsightsService {
       const validated = new Set(runs.filter((r) => r.status === 'validated').map((r) => r.id));
       warnings.push({ key: 'unpaid', label: 'Salaires validés non encore payés', count: slips.filter((s) => validated.has(s.run_id) && !s.paid_at).length, href: '/app/paie/fiches?vue=fiches&etat=unpaid' });
 
-      const lots = runs.slice(0, 3).map((r) => {
+      const lots = runs.slice(0, 6).map((r) => {
         const mine = slips.filter((s) => s.run_id === r.id);
         const paid = mine.filter((s) => s.paid_at).length;
-        return { id: r.id, period: r.period, label: periodLabel(r.period), payslips: mine.length,
+        return { id: r.id, period: r.period, label: periodLabel(r.period), payslips: mine.length, paid,
+          net: round(mine.reduce((s, x) => s + Number(x.net), 0)), employerCost: round(mine.reduce((s, x) => s + Number(x.employer_cost), 0)),
           state: r.status === 'draft' ? 'draft' : paid === mine.length ? 'paid' : paid ? 'partly_paid' : 'validated' };
       });
 

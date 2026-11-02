@@ -21,7 +21,7 @@ export default function PayrollAnalysisPage() {
   const [slips, setSlips] = useState<any[] | null>(null);
   useEffect(() => { if (can('payroll.salaries')) api(`/company/payroll/payslips?from=${range.from}&to=${range.to}`).then(setSlips); }, [range]); // eslint-disable-line
 
-  if (!can('payroll.salaries')) return <Alert kind="info">L'analyse de la paie est réservée aux personnes disposant de la permission sensible « voir les salaires et bulletins ».</Alert>;
+  if (!can('payroll.salaries')) return <Alert kind="info">La masse salariale est réservée aux personnes disposant de la permission sensible « voir les salaires et bulletins ».</Alert>;
   const rows = (slips ?? []).filter((s) => !validatedOnly || s.runStatus === 'validated');
   // Tous les mois de la plage, même sans paie, pour une échelle de temps régulière.
   const months: string[] = [];
@@ -41,7 +41,7 @@ export default function PayrollAnalysisPage() {
 
   return (
     <>
-      <div className="page-head"><h1>Analyse de la paie</h1>
+      <div className="page-head"><h1>Masse salariale</h1>
         <div className="row">
           <label className="field">Du<input className="input" type="month" value={range.from} max={range.to} onChange={(e) => e.target.value && setRange({ ...range, from: e.target.value })} /></label>
           <label className="field">Au<input className="input" type="month" value={range.to} min={range.from} onChange={(e) => e.target.value && setRange({ ...range, to: e.target.value })} /></label>
@@ -54,7 +54,7 @@ export default function PayrollAnalysisPage() {
           <div className="card kpi"><div className="l">Net versé</div><div className="v">{money(total.net)}</div></div>
           <div className="card kpi"><div className="l">Coût employeur</div><div className="v">{money(total.employerCost)}</div>
             <div className="small muted">{total.gross ? `${Math.round((total.employerCost / total.gross) * 100)} % du brut` : ''}</div></div>
-          <div className="card kpi"><div className="l">Salariés payés</div><div className="v">{total.count}</div><div className="small muted">{total.slips} fiche(s)</div></div>
+          <div className="card kpi"><div className="l">Salariés payés</div><div className="v">{total.count}</div><div className="small muted">{total.slips} bulletin(s)</div></div>
         </div>
         <ChartCard title="Coût pour l'employeur" subtitle="par mois : net versé, puis cotisations, impôts et taxes"
           legend={series.map((s) => ({ label: s.label, color: s.color, kind: 'box' as const }))}
@@ -69,7 +69,7 @@ export default function PayrollAnalysisPage() {
             <tbody>{table.map((r: any) => (
               <tr key={r.g}><td style={{ textTransform: group === 'period' ? 'capitalize' : undefined }}><b>{label(r.g)}</b></td>{group !== 'employee' && <td className="n">{r.count}</td>}
                 {MEASURES.map(([k]) => <td key={k} className="n" style={{ whiteSpace: 'nowrap' }}>{money(r[k])}</td>)}</tr>))}
-              {!table.length && <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 24 }}>Aucune fiche de paie sur cette période.</td></tr>}</tbody>
+              {!table.length && <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 24 }}>Aucun bulletin sur cette période.</td></tr>}</tbody>
             {table.length > 1 && <tfoot><tr><td><b>Total</b></td>{group !== 'employee' && <td className="n"><b>{total.count}</b></td>}{MEASURES.map(([k]) => <td key={k} className="n" style={{ whiteSpace: 'nowrap' }}><b>{money((total as any)[k])}</b></td>)}</tr></tfoot>}
           </table></div>
         </div>
