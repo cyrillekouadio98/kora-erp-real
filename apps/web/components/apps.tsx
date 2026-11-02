@@ -1,40 +1,40 @@
-import { useId } from 'react';
-
 /** Applications de l'écran d'accueil : une tuile et une icône par domaine de Kora. */
 
 /**
- * Identité Kora : chaque application a sa couleur (tuile pleine en dégradé, du foncé au clair)
- * et un pictogramme blanc au trait, dessiné sur une grille de 48.
+ * Identité Kora : une couleur par famille d'applications (pilotage et finance, gestion commerciale,
+ * ressources humaines, administration), tuile claire teintée et pictogramme bicolore
+ * (contour dans la couleur de la famille, aplat dans sa teinte douce). Couleurs dans globals.css (.fam-*).
  */
-const TILES: Record<string, [string, string]> = {
-  dashboard: ['#0f766e', '#14b8a6'], sales: ['#c2410c', '#fb923c'], purchases: ['#0369a1', '#38bdf8'], treasury: ['#15803d', '#22c55e'],
-  accounting: ['#1e3a8a', '#3b82f6'], stock: ['#a16207', '#eab308'], products: ['#a21caf', '#d946ef'], contacts: ['#3f6212', '#65a30d'],
-  employees: ['#4338ca', '#818cf8'], leave: ['#0e7490', '#06b6d4'], payroll: ['#6d28d9', '#a855f7'], me: ['#be185d', '#f472b6'],
-  company: ['#334155', '#64748b'], users: ['#44403c', '#78716c'], roles: ['#b91c1c', '#f87171'], billing: ['#065f46', '#10b981'],
-  emails: ['#0f172a', '#475569'], audit: ['#78350f', '#d97706'], support: ['#be123c', '#fb7185'], security: ['#14532d', '#16a34a'],
+export const FAMILIES: [string, string][] = [['pilot', 'Pilotage et finance'], ['commerce', 'Gestion commerciale'], ['hr', 'Ressources humaines'], ['admin', 'Administration']];
+const FAMILY: Record<string, string> = {
+  dashboard: 'pilot', treasury: 'pilot', accounting: 'pilot',
+  sales: 'commerce', purchases: 'commerce', stock: 'commerce', products: 'commerce', contacts: 'commerce',
+  employees: 'hr', leave: 'hr', payroll: 'hr', me: 'hr',
 };
+export const familyOf = (key: string) => FAMILY[key] ?? 'admin';
 
+/** Pictogrammes sur une grille de 48 : les formes fermées prennent l'aplat, les traits restent sans remplissage. */
 const GLYPHS: Record<string, React.ReactNode> = {
-  dashboard: <><path d="M12 36h24" /><path d="M15 32v-6M21 32V18M27 32v-9M33 32V14" /></>,
-  sales: <><path d="M14.5 19h19l-1.6 16.5H16.1z" /><path d="M19 19v-2.5a5 5 0 0 1 10 0V19" /></>,
-  purchases: <><path d="M10 15h17v15H10z" /><path d="M27 21h6l5 5v4H27" /><circle cx="16" cy="33" r="2.6" /><circle cx="32" cy="33" r="2.6" /></>,
-  treasury: <><path d="M12 18h22.5a1.5 1.5 0 0 1 1.5 1.5v13a1.5 1.5 0 0 1-1.5 1.5h-21A1.5 1.5 0 0 1 12 32.5z" /><path d="M12 18l17-5.5V18" /><path d="M36 23h-6a3 3 0 0 0 0 6h6" /></>,
-  accounting: <><path d="M24 13v22M18 35h12M13 17h22" /><path d="M13 17l-4 8a4 3 0 0 0 8 0zM35 17l-4 8a4 3 0 0 0 8 0z" /></>,
-  stock: <><path d="M24 11.5l11.5 6v13l-11.5 6-11.5-6v-13z" /><path d="M12.5 17.5l11.5 6 11.5-6M24 23.5v13" /></>,
-  products: <><path d="M12.5 12.5h11l12 12-11 11-12-12z" /><circle cx="18.5" cy="18.5" r="2" /></>,
-  contacts: <><path d="M16 12h17a2 2 0 0 1 2 2v20a2 2 0 0 1-2 2H16z" /><path d="M12 17h4M12 24h4M12 31h4" /><circle cx="25.5" cy="21" r="3.2" /><path d="M20 31a5.5 5 0 0 1 11 0" /></>,
-  employees: <><rect x="14" y="13" width="20" height="23" rx="2.5" /><path d="M21 10h6" /><circle cx="24" cy="21.5" r="3.4" /><path d="M18.5 31.5a5.5 4.5 0 0 1 11 0" /></>,
-  leave: <><circle cx="24" cy="21" r="5" /><path d="M24 11v2M15 21h-2M35 21h-2M17 14l1.4 1.4M31 14l-1.4 1.4" /><path d="M11 31c4.3-3 8.7-3 13 0s8.7 3 13 0M15 36.5c3-2 6-2 9 0s6 2 9 0" /></>,
-  payroll: <><rect x="10" y="15" width="28" height="18" rx="2.5" /><circle cx="24" cy="24" r="4" /><path d="M15 20v.01M33 28v.01" /></>,
-  me: <><circle cx="24" cy="24" r="12.5" /><circle cx="24" cy="21" r="4" /><path d="M16.5 32.5c1.6-3.2 4.2-4.8 7.5-4.8s5.9 1.6 7.5 4.8" /></>,
-  company: <><path d="M15 36V12.5h12V36M27 20h7v16M12 36h24" /><path d="M19.5 18h3M19.5 23h3M19.5 28h3M30.5 25h0M30.5 30h0" /></>,
-  users: <><circle cx="19" cy="20" r="4.2" /><path d="M11 34a8 7.5 0 0 1 16 0" /><circle cx="30.5" cy="19" r="3.3" /><path d="M28.5 26.3a7 6.5 0 0 1 8.5 6.7" /></>,
-  roles: <><circle cx="18" cy="24" r="5.5" /><path d="M23.5 24H37M32 24v4.5M36.5 24v4" /></>,
-  billing: <><rect x="11" y="15" width="26" height="18" rx="2.5" /><path d="M11 21h26M16 28h6" /></>,
-  emails: <><rect x="11" y="15" width="26" height="18" rx="2.5" /><path d="M11.5 16.5l12.5 9 12.5-9" /></>,
-  audit: <><path d="M15 12h12.5l5.5 5.5V36H15z" /><path d="M27 12v6h6" /><circle cx="23.5" cy="26" r="3.6" /><path d="M26.2 28.7l3.3 3.3" /></>,
-  support: <><circle cx="24" cy="24" r="11.5" /><circle cx="24" cy="24" r="5" /><path d="M16 16l4.5 4.5M32 16l-4.5 4.5M16 32l4.5-4.5M32 32l-4.5-4.5" /></>,
-  security: <><path d="M24 11l11 4v8c0 7-4.8 11.5-11 14-6.2-2.5-11-7-11-14v-8z" /><path d="M19 24l3.5 3.5L29.5 21" /></>,
+  dashboard: <><rect x="12" y="25" width="6" height="11" rx="1.5" /><rect x="21" y="17" width="6" height="19" rx="1.5" /><rect x="30" y="12" width="6" height="24" rx="1.5" /></>,
+  sales: <><path d="M14.5 19h19l-1.6 16.5H16.1z" /><path d="M19 19v-2.5a5 5 0 0 1 10 0V19" fill="none" /></>,
+  purchases: <><path d="M10 15h17v15H10z" /><path d="M27 21h6l5 5v4H27z" /><circle cx="16" cy="33" r="2.6" /><circle cx="32" cy="33" r="2.6" /></>,
+  treasury: <><path d="M12 18h22.5a1.5 1.5 0 0 1 1.5 1.5v13a1.5 1.5 0 0 1-1.5 1.5h-21A1.5 1.5 0 0 1 12 32.5z" /><path d="M12 18l17-5.5V18" fill="none" /><path d="M36 23h-6a3 3 0 0 0 0 6h6" /></>,
+  accounting: <><path d="M24 13v22M18 35h12M13 17h22" fill="none" /><path d="M13 17l-4 8a4 3 0 0 0 8 0zM35 17l-4 8a4 3 0 0 0 8 0z" /></>,
+  stock: <><path d="M24 11.5l11.5 6v13l-11.5 6-11.5-6v-13z" /><path d="M12.5 17.5l11.5 6 11.5-6M24 23.5v13" fill="none" /></>,
+  products: <><path d="M12.5 12.5h11l12 12-11 11-12-12z" /><circle cx="18.5" cy="18.5" r="2" fill="none" /></>,
+  contacts: <><path d="M16 12h17a2 2 0 0 1 2 2v20a2 2 0 0 1-2 2H16z" /><path d="M12 17h4M12 24h4M12 31h4" fill="none" /><circle cx="25.5" cy="21" r="3.2" fill="none" /><path d="M20 31a5.5 5 0 0 1 11 0" fill="none" /></>,
+  employees: <><rect x="14" y="13" width="20" height="23" rx="2.5" /><path d="M21 10h6" fill="none" /><circle cx="24" cy="21.5" r="3.4" fill="none" /><path d="M18.5 31.5a5.5 4.5 0 0 1 11 0" fill="none" /></>,
+  leave: <><circle cx="24" cy="21" r="5" /><path d="M24 11v2M15 21h-2M35 21h-2M17 14l1.4 1.4M31 14l-1.4 1.4M11 31c4.3-3 8.7-3 13 0s8.7 3 13 0M15 36.5c3-2 6-2 9 0s6 2 9 0" fill="none" /></>,
+  payroll: <><rect x="10" y="15" width="28" height="18" rx="2.5" /><circle cx="24" cy="24" r="4" fill="none" /><path d="M15 20v.01M33 28v.01" fill="none" /></>,
+  me: <><circle cx="24" cy="24" r="12.5" /><circle cx="24" cy="21" r="4" fill="none" /><path d="M16.5 32.5c1.6-3.2 4.2-4.8 7.5-4.8s5.9 1.6 7.5 4.8" fill="none" /></>,
+  company: <><path d="M15 36V12.5h12V36zM27 20h7v16h-7z" /><path d="M12 36h24M19.5 18h3M19.5 23h3M19.5 28h3" fill="none" /></>,
+  users: <><circle cx="30.5" cy="19" r="3.3" /><path d="M28.5 26.3a7 6.5 0 0 1 8.5 6.7" fill="none" /><circle cx="19" cy="20" r="4.2" /><path d="M11 34a8 7.5 0 0 1 16 0z" /></>,
+  roles: <><circle cx="18" cy="24" r="5.5" /><path d="M23.5 24H37M32 24v4.5M36.5 24v4" fill="none" /></>,
+  billing: <><rect x="11" y="15" width="26" height="18" rx="2.5" /><path d="M11 21h26M16 28h6" fill="none" /></>,
+  emails: <><rect x="11" y="15" width="26" height="18" rx="2.5" /><path d="M11.5 16.5l12.5 9 12.5-9" fill="none" /></>,
+  audit: <><path d="M15 12h12.5l5.5 5.5V36H15z" /><path d="M27 12v6h6" fill="none" /><circle cx="23.5" cy="26" r="3.6" fill="none" /><path d="M26.2 28.7l3.3 3.3" fill="none" /></>,
+  support: <><circle cx="24" cy="24" r="11.5" /><circle cx="24" cy="24" r="5" className="ico-hole" /><path d="M16 16l4.5 4.5M32 16l-4.5 4.5M16 32l4.5-4.5M32 32l-4.5-4.5" fill="none" /></>,
+  security: <><path d="M24 11l11 4v8c0 7-4.8 11.5-11 14-6.2-2.5-11-7-11-14v-8z" /><path d="M19 24l3.5 3.5L29.5 21" fill="none" /></>,
 };
 
 export interface AppPage { href: string; label: string; perm?: string; module?: string }
@@ -90,15 +90,12 @@ export const currentApp = (path: string) => {
   return APPS.find((a) => (a.base ?? a.href) === base);
 };
 
-/** Tuile de l'application : fond en dégradé à sa couleur, pictogramme blanc. */
+/** Tuile de l'application : fond clair teinté de la couleur de sa famille, pictogramme bicolore. */
 export function AppIcon({ name, size = 62 }: { name: string; size?: number }) {
-  const id = `tile-${useId().replace(/:/g, '')}`;
-  const [from, to] = TILES[name] ?? TILES.dashboard;
   return (
-    <svg viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" style={{ display: 'block' }}>
-      <defs><linearGradient id={id} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor={from} /><stop offset="1" stopColor={to} /></linearGradient></defs>
-      <rect width="48" height="48" rx="12" fill={`url(#${id})`} />
-      <g fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">{GLYPHS[name]}</g>
+    <svg viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" className={`ico fam-${familyOf(name)}`} style={{ display: 'block' }}>
+      <rect className="ico-bg" x=".75" y=".75" width="46.5" height="46.5" rx="14" />
+      <g className="ico-glyph" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">{GLYPHS[name]}</g>
     </svg>
   );
 }
