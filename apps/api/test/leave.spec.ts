@@ -88,6 +88,18 @@ describe('Espace employé et congés', () => {
     expect(balances.find((b: any) => b.employeeId === ayaId)).toMatchObject({ linked: true, taken: pending[0].days });
   });
 
+  it("donne les congés d'une année et les jours fériés nommés (tableau de bord annuel)", async () => {
+    const year = Number(nextMonday.slice(0, 4));
+    expect((await owner.agent.get('/company/leave').query({ year })).body.map((l: any) => l.status)).toContain('approved');
+    expect((await owner.agent.get('/company/leave').query({ year: year + 3 })).body).toHaveLength(0);
+    const holidays = (await owner.agent.get('/company/leave/holidays').query({ year: 2026 })).body;
+    expect(holidays).toHaveLength(10);
+    expect(holidays[0]).toEqual({ date: '2026-01-01', label: 'Nouvel An' });
+    expect(holidays).toContainEqual({ date: '2026-04-06', label: 'Lundi de Pâques' });
+    expect(holidays).toContainEqual({ date: '2026-05-14', label: 'Ascension' });
+    expect((await owner.agent.get('/company/leave/holidays')).status).toBe(400);
+  });
+
   it('reprend un congé sans solde validé comme absence dans la paie du mois', async () => {
     const start = `${period}-01`, end = `${period}-03`;
     const r = await owner.agent.post('/company/leave').send({ employeeId: otherId, type: 'unpaid', startDate: start, endDate: end });

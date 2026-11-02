@@ -162,16 +162,17 @@ export class LeaveService {
   }
 
   // ------------------------------------------------------------------ consultation
-  async list(t: TenantInfo, f: { status?: string; employeeId?: string; month?: string }) {
+  async list(t: TenantInfo, f: { status?: string; employeeId?: string; month?: string; year?: number }) {
     return this.db.tenant(t.ctx, async (trx) => {
       let q = trx.selectFrom('leave_request as l').innerJoin('employee as e', (j) => j.onRef('e.id', '=', 'l.employee_id').onRef('e.company_id', '=', 'l.company_id'))
-        .selectAll('l').select(['e.first_name', 'e.last_name']).orderBy('l.start_date', 'desc').limit(500);
+        .selectAll('l').select(['e.first_name', 'e.last_name']).orderBy('l.start_date', 'desc').limit(f.year ? 5000 : 500);
       if (f.status) q = q.where('l.status', '=', f.status as any);
       if (f.employeeId) q = q.where('l.employee_id', '=', f.employeeId);
       if (f.month) {
         const end = new Date(Date.UTC(Number(f.month.slice(0, 4)), Number(f.month.slice(5, 7)), 0)).toISOString().slice(0, 10);
         q = q.where('l.start_date', '<=', end).where('l.end_date', '>=', `${f.month}-01`);
       }
+      if (f.year) q = q.where('l.start_date', '<=', `${f.year}-12-31`).where('l.end_date', '>=', `${f.year}-01-01`);
       return this.present(trx, await q.execute());
     });
   }

@@ -18,8 +18,21 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 const plus = (d: Date, n: number) => new Date(d.getTime() + n * 86400_000);
 
 export function publicHolidays(year: number): Set<string> {
+  return new Set(holidayList(year).map((h) => h.date));
+}
+
+const FIXED_LABELS: Record<string, string> = {
+  '01-01': 'Nouvel An', '05-01': 'Fête du Travail', '08-07': "Fête de l'Indépendance", '08-15': 'Assomption',
+  '11-01': 'Toussaint', '11-15': 'Journée nationale de la Paix', '12-25': 'Noël',
+};
+
+/** Jours fériés de l'année, datés et nommés, dans l'ordre du calendrier. */
+export function holidayList(year: number): { date: string; label: string }[] {
   const e = easter(year);
-  return new Set([...FIXED_HOLIDAYS.map((md) => `${year}-${md}`), iso(plus(e, 1)), iso(plus(e, 39)), iso(plus(e, 50))]);
+  return [
+    ...FIXED_HOLIDAYS.map((md) => ({ date: `${year}-${md}`, label: FIXED_LABELS[md] })),
+    { date: iso(plus(e, 1)), label: 'Lundi de Pâques' }, { date: iso(plus(e, 39)), label: 'Ascension' }, { date: iso(plus(e, 50)), label: 'Lundi de Pentecôte' },
+  ].sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /** Nombre de jours ouvrables entre deux dates incluses. */

@@ -6,6 +6,7 @@ import type { TenantInfo } from '../../common/request-context';
 import { parse } from '../../common/validation';
 import { isoDate } from '../sales/sales.controller';
 import { LeaveService } from './leave.service';
+import { holidayList } from './workdays';
 
 const type = z.enum(['annual', 'sick', 'maternity', 'family_event', 'unpaid', 'other'], { message: 'Type de congé invalide' });
 const RequestSchema = z.object({
@@ -24,7 +25,14 @@ export class LeaveController {
   @Get('leave')
   list(@Tenant() t: TenantInfo, @Query() query: unknown) {
     return this.leave.list(t, parse(z.object({ status: z.enum(['pending', 'approved', 'refused', 'cancelled']).optional(), employeeId: z.string().uuid().optional(),
-      month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional() }), query));
+      month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(), year: z.coerce.number().int().min(2000).max(2100).optional() }), query));
+  }
+
+  /** Jours fériés ivoiriens de l'année (dates fixes et fêtes liées à Pâques). */
+  @Permission('leave.read') @AllowWhenReadOnly()
+  @Get('leave/holidays')
+  holidays(@Query() query: unknown) {
+    return holidayList(parse(z.object({ year: z.coerce.number().int().min(2000).max(2100) }), query).year);
   }
 
   @Permission('leave.read') @AllowWhenReadOnly()
