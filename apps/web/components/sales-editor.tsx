@@ -96,7 +96,7 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
   return (
     <form className="card form" onChange={() => setDirty(true)} onSubmit={(e) => { e.preventDefault(); save(); }}>
       <header><h2>{doc ? `${cfg.labels[type]} — brouillon` : cfg.newTitle(type)}</h2>
-        <span className="small muted">{isCredit ? 'Réduisez les quantités ou les prix pour un avoir partiel.' : isPurchaseInvoice ? 'Recopiez la facture reçue du fournisseur.' : 'Le numéro définitif est attribué à la validation.'}</span></header>
+        <span className="small muted">{isCredit ? 'Réduisez les quantités ou les prix pour un avoir partiel.' : isPurchaseInvoice ? 'Recopiez la facture reçue du fournisseur.' : doc?.number ? `Numéro ${doc.number}, repris à la nouvelle émission.` : 'Le numéro définitif est attribué à la validation.'}</span></header>
       <Alert>{error}</Alert>
       <div className="grid2">
         <label className="field">{Party}

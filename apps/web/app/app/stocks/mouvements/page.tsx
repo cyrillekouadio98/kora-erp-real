@@ -12,7 +12,8 @@ const today = () => new Date().toISOString().slice(0, 10);
 function source(m: any) {
   if (m.documentId) return <Link href={`/app/stocks/${m.reason === 'adjustment' ? 'inventaires' : 'operations'}/${m.documentId}`}>{m.documentNumber}</Link>;
   if (m.sourceId && (m.reason === 'sale' || m.reason === 'sale_return')) return <Link href={`/app/ventes/${m.sourceId}`}>Voir la pièce</Link>;
-  if (m.sourceId && m.reason === 'purchase') return <Link href={`/app/achats/${m.sourceId}`}>Voir la pièce</Link>;
+  if (m.sourceId && (m.reason === 'purchase' || (m.reason === 'cancellation' && m.label.includes("l'achat")))) return <Link href={`/app/achats/${m.sourceId}`}>Voir la pièce</Link>;
+  if (m.sourceId && m.reason === 'cancellation') return <Link href={`/app/ventes/${m.sourceId}`}>Voir la pièce</Link>;
   return null;
 }
 

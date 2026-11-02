@@ -116,7 +116,7 @@ export function paymentStamp(doc: { type: string; status: string; paidAmount: nu
 
 export const qty = (n: number) => n.toLocaleString('fr-FR', { maximumFractionDigits: 3 });
 export const STOCK_MOVES: Record<string, string> = {
-  opening: 'Stock initial', purchase: 'Achat', sale: 'Vente', sale_return: 'Retour client', adjustment: 'Inventaire', receipt: 'Entrée', issue: 'Sortie', transfer: 'Transfert',
+  opening: 'Stock initial', purchase: 'Achat', sale: 'Vente', sale_return: 'Retour client', adjustment: 'Inventaire', receipt: 'Entrée', issue: 'Sortie', transfer: 'Transfert', cancellation: 'Annulation',
 };
 export const STOCK_DOC: Record<string, string> = { receipt: 'Bon d’entrée', issue: 'Bon de sortie', transfer: 'Bon de transfert', inventory: 'Inventaire' };
 export const RECEIPT_REASONS: Record<string, string> = {

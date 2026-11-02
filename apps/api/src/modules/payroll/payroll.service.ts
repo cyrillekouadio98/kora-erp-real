@@ -334,6 +334,21 @@ export class PayrollService {
     return this.getRun(t, runId);
   }
 
+  /** Remet une paie validée en brouillon tant qu'aucun salaire n'est payé : son écriture est contre-passée, les bulletins redeviennent modifiables. */
+  async resetToDraft(t: TenantInfo, runId: string) {
+    this.assertSalaries(t);
+    await this.db.tenant(t.ctx, async (trx) => {
+      const r = await this.run(trx, runId, true);
+      if (r.status !== 'validated') throw conflict('Cette paie est déjà en brouillon.', 'run_draft');
+      const paid = await trx.selectFrom('payslip').select('id').where('run_id', '=', runId).where('paid_at', 'is not', null).executeTakeFirst();
+      if (paid) throw conflict(`Des salaires de ${periodLabel(r.period)} sont déjà payés : la paie ne peut plus être remise en brouillon.`, 'run_paid');
+      const entry = await this.accounting.reverseSource(trx, t, 'payroll_run', runId, `paie de ${periodLabel(r.period)} remise en brouillon`);
+      await trx.updateTable('payroll_run').set({ status: 'draft', validated_at: null, validated_by: null }).where('id', '=', runId).execute();
+      await this.audit.tenant(trx, t.ctx, { action: 'payroll.run_reset_to_draft', entityType: 'payroll_run', entityId: runId, data: { period: r.period, reversal: entry?.number ?? null } });
+    });
+    return this.getRun(t, runId);
+  }
+
   /** Paiement des salaires : un décaissement par bulletin (D 422 / C 5x). La caisse refuse un paiement qu'elle ne peut couvrir. */
   async pay(t: TenantInfo, runId: string, input: { accountId: string; date?: string; payslipIds?: string[] }) {
     this.assertSalaries(t);

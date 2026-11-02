@@ -86,11 +86,13 @@ export default function SalesDocumentPage() {
         <div><Link href={listHref} className="small">← {listLabel}</Link>
           <h1>{DOC_LABEL[type]} {doc.number ?? '(brouillon)'} <Pill tone={status[1]}>{status[0]}</Pill></h1></div>
         <div className="row">
-          {doc.status === 'draft' && writable && can('sales.cancel') && <button className="btn danger" disabled={busy} onClick={() => {
+          {doc.status === 'draft' && !doc.number && writable && can('sales.cancel') && <button className="btn danger" disabled={busy} onClick={() => {
             if (window.confirm('Supprimer ce brouillon ?')) run(async () => { await api(`/company/sales/documents/${id}`, { method: 'DELETE' }); router.replace(listHref); });
           }}>Supprimer</button>}
           {doc.status === 'draft' && writable && can('sales.validate') && <button className="btn primary" disabled={busy || dirty}
-            title={dirty ? 'Enregistrez d\u2019abord le brouillon' : undefined} onClick={() => act('validate', validateText)}>{validateLabel}</button>}
+            title={dirty ? 'Enregistrez d\u2019abord le brouillon' : undefined} onClick={() => act('validate', doc.number ? `Émettre de nouveau la facture ${doc.number} ? Elle garde son numéro et ne pourra plus être modifiée.` : validateText)}>{validateLabel}</button>}
+          {isInvoice && doc.status === 'issued' && writable && can('sales.validate') && <button className="btn" disabled={busy}
+            onClick={() => act('reset-to-draft', `Remettre la facture ${doc.number} en brouillon pour la corriger ? Son écriture comptable sera contre-passée et la marchandise rentrera en stock. Elle gardera son numéro.`)}>Remettre en brouillon</button>}
           {type === 'quote' && doc.status === 'sent' && writable && can('sales.validate') && <>
             <button className="btn" disabled={busy} onClick={() => act('refuse')}>Refusé par le client</button>
             <button className="btn" disabled={busy} onClick={() => act('accept')}>Accepté par le client</button></>}
@@ -112,6 +114,7 @@ export default function SalesDocumentPage() {
       <Alert>{!pay && !rem && !refund && !send && error}</Alert>
       <Alert kind="ok">{notice}</Alert>
       {dirty && <Alert kind="warn">Modifications non enregistrées : enregistrez le brouillon avant de le valider.</Alert>}
+      {doc.status === 'draft' && doc.number && <Alert kind="info">Facture remise en brouillon : corrigez-la puis émettez-la de nouveau. Elle garde son numéro <b>{doc.number}</b>.</Alert>}
       <Chain doc={doc} />
       {doc.related?.filter((r: any) => r.type === 'credit_note' || isCredit).map((r: any) => <Alert key={r.id} kind="info">{relation(doc, r)} <Link href={`/app/ventes/${r.id}`}>{r.number ?? 'brouillon'}</Link>{r.status === 'draft' ? ' (brouillon à émettre)' : ''}.</Alert>)}
       {doc.refundDue > 0 && <Alert kind="warn">Le client a payé <b>{money(doc.refundDue)}</b> de plus que ce qu'il doit après avoir : ce trop-perçu est à lui rembourser.

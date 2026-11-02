@@ -108,7 +108,27 @@ export class AccountingService {
   }
 
   private async already(trx: TenantTrx, sourceType: EntrySource, sourceId: string) {
-    return !!(await trx.selectFrom('journal_entry').select('id').where('source_type', '=', sourceType).where('source_id', '=', sourceId).executeTakeFirst());
+    return !!(await trx.selectFrom('journal_entry').select('id').where('source_type', '=', sourceType).where('source_id', '=', sourceId).where('reversed_by', 'is', null).executeTakeFirst());
+  }
+
+  /**
+   * Contre-passe, à sa propre date, l'écriture automatique d'une opération remise en brouillon.
+   * Refusé si cette date est dans une période clôturée : il faut alors corriger par un avoir.
+   */
+  async reverseSource(trx: TenantTrx, t: TenantInfo, sourceType: EntrySource, sourceId: string, reason: string) {
+    const e = await trx.selectFrom('journal_entry').selectAll().where('source_type', '=', sourceType).where('source_id', '=', sourceId).where('reversed_by', 'is', null).forUpdate().executeTakeFirst();
+    if (!e) return null;
+    const c = await trx.selectFrom('company').select('accounting_locked_until').where('id', '=', t.companyId).executeTakeFirstOrThrow();
+    if (c.accounting_locked_until && e.date <= c.accounting_locked_until) {
+      throw conflict(`L'écriture ${e.number} est datée du ${e.date}, dans la période clôturée jusqu'au ${c.accounting_locked_until} : l'opération ne peut plus être remise en brouillon.`, 'period_locked');
+    }
+    const lines = await trx.selectFrom('journal_line').selectAll().where('entry_id', '=', e.id).orderBy('position').execute();
+    const r = await this.postEntry(trx, t, {
+      journal: e.journal_code, date: e.date, label: `Contre-passation de ${e.number} — ${reason}`, reference: e.number, sourceType: 'reversal', sourceId: e.id, reversalOf: e.id,
+      lines: lines.map((l) => ({ account: l.account_code, contactId: l.contact_id, label: l.label, debit: Number(l.credit), credit: Number(l.debit) })),
+    });
+    await trx.updateTable('journal_entry').set({ reversed_by: r.id }).where('id', '=', e.id).execute();
+    return r;
   }
 
   // ------------------------------------------------------------------ comptabilisation automatique
@@ -194,7 +214,7 @@ export class AccountingService {
 
   /** Opérations validées pas encore comptabilisées (données saisies avant l'activation de la comptabilité). */
   async pending(trx: TenantTrx) {
-    const has = (type: EntrySource) => (eb: any) => eb.not(eb.exists(eb.selectFrom('journal_entry as e').select('e.id').where('e.source_type', '=', type).whereRef('e.source_id', '=', 'x.id')));
+    const has = (type: EntrySource) => (eb: any) => eb.not(eb.exists(eb.selectFrom('journal_entry as e').select('e.id').where('e.source_type', '=', type).where('e.reversed_by', 'is', null).whereRef('e.source_id', '=', 'x.id')));
     const sales = await trx.selectFrom('sales_document as x').select(['x.id', 'x.issue_date as date', 'x.created_at']).where('x.type', 'in', ['invoice', 'credit_note']).where('x.status', '!=', 'draft').where(has('sales_document')).execute();
     const purchases = await trx.selectFrom('purchase_document as x').select(['x.id', 'x.issue_date as date', 'x.created_at']).where('x.type', '=', 'invoice').where('x.status', '!=', 'draft').where(has('purchase_document')).execute();
     const movements = await trx.selectFrom('treasury_movement as x').select(['x.id', 'x.date', 'x.created_at']).where(has('treasury_movement')).execute();

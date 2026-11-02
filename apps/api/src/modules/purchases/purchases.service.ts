@@ -163,6 +163,7 @@ export class PurchasesService {
     return this.db.tenant(t.ctx, async (trx) => {
       const d = await this.doc(trx, id, true);
       if (d.status !== 'draft') throw conflict('Seul un brouillon peut être supprimé.', 'document_locked');
+      if (d.number) throw conflict(`${LABEL[d.type]} ${d.number} a déjà reçu son numéro : elle ne se supprime plus, pour garder une numérotation continue.`, 'document_numbered');
       await trx.deleteFrom('purchase_document').where('id', '=', id).execute();
       await this.audit.tenant(trx, t.ctx, { action: `purchase_${d.type}.deleted`, entityType: 'purchase_document', entityId: id, data: { totalTtc: Number(d.total_ttc) } });
       return { ok: true };
@@ -186,7 +187,7 @@ export class PurchasesService {
       }
       const now = today();
       const issue = d.type === 'order' ? now : d.issue_date;
-      const number = await nextNumber(trx, t.companyId, `purchase_${d.type}`, PREFIX[d.type], Number(now.slice(0, 4)));
+      const number = d.number ?? await nextNumber(trx, t.companyId, `purchase_${d.type}`, PREFIX[d.type], Number(now.slice(0, 4)));
       const supplier = { code: c.code, name: c.name, taxId: c.tax_id, rccm: c.rccm, address: c.address, city: c.city, email: c.email, phone: c.phone };
       await trx.updateTable('purchase_document').set({
         status: d.type === 'order' ? 'sent' : 'to_pay', number, issue_date: issue, supplier: JSON.stringify(supplier), validated_at: new Date(), validated_by: t.ctx.userId,
@@ -195,6 +196,24 @@ export class PurchasesService {
       if (d.type === 'invoice') await this.stock.applyPurchaseInvoice(trx, t, id);
       await this.accounting.postPurchaseDocument(trx, t, id);
       await this.audit.tenant(trx, t.ctx, { action: `purchase_${d.type}.validated`, entityType: 'purchase_document', entityId: id, data: { number, supplier: c.name, supplierRef: d.supplier_ref, totalTtc: Number(d.total_ttc) } });
+    });
+    return this.get(t, id);
+  }
+
+  /**
+   * Remet en brouillon une facture fournisseur sans règlement, pour la corriger : son écriture est contre-passée,
+   * la marchandise ressort du stock (si elle y est encore), et elle garde son numéro interne.
+   */
+  async resetToDraft(t: TenantInfo, id: string) {
+    await this.db.tenant(t.ctx, async (trx) => {
+      const d = await this.doc(trx, id, true);
+      if (d.type !== 'invoice') throw conflict('Seule une facture fournisseur se remet en brouillon.', 'invalid_state');
+      if (d.status === 'draft') throw conflict('Cette facture est déjà en brouillon.', 'already_draft');
+      if (d.status !== 'to_pay' || Number(d.paid_amount) > 0) throw conflict(`La facture ${d.number} a déjà reçu un règlement : elle ne peut plus être remise en brouillon.`, 'invoice_settled');
+      await this.stock.revertSource(trx, t, id, `Annulation de l'achat ${d.number}`);
+      await this.accounting.reverseSource(trx, t, 'purchase_document', id, `facture ${d.number} remise en brouillon`);
+      await trx.updateTable('purchase_document').set({ status: 'draft', validated_at: null, validated_by: null }).where('id', '=', id).execute();
+      await this.audit.tenant(trx, t.ctx, { action: 'purchase_invoice.reset_to_draft', entityType: 'purchase_document', entityId: id, data: { number: d.number, supplierRef: d.supplier_ref, totalTtc: Number(d.total_ttc) } });
     });
     return this.get(t, id);
   }

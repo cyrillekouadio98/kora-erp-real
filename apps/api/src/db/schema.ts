@@ -152,7 +152,7 @@ export interface JournalLineTable {
   company_id: string; id: Generated<string>; entry_id: string; position: number; account_code: string; contact_id: string | null; label: string; debit: NumDefault; credit: NumDefault;
 }
 
-export type StockReason = 'opening' | 'purchase' | 'sale' | 'sale_return' | 'adjustment' | 'receipt' | 'issue' | 'transfer';
+export type StockReason = 'opening' | 'purchase' | 'sale' | 'sale_return' | 'adjustment' | 'receipt' | 'issue' | 'transfer' | 'cancellation';
 export interface StockMovementTable {
   company_id: string; id: Generated<string>; product_id: string; warehouse_id: string; date: DateCol; direction: 'in' | 'out'; quantity: Num; value: Num;
   qty_after: Num; value_after: Num; wh_qty_after: Num; reason: StockReason; source_id: string | null; document_id: string | null; label: string; created_by: string | null; created_at: Generated<Date>;

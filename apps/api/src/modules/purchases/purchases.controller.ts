@@ -75,6 +75,10 @@ export class PurchasesController {
   @Post('documents/:id/validate')
   validate(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.purchases.validate(t, id); }
 
+  @Permission('purchases.validate') @HttpCode(200)
+  @Post('documents/:id/reset-to-draft')
+  resetToDraft(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.purchases.resetToDraft(t, id); }
+
   @Permission('purchases.cancel') @HttpCode(200)
   @Post('documents/:id/cancel')
   cancel(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.purchases.cancelOrder(t, id); }

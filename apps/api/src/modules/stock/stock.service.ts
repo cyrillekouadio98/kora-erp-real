@@ -93,7 +93,7 @@ export class StockService {
     if (m.direction === 'out') {
       if (m.quantity > whQty) throw conflict(`Stock insuffisant pour « ${p.name} » dans « ${w.name} » : ${fmt(whQty)} disponible(s), ${fmt(m.quantity)} demandé(s).`, 'insufficient_stock');
       // La dernière unité emporte la valeur restante : pas de reliquat d'arrondi en stock vide.
-      moveValue = m.quantity === qty ? value : franc(m.quantity * (qty ? value / qty : avg));
+      moveValue = m.quantity === qty ? value : m.value !== undefined ? Math.min(franc(m.value), value) : franc(m.quantity * (qty ? value / qty : avg));
     } else {
       moveValue = franc(m.value ?? m.quantity * (avg || Number(p.purchase_price ?? 0)));
     }
@@ -177,6 +177,32 @@ export class StockService {
     for (const l of lines) {
       await this.move(trx, t, { productId: l.product_id!, warehouseId: w.id, direction: 'in', quantity: Number(l.quantity), value: Number(l.total_ht), date: d.issue_date, reason: 'purchase',
         sourceId: d.id, label: `Achat ${d.number}${d.supplier_ref ? ` (réf. ${d.supplier_ref})` : ''}` });
+    }
+  }
+
+  /**
+   * Facture remise en brouillon : chaque mouvement qu'elle a provoqué est annulé à la même valeur
+   * (la marchandise vendue rentre, la marchandise achetée ressort si elle est encore en stock).
+   */
+  async revertSource(trx: TenantTrx, t: TenantInfo, sourceId: string, label: string) {
+    const moves = await trx.selectFrom('stock_movement as m').innerJoin('product as p', (j) => j.onRef('p.id', '=', 'm.product_id').onRef('p.company_id', '=', 'm.company_id'))
+      .select(['m.product_id', 'm.warehouse_id', 'm.direction', 'm.quantity', 'm.value', 'p.name']).where('m.source_id', '=', sourceId).execute();
+    const net = new Map<string, { productId: string; warehouseId: string; name: string; qty: number; value: number }>();
+    for (const m of moves) {
+      const key = `${m.product_id}|${m.warehouse_id}`;
+      const cur = net.get(key) ?? { productId: m.product_id, warehouseId: m.warehouse_id, name: m.name, qty: 0, value: 0 };
+      const sign = m.direction === 'in' ? 1 : -1;
+      cur.qty = round3(cur.qty + sign * Number(m.quantity));
+      cur.value = franc(cur.value + sign * Number(m.value));
+      net.set(key, cur);
+    }
+    const back = [...net.values()].filter((x) => x.qty !== 0);
+    for (const w of new Set(back.filter((x) => x.qty > 0).map((x) => x.warehouseId))) {
+      const wanted = new Map(back.filter((x) => x.qty > 0 && x.warehouseId === w).map((x) => [x.productId, { name: x.name, qty: x.qty }]));
+      await this.assertAvailable(trx, w, wanted, ' La marchandise de cette facture est déjà sortie du stock : elle ne peut plus être remise en brouillon.');
+    }
+    for (const x of back) {
+      await this.move(trx, t, { productId: x.productId, warehouseId: x.warehouseId, direction: x.qty > 0 ? 'out' : 'in', quantity: Math.abs(x.qty), value: Math.abs(x.value), date: today(), reason: 'cancellation', sourceId, label });
     }
   }
 

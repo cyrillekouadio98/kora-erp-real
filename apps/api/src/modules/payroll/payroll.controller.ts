@@ -153,6 +153,10 @@ export class PayrollController {
   @Post('payroll/runs/:id/validate')
   validate(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.payroll.validate(t, id); }
 
+  @Permission('payroll.validate') @HttpCode(200)
+  @Post('payroll/runs/:id/reset-to-draft')
+  resetToDraft(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.payroll.resetToDraft(t, id); }
+
   /** Paiement des salaires nets depuis un compte de trésorerie. */
   @Permission('payroll.validate') @HttpCode(200)
   @Post('payroll/runs/:id/pay')

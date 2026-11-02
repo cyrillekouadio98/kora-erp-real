@@ -43,13 +43,15 @@ export default function PurchaseDocumentPage() {
         <div><Link href={listHref} className="small">← {isInvoice ? 'Factures fournisseurs' : 'Bons de commande'}</Link>
           <h1>{PURCHASE_LABEL[type]} {doc.number ?? '(brouillon)'} <Pill tone={status[1]}>{status[0]}</Pill></h1></div>
         <div className="row">
-          {doc.status === 'draft' && writable && can('purchases.cancel') && <button className="btn danger" disabled={busy} onClick={() => {
+          {doc.status === 'draft' && !doc.number && writable && can('purchases.cancel') && <button className="btn danger" disabled={busy} onClick={() => {
             if (window.confirm('Supprimer ce brouillon ?')) run(async () => { await api(`/company/purchases/documents/${id}`, { method: 'DELETE' }); router.replace(listHref); });
           }}>Supprimer</button>}
           {doc.status === 'draft' && writable && can('purchases.validate') && <button className="btn primary" disabled={busy || dirty}
             title={dirty ? 'Enregistrez d’abord le brouillon' : undefined}
             onClick={() => act('validate', isInvoice ? 'Valider la facture fournisseur ? Elle sera enregistrée dans vos dettes et ne pourra plus être modifiée.' : 'Valider le bon de commande ? Il recevra son numéro et pourra être envoyé au fournisseur.')}>
             {isInvoice ? 'Valider la facture' : 'Valider le bon de commande'}</button>}
+          {isInvoice && doc.status === 'to_pay' && writable && can('purchases.validate') && <button className="btn" disabled={busy}
+            onClick={() => act('reset-to-draft', `Remettre la facture ${doc.number} en brouillon pour la corriger ? Son écriture comptable sera contre-passée et la marchandise ressortira du stock. Elle gardera son numéro.`)}>Remettre en brouillon</button>}
           {type === 'order' && doc.status === 'sent' && writable && can('purchases.cancel') && <button className="btn" disabled={busy} onClick={() => act('cancel', 'Annuler ce bon de commande ?')}>Annuler la commande</button>}
           {type === 'order' && doc.status === 'sent' && writable && can('purchases.create') && <button className="btn primary" disabled={busy} onClick={() => act('convert')}>Saisir la facture reçue</button>}
           {isOpen && writable && can('cash.create') &&
@@ -59,6 +61,7 @@ export default function PurchaseDocumentPage() {
       </div>
       <Alert>{!pay && error}</Alert>
       {dirty && <Alert kind="warn">Modifications non enregistrées : enregistrez le brouillon avant de le valider.</Alert>}
+      {doc.status === 'draft' && doc.number && <Alert kind="info">Facture remise en brouillon : corrigez-la puis validez-la de nouveau. Elle garde son numéro <b>{doc.number}</b>.</Alert>}
       {doc.related?.map((r: any) => <Alert key={r.id} kind="info">{r.type === 'order' ? 'Établie à partir du bon de commande' : 'Facturé par'} <Link href={`/app/achats/${r.id}`}>{r.number ?? 'brouillon de facture'}</Link>.</Alert>)}
 
       {doc.status === 'draft' && writable && can('purchases.update')

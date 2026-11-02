@@ -100,6 +100,10 @@ export class SalesController {
   validate(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.sales.validate(t, id); }
 
   @Permission('sales.validate') @HttpCode(200)
+  @Post('documents/:id/reset-to-draft')
+  resetToDraft(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.sales.resetToDraft(t, id); }
+
+  @Permission('sales.validate') @HttpCode(200)
   @Post('documents/:id/accept')
   accept(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.sales.decideQuote(t, id, true); }
 
