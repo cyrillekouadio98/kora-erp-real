@@ -32,3 +32,21 @@ export function PaidRows({ payments }: { payments: { id?: string; paidOn: string
   return <>{payments.map((p, i) => (
     <Fragment key={p.id ?? i}><dt>Déjà réglé le {date(p.paidOn)}</dt><dd>− {money(p.amount)}</dd></Fragment>))}</>;
 }
+
+/** Teinte stable tirée d'un texte : même nom, même couleur (initiales, étiquettes). */
+export const hue = (text: string) => [...text].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+
+/** Réduit l'image choisie à une vignette carrée de 320 px (JPEG), centrée. */
+export function shrinkImage(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const side = Math.min(img.width, img.height), size = Math.min(320, side);
+      const canvas = Object.assign(document.createElement('canvas'), { width: size, height: size });
+      canvas.getContext('2d')!.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
+      URL.revokeObjectURL(img.src); resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => reject(new Error('Image illisible : choisissez une photo JPEG, PNG ou WebP.'));
+    img.src = URL.createObjectURL(file);
+  });
+}

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { parseImage } from '../../common/images';
 import { decrypt, encrypt } from '../../common/crypto';
 import { badRequest, conflict, forbidden, notFound } from '../../common/errors';
 import { isUuid } from '../../common/ids';
@@ -138,12 +139,9 @@ export class PayrollService {
     return this.db.tenant(t.ctx, async (trx) => {
       const e = await this.employeeRow(trx, id);
       if (dataUrl) {
-        const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
-        if (!m) throw badRequest('Image non reconnue : utilisez une photo JPEG, PNG ou WebP.', undefined, 'invalid_photo');
-        const data = Buffer.from(m[2], 'base64');
-        if (data.length > 300_000) throw badRequest('Photo trop lourde.', undefined, 'photo_too_large');
-        await trx.insertInto('employee_photo').values({ company_id: t.companyId, employee_id: id, mime: m[1], data })
-          .onConflict((oc) => oc.columns(['company_id', 'employee_id']).doUpdateSet({ mime: m[1], data, updated_at: new Date() })).execute();
+        const { mime, data } = parseImage(dataUrl);
+        await trx.insertInto('employee_photo').values({ company_id: t.companyId, employee_id: id, mime, data })
+          .onConflict((oc) => oc.columns(['company_id', 'employee_id']).doUpdateSet({ mime, data, updated_at: new Date() })).execute();
       } else {
         await trx.deleteFrom('employee_photo').where('employee_id', '=', id).execute();
       }

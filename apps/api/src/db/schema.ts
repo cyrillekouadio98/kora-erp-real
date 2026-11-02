@@ -187,6 +187,7 @@ export interface EmployeeTable {
   created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 export interface EmployeePhotoTable { company_id: string; employee_id: string; mime: string; data: Buffer; updated_at: Generated<Date>; }
+export interface ContactLogoTable { company_id: string; contact_id: string; mime: string; data: Buffer; updated_at: Generated<Date>; }
 export type LeaveType = 'annual' | 'sick' | 'maternity' | 'family_event' | 'unpaid' | 'other';
 export interface LeaveRequestTable {
   company_id: string; id: Generated<string>; employee_id: string; type: LeaveType; start_date: string; end_date: string; days: Num; reason: string | null;
@@ -230,6 +231,6 @@ export interface DB {
   treasury_account: TreasuryAccountTable; treasury_movement: TreasuryMovementTable;
   ledger_account: LedgerAccountTable; journal: JournalTable; journal_entry: JournalEntryTable; journal_line: JournalLineTable;
   stock_movement: StockMovementTable; warehouse: WarehouseTable; stock_level: StockLevelTable; stock_document: StockDocumentTable; stock_document_line: StockDocumentLineTable;
-  employee: EmployeeTable; employee_photo: EmployeePhotoTable; payroll_settings: PayrollSettingsTable; payroll_run: PayrollRunTable; payslip: PayslipTable;
+  employee: EmployeeTable; employee_photo: EmployeePhotoTable; contact_logo: ContactLogoTable; payroll_settings: PayrollSettingsTable; payroll_run: PayrollRunTable; payslip: PayslipTable;
   email_message: EmailMessageTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable; leave_request: LeaveRequestTable;
 }

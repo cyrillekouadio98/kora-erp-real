@@ -4,7 +4,7 @@ import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { CONTRACTS, date, MARITAL, money, PAYMENT_METHODS } from '@/lib/format';
 import { useSession } from '@/components/session';
-import { Alert, Field, Pill, useAction } from '@/components/ui';
+import { Alert, Field, hue, Pill, shrinkImage, useAction } from '@/components/ui';
 
 const EMPTY = {
   firstName: '', lastName: '', jobTitle: '', department: '', hireDate: new Date().toISOString().slice(0, 10), endDate: '', contractType: 'cdi', cnpsNumber: '',
@@ -35,49 +35,30 @@ function SimulatedSlip({ slip }: { slip: any }) {
   );
 }
 
-/** Teinte stable tirée d'un texte : même service, même couleur d'étiquette. */
-const hue = (text: string) => [...text].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
-const initials = (e: any) => `${(e.firstName ?? '')[0] ?? ''}${(e.lastName ?? '')[0] ?? ''}`.toUpperCase();
-
 /** Photo de l'employé, ou ses initiales sur une teinte qui lui est propre. */
 function Avatar({ e, src = e.photo && `/api${e.photo}` }: { e: any; src?: string | null }) {
-  if (src) return <img className="emp-photo" src={src} alt="" loading="lazy" />;
-  return <div className="emp-photo emp-initials" style={{ '--h': hue(e.fullName ?? `${e.firstName} ${e.lastName}`) } as React.CSSProperties} aria-hidden>{initials(e)}</div>;
-}
-
-/** Réduit la photo choisie à une vignette carrée de 320 px (JPEG), centrée. */
-function shrink(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const side = Math.min(img.width, img.height), size = Math.min(320, side);
-      const canvas = Object.assign(document.createElement('canvas'), { width: size, height: size });
-      canvas.getContext('2d')!.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
-      URL.revokeObjectURL(img.src); resolve(canvas.toDataURL('image/jpeg', 0.85));
-    };
-    img.onerror = () => reject(new Error('Image illisible : choisissez une photo JPEG, PNG ou WebP.'));
-    img.src = URL.createObjectURL(file);
-  });
+  if (src) return <img className="vg-photo" src={src} alt="" loading="lazy" />;
+  return <div className="vg-photo vg-initials" style={{ '--h': hue(e.fullName ?? `${e.firstName} ${e.lastName}`) } as React.CSSProperties} aria-hidden>{`${(e.firstName ?? '')[0] ?? ''}${(e.lastName ?? '')[0] ?? ''}`.toUpperCase()}</div>;
 }
 
 /** Vignette d'un employé : photo, poste, contacts, matricule et service. */
 function EmployeeCard({ e, onOpen }: { e: any; onOpen?: () => void }) {
   const body = <>
     <Avatar e={e} />
-    <div className="emp-body">
+    <div className="vg-body">
       <b>{e.fullName}</b>
       <span className="muted">{e.jobTitle ?? 'Poste non renseigné'}</span>
       {e.email && <span className="muted" title={e.email}>✉ {e.email}</span>}
       {e.phone && <span className="muted">☎ {e.phone}</span>}
-      <div className="emp-tags">
-        <span className="emp-badge">{e.number} · {CONTRACTS[e.contractType]}</span>
-        {e.department && <span className="emp-tag" style={{ '--h': hue(e.department) } as React.CSSProperties}>{e.department}</span>}
+      <div className="vg-tags">
+        <span className="vg-badge">{e.number} · {CONTRACTS[e.contractType]}</span>
+        {e.department && <span className="vg-tag" style={{ '--h': hue(e.department) } as React.CSSProperties}>{e.department}</span>}
         {!e.active && <Pill>Sorti le {date(e.endDate)}</Pill>}
         {e.linked && <Pill tone="ok">Espace employé</Pill>}
       </div>
     </div>
   </>;
-  const cls = `emp-card${e.active ? '' : ' left'}`;
+  const cls = `vg-card${e.active ? '' : ' left'}`;
   return onOpen ? <button type="button" className={cls} onClick={onOpen}>{body}</button> : <div className={cls}>{body}</div>;
 }
 
@@ -166,7 +147,7 @@ function Employees() {
         {departments.map(([d, n]) => <button key={d} type="button" aria-pressed={dept === d} onClick={() => setDept(dept === d ? null : d)}><span>{d || 'Sans service'}</span><span>{n}</span></button>)}
       </nav>
       {view === 'cards' ? (
-        <div className="emp-grid">
+        <div className="vg-grid">
           {shown.map((e) => <EmployeeCard key={e.id} e={e} onOpen={editable ? () => open(toForm(e)) : undefined} />)}
           {rows && !shown.length && <p className="muted">Aucun employé.</p>}
         </div>
@@ -176,7 +157,7 @@ function Employees() {
           {shown.map((e) => (
             <tr key={e.id} style={e.active ? undefined : { opacity: 0.6 }}>
               <td style={{ whiteSpace: 'nowrap' }}><code className="k">{e.number}</code></td>
-              <td><div className="row" style={{ flexWrap: 'nowrap' }}><span className="emp-mini"><Avatar e={e} /></span><div><b>{e.fullName}</b>{!e.active && <> <Pill>Sorti le {date(e.endDate)}</Pill></>}{e.linked && <> <Pill tone="ok">Espace employé</Pill></>}<div className="small muted">{[e.jobTitle, e.department].filter(Boolean).join(' · ')}</div></div></div></td>
+              <td><div className="row" style={{ flexWrap: 'nowrap' }}><span className="vg-mini"><Avatar e={e} /></span><div><b>{e.fullName}</b>{!e.active && <> <Pill>Sorti le {date(e.endDate)}</Pill></>}{e.linked && <> <Pill tone="ok">Espace employé</Pill></>}<div className="small muted">{[e.jobTitle, e.department].filter(Boolean).join(' · ')}</div></div></div></td>
               <td>{CONTRACTS[e.contractType]}</td>
               {salaries && <td className="small">{e.category ? catLabel(e.category) : '—'}</td>}
               <td style={{ whiteSpace: 'nowrap' }}>{date(e.hireDate)}</td>
@@ -199,11 +180,11 @@ function Employees() {
           <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); save(); }}>
             <h2>{edit.id ? `${edit.firstName} ${edit.lastName}` : 'Nouvel employé'}</h2>
             <Alert>{error}</Alert>
-            <div className="emp-avatar-edit">
+            <div className="vg-avatar-edit">
               <Avatar e={{ ...edit, fullName: `${edit.firstName} ${edit.lastName}` }} src={photo === undefined ? edit.photo && `/api${edit.photo}` : photo} />
               <div className="row">
                 <label className="btn sm">{edit.photo || photo ? 'Changer la photo' : 'Ajouter une photo'}
-                  <input type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(ev) => { const f = ev.target.files?.[0]; if (f) run(async () => setPhoto(await shrink(f))); ev.target.value = ''; }} /></label>
+                  <input type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(ev) => { const f = ev.target.files?.[0]; if (f) run(async () => setPhoto(await shrinkImage(f))); ev.target.value = ''; }} /></label>
                 {(photo || (edit.photo && photo === undefined)) && <button type="button" className="btn sm" onClick={() => setPhoto(null)}>Retirer</button>}
               </div>
             </div>
