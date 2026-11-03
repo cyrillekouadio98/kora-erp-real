@@ -23,6 +23,7 @@ const EmployeeSchema = z.object({
   category: text(20), targetNet: money.nullable().optional(), extraSalary: money.optional(),
   paymentMethod: z.enum(['cash', 'bank_transfer', 'mobile_money']).optional(), bankDetails: text(80), phone: text(40),
   email: z.string().trim().toLowerCase().email({ message: 'Adresse e-mail invalide' }).nullable().optional().or(z.literal('').transform(() => null)),
+  siteId: z.string().uuid({ message: 'Site invalide' }).optional(),
 }).strict();
 const InputsSchema = z.object({
   overtime: money.optional(), bonus: money.optional(), advanceDeduction: money.optional(), otherDeduction: money.optional(),

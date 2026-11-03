@@ -8,6 +8,7 @@ export interface AuthInfo {
   sessionId: string;
   email: string;
   activeCompanyId: string | null;
+  activeSiteId: string | null;
   mfaEnabled: boolean;
   mfaVerified: boolean;
   platformRoles: string[];
@@ -23,6 +24,10 @@ export interface TenantInfo {
   companyStatus: 'active' | 'suspended' | 'closed';
   subscriptionStatus: SubscriptionStatus | null;
   readOnly: boolean;
+  /** Site choisi dans l'en-tête (null : tous les sites autorisés). */
+  siteId: string | null;
+  /** Sites auxquels l'utilisateur est limité (null : tous). */
+  allowedSiteIds: string[] | null;
 }
 
 export interface KoraRequest extends Request {

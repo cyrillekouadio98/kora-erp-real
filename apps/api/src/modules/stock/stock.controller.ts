@@ -57,7 +57,7 @@ export class StockController {
   createWarehouse(@Tenant() t: TenantInfo, @Body() body: unknown) {
     return this.stock.createWarehouse(t, parse(z.object({
       code: z.string().trim().toUpperCase().regex(/^[A-Z0-9-]{1,12}$/, { message: 'Code : 1 à 12 lettres, chiffres ou tirets' }),
-      name: z.string().trim().min(2, { message: "Indiquez le nom de l'entrepôt" }).max(80), address: text(200),
+      name: z.string().trim().min(2, { message: "Indiquez le nom de l'entrepôt" }).max(80), address: text(200), siteId: z.string().uuid().nullable().optional(),
     }).strict(), body));
   }
 
@@ -66,7 +66,7 @@ export class StockController {
   updateWarehouse(@Tenant() t: TenantInfo, @Param('id') id: string, @Body() body: unknown) {
     return this.stock.updateWarehouse(t, id, parse(z.object({
       name: z.string().trim().min(2, { message: "Indiquez le nom de l'entrepôt" }).max(80).optional(), address: text(200),
-      isDefault: z.literal(true).optional(), archived: z.boolean().optional(),
+      isDefault: z.literal(true).optional(), archived: z.boolean().optional(), siteId: z.string().uuid().optional(),
     }).strict(), body));
   }
 

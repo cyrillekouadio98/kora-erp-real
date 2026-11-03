@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { assertSiteAccess, inScope, NONE, siteScope, workingSite } from '../../common/sites';
 import { badRequest, conflict, forbidden, notFound } from '../../common/errors';
 import { isUuid } from '../../common/ids';
 import { nextNumber } from '../../common/numbering';
@@ -58,9 +59,20 @@ export class StockService {
     return trx.selectFrom('warehouse').selectAll().where('is_default', '=', true).executeTakeFirstOrThrow();
   }
 
-  /** Entrepôt indiqué (actif), ou entrepôt par défaut. */
-  async warehouseFor(trx: TenantTrx, t: TenantInfo, id?: string | null) {
-    if (!id) return this.defaultWarehouse(trx, t);
+  /** Entrepôt d'un site : son entrepôt principal (créé au besoin) ; sans site, l'entrepôt par défaut de l'entreprise. */
+  async siteWarehouse(trx: TenantTrx, t: TenantInfo, siteId: string | null) {
+    if (!siteId) return this.defaultWarehouse(trx, t);
+    const pick = () => trx.selectFrom('warehouse').selectAll().where('site_id', '=', siteId).where('archived_at', 'is', null).orderBy('is_default', 'desc').orderBy('code').limit(1).executeTakeFirst();
+    const w = await pick();
+    if (w) return w;
+    const site = await trx.selectFrom('site').select(['code', 'name']).where('id', '=', siteId).executeTakeFirstOrThrow();
+    await trx.insertInto('warehouse').values({ company_id: t.companyId, site_id: siteId, code: `${site.code.replace(/[^A-Z0-9-]/g, '').slice(0, 8) || 'SITE'}-DP`, name: `Dépôt ${site.name}` }).onConflict((oc) => oc.doNothing()).execute();
+    return (await pick()) ?? this.defaultWarehouse(trx, t);
+  }
+
+  /** Entrepôt indiqué (actif), ou entrepôt du site (le site de l'opération, sinon le site choisi). */
+  async warehouseFor(trx: TenantTrx, t: TenantInfo, id?: string | null, siteId?: string | null) {
+    if (!id) return this.siteWarehouse(trx, t, siteId ?? workingSite(t));
     if (!isUuid(id)) throw badRequest('Entrepôt introuvable.', undefined, 'unknown_warehouse');
     const w = await trx.selectFrom('warehouse').selectAll().where('id', '=', id).executeTakeFirst();
     if (!w) throw badRequest('Entrepôt introuvable.', undefined, 'unknown_warehouse');
@@ -144,13 +156,13 @@ export class StockService {
 
   /** Facture de vente : sortie de l'entrepôt choisi ; avoir avec retour : rentrée au coût moyen. Contrôle global avant tout mouvement. */
   async applySalesDocument(trx: TenantTrx, t: TenantInfo, documentId: string) {
-    const d = await trx.selectFrom('sales_document').select(['id', 'type', 'number', 'issue_date', 'restock', 'warehouse_id', 'source_invoice_id']).where('id', '=', documentId).executeTakeFirstOrThrow();
+    const d = await trx.selectFrom('sales_document').select(['id', 'type', 'number', 'issue_date', 'restock', 'warehouse_id', 'source_invoice_id', 'site_id']).where('id', '=', documentId).executeTakeFirstOrThrow();
     if (d.type === 'quote' || d.type === 'order' || (d.type === 'credit_note' && !d.restock)) return;
     let warehouseId = d.warehouse_id;
     if (!warehouseId && d.type === 'credit_note' && d.source_invoice_id) {
       warehouseId = (await trx.selectFrom('sales_document').select('warehouse_id').where('id', '=', d.source_invoice_id).executeTakeFirst())?.warehouse_id ?? null;
     }
-    const w = await this.warehouseFor(trx, t, warehouseId);
+    const w = await this.warehouseFor(trx, t, warehouseId, d.site_id);
     const lines = await trx.selectFrom('sales_document_line as l').innerJoin('product as p', (j) => j.onRef('p.id', '=', 'l.product_id').onRef('p.company_id', '=', 'l.company_id'))
       .select(['l.product_id', 'l.quantity', 'p.name']).where('l.document_id', '=', documentId).where('p.track_stock', '=', true).execute();
     const byProduct = new Map<string, { name: string; qty: number }>();
@@ -169,9 +181,9 @@ export class StockService {
 
   /** Facture fournisseur : entrée dans l'entrepôt choisi au prix d'achat net (remise déduite) de chaque ligne. */
   async applyPurchaseInvoice(trx: TenantTrx, t: TenantInfo, documentId: string) {
-    const d = await trx.selectFrom('purchase_document').select(['id', 'type', 'number', 'issue_date', 'supplier_ref', 'warehouse_id']).where('id', '=', documentId).executeTakeFirstOrThrow();
+    const d = await trx.selectFrom('purchase_document').select(['id', 'type', 'number', 'issue_date', 'supplier_ref', 'warehouse_id', 'site_id']).where('id', '=', documentId).executeTakeFirstOrThrow();
     if (d.type !== 'invoice') return;
-    const w = await this.warehouseFor(trx, t, d.warehouse_id);
+    const w = await this.warehouseFor(trx, t, d.warehouse_id, d.site_id);
     const lines = await trx.selectFrom('purchase_document_line as l').innerJoin('product as p', (j) => j.onRef('p.id', '=', 'l.product_id').onRef('p.company_id', '=', 'l.company_id'))
       .select(['l.product_id', 'l.quantity', 'l.total_ht']).where('l.document_id', '=', documentId).where('p.track_stock', '=', true).execute();
     for (const l of lines) {
@@ -211,15 +223,20 @@ export class StockService {
   private async committed(trx: TenantTrx, side: 'sales' | 'purchase', defaultId: string) {
     const rows = side === 'sales'
       ? await trx.selectFrom('sales_document_line as l').innerJoin('sales_document as d', (j) => j.onRef('d.id', '=', 'l.document_id').onRef('d.company_id', '=', 'l.company_id'))
-        .select(['l.product_id', 'd.warehouse_id', (eb) => eb.fn.sum<string>('l.quantity').as('qty')])
-        .where('d.type', '=', 'order').where('d.status', '=', 'confirmed').where('l.product_id', 'is not', null).groupBy(['l.product_id', 'd.warehouse_id']).execute()
+        .select(['l.product_id', 'd.warehouse_id', 'd.site_id', (eb) => eb.fn.sum<string>('l.quantity').as('qty')])
+        .where('d.type', '=', 'order').where('d.status', '=', 'confirmed').where('l.product_id', 'is not', null).groupBy(['l.product_id', 'd.warehouse_id', 'd.site_id']).execute()
       : await trx.selectFrom('purchase_document_line as l').innerJoin('purchase_document as d', (j) => j.onRef('d.id', '=', 'l.document_id').onRef('d.company_id', '=', 'l.company_id'))
-        .select(['l.product_id', 'd.warehouse_id', (eb) => eb.fn.sum<string>('l.quantity').as('qty')])
-        .where('d.type', '=', 'order').where('d.status', '=', 'sent').where('l.product_id', 'is not', null).groupBy(['l.product_id', 'd.warehouse_id']).execute();
+        .select(['l.product_id', 'd.warehouse_id', 'd.site_id', (eb) => eb.fn.sum<string>('l.quantity').as('qty')])
+        .where('d.type', '=', 'order').where('d.status', '=', 'sent').where('l.product_id', 'is not', null).groupBy(['l.product_id', 'd.warehouse_id', 'd.site_id']).execute();
+    // Commande sans entrepôt : l'entrepôt principal de son site.
+    const main = new Map<string, string>();
+    for (const w of await trx.selectFrom('warehouse').select(['id', 'site_id']).where('archived_at', 'is', null).orderBy('is_default', 'desc').orderBy('code').execute()) {
+      if (!main.has(w.site_id)) main.set(w.site_id, w.id);
+    }
     const out = new Map<string, Map<string, number>>();
     for (const r of rows) {
       const byWh = out.get(r.product_id!) ?? new Map<string, number>();
-      const wh = r.warehouse_id ?? defaultId;
+      const wh = r.warehouse_id ?? main.get(r.site_id) ?? defaultId;
       byWh.set(wh, round3((byWh.get(wh) ?? 0) + Number(r.qty)));
       out.set(r.product_id!, byWh);
     }
@@ -233,22 +250,26 @@ export class StockService {
   async overview(t: TenantInfo, warehouseId?: string) {
     return this.db.tenant(t.ctx, async (trx) => {
       const def = await this.defaultWarehouse(trx, t);
-      const warehouses = await trx.selectFrom('warehouse').select(['id', 'code', 'name', 'is_default as isDefault']).where('archived_at', 'is', null).orderBy('is_default', 'desc').orderBy('code').execute();
+      const warehouses = await inScope(trx.selectFrom('warehouse').select(['id', 'code', 'name', 'is_default as isDefault', 'site_id as siteId']).where('archived_at', 'is', null), t, 'site_id')
+        .orderBy('is_default', 'desc').orderBy('code').execute();
       if (warehouseId && !warehouses.some((w) => w.id === warehouseId)) throw notFound('Entrepôt');
+      // Entrepôts comptés : celui demandé, sinon ceux du site affiché ; null = toute l'entreprise.
+      const whSet = warehouseId ? [warehouseId] : siteScope(t) ? warehouses.map((w) => w.id) : null;
+      const inSet = (id: string) => !whSet || whSet.includes(id);
       const rows = await trx.selectFrom('product').select(['id', 'code', 'name', 'unit', 'stock_qty', 'stock_value', 'avg_cost', 'min_stock', 'sale_price', 'purchase_price', 'vat_rate'])
         .where('track_stock', '=', true).where('archived_at', 'is', null).orderBy('name').execute();
       const levels = await trx.selectFrom('stock_level').select(['product_id', 'warehouse_id', 'quantity']).where('quantity', '>', '0').execute();
       const last = await trx.selectFrom('stock_movement').select(['product_id', (eb) => eb.fn.max('date').as('date')])
-        .$if(!!warehouseId, (q) => q.where('warehouse_id', '=', warehouseId!)).groupBy('product_id').execute();
+        .$if(!!whSet, (q) => q.where('warehouse_id', 'in', whSet!.length ? whSet! : [def.id])).groupBy('product_id').execute();
       const reserved = await this.committed(trx, 'sales', def.id);
       const incoming = await this.committed(trx, 'purchase', def.id);
-      const pick = (m: Map<string, number> | undefined) => (m ? (warehouseId ? m.get(warehouseId) ?? 0 : [...m.values()].reduce((s, v) => s + v, 0)) : 0);
+      const pick = (m: Map<string, number> | undefined) => (m ? [...m.entries()].filter(([w]) => inSet(w)).reduce((s, [, v]) => s + v, 0) : 0);
 
       const items = rows.map((p) => {
         const total = Number(p.stock_qty), avg = Number(p.avg_cost), min = num(p.min_stock);
-        const byWarehouse = levels.filter((l) => l.product_id === p.id).map((l) => ({ warehouseId: l.warehouse_id, quantity: Number(l.quantity) }));
-        const quantity = warehouseId ? byWarehouse.find((l) => l.warehouseId === warehouseId)?.quantity ?? 0 : total;
-        const value = warehouseId ? (quantity === total ? Number(p.stock_value) : franc(quantity * avg)) : Number(p.stock_value);
+        const byWarehouse = levels.filter((l) => l.product_id === p.id && inSet(l.warehouse_id)).map((l) => ({ warehouseId: l.warehouse_id, quantity: Number(l.quantity) }));
+        const quantity = whSet ? round3(byWarehouse.reduce((s, l) => s + l.quantity, 0)) : total;
+        const value = whSet ? (quantity === total ? Number(p.stock_value) : franc(quantity * avg)) : Number(p.stock_value);
         const res = round3(pick(reserved.get(p.id))), inc = round3(pick(incoming.get(p.id)));
         const available = round3(quantity - res), forecast = round3(available + inc);
         const toOrder = min !== null && forecast <= min;
@@ -263,8 +284,8 @@ export class StockService {
 
       const since = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
       const flows = await trx.selectFrom('stock_movement').select(['direction', (eb) => eb.fn.sum<string>('value').as('v')])
-        .where('date', '>=', since).where('reason', '!=', 'transfer').$if(!!warehouseId, (q) => q.where('warehouse_id', '=', warehouseId!)).groupBy('direction').execute();
-      const drafts = await trx.selectFrom('stock_document').select((eb) => eb.fn.countAll<string>().as('n')).where('status', '=', 'draft').executeTakeFirst();
+        .where('date', '>=', since).where('reason', '!=', 'transfer').$if(!!whSet, (q) => q.where('warehouse_id', 'in', whSet!.length ? whSet! : [def.id])).groupBy('direction').execute();
+      const drafts = await inScope(trx.selectFrom('stock_document').select((eb) => eb.fn.countAll<string>().as('n')).where('status', '=', 'draft'), t, 'site_id').executeTakeFirst();
       return {
         warehouses, items, totalValue: round2(items.reduce((s, i) => s + i.value, 0)),
         outOfStock: items.filter((i) => i.alert === 'out').length, lowStock: items.filter((i) => i.alert === 'low').length, toOrder: items.filter((i) => i.toOrder).length,
@@ -281,9 +302,9 @@ export class StockService {
       if (!isUuid(productId)) throw notFound('Article');
       const p = await trx.selectFrom('product').select(['id', 'code', 'name', 'unit', 'stock_qty', 'stock_value', 'avg_cost', 'min_stock', 'track_stock']).where('id', '=', productId).executeTakeFirst();
       if (!p) throw notFound('Article');
-      const rows = await this.movementQuery(trx).where('m.product_id', '=', productId).orderBy('m.date', 'desc').orderBy('m.created_at', 'desc').limit(1000).execute();
-      const levels = await trx.selectFrom('stock_level as l').innerJoin('warehouse as w', (j) => j.onRef('w.id', '=', 'l.warehouse_id').onRef('w.company_id', '=', 'l.company_id'))
-        .select(['w.id', 'w.code', 'w.name', 'l.quantity']).where('l.product_id', '=', productId).where('l.quantity', '>', '0').orderBy('w.code').execute();
+      const rows = await this.movementQuery(trx, t).where('m.product_id', '=', productId).orderBy('m.date', 'desc').orderBy('m.created_at', 'desc').limit(1000).execute();
+      const levels = await inScope(trx.selectFrom('stock_level as l').innerJoin('warehouse as w', (j) => j.onRef('w.id', '=', 'l.warehouse_id').onRef('w.company_id', '=', 'l.company_id'))
+        .select(['w.id', 'w.code', 'w.name', 'l.quantity']).where('l.product_id', '=', productId).where('l.quantity', '>', '0'), t, 'w.site_id').orderBy('w.code').execute();
       return {
         product: { ...p, stock_qty: Number(p.stock_qty), stock_value: Number(p.stock_value), avg_cost: round2(Number(p.avg_cost)), min_stock: num(p.min_stock) },
         byWarehouse: levels.map((l) => ({ ...l, quantity: Number(l.quantity) })),
@@ -292,21 +313,21 @@ export class StockService {
     });
   }
 
-  private movementQuery(trx: TenantTrx) {
-    return trx.selectFrom('stock_movement as m')
+  private movementQuery(trx: TenantTrx, t: TenantInfo) {
+    return inScope(trx.selectFrom('stock_movement as m')
       .innerJoin('product as p', (j) => j.onRef('p.id', '=', 'm.product_id').onRef('p.company_id', '=', 'm.company_id'))
       .innerJoin('warehouse as w', (j) => j.onRef('w.id', '=', 'm.warehouse_id').onRef('w.company_id', '=', 'm.company_id'))
       .leftJoin('stock_document as d', (j) => j.onRef('d.id', '=', 'm.document_id').onRef('d.company_id', '=', 'm.company_id'))
       .leftJoin('user_account as u', 'u.id', 'm.created_by')
       .select(['m.id', 'm.date', 'm.direction', 'm.quantity', 'm.value', 'm.qty_after as qtyAfter', 'm.value_after as valueAfter', 'm.wh_qty_after as whQtyAfter',
         'm.reason', 'm.source_id as sourceId', 'm.document_id as documentId', 'd.number as documentNumber', 'm.label', 'u.full_name as by',
-        'p.id as productId', 'p.code as productCode', 'p.name as productName', 'p.unit', 'w.code as warehouseCode', 'w.name as warehouseName']);
+        'p.id as productId', 'p.code as productCode', 'p.name as productName', 'p.unit', 'w.code as warehouseCode', 'w.name as warehouseName']), t, 'w.site_id');
   }
 
   /** Journal des mouvements de stock, tous articles, filtrable par période, entrepôt, nature et article. */
   async journal(t: TenantInfo, f: { from?: string; to?: string; warehouseId?: string; reason?: StockReason; productId?: string; q?: string }) {
     return this.db.tenant(t.ctx, async (trx) => {
-      let q = this.movementQuery(trx).orderBy('m.date', 'desc').orderBy('m.created_at', 'desc').limit(2000);
+      let q = this.movementQuery(trx, t).orderBy('m.date', 'desc').orderBy('m.created_at', 'desc').limit(2000);
       if (f.from) q = q.where('m.date', '>=', f.from);
       if (f.to) q = q.where('m.date', '<=', f.to);
       if (f.warehouseId) q = q.where('m.warehouse_id', '=', f.warehouseId);
@@ -358,7 +379,9 @@ export class StockService {
         cur.qty = Number(m.qty_after); cur.value = Number(m.value_after); cur.wh.set(m.warehouse_id, Number(m.wh_qty_after));
         byProduct.set(m.product_id, cur);
       }
-      const warehouses = await trx.selectFrom('warehouse').select(['id', 'code', 'name', 'archived_at']).orderBy('is_default', 'desc').orderBy('code').execute();
+      const warehouses = await inScope(trx.selectFrom('warehouse').select(['id', 'code', 'name', 'archived_at']), t, 'site_id').orderBy('is_default', 'desc').orderBy('code').execute();
+      // Entrepôts comptés : celui demandé, sinon ceux du site affiché ; null = toute l'entreprise.
+      const whSet = warehouseId ? [warehouseId] : siteScope(t) ? warehouses.map((w) => w.id) : null;
       const products = byProduct.size
         ? await trx.selectFrom('product').select(['id', 'code', 'name', 'unit']).where('id', 'in', [...byProduct.keys()]).orderBy('name').execute() : [];
       const whValue = new Map<string, number>();
@@ -366,8 +389,8 @@ export class StockService {
         const s = byProduct.get(p.id)!;
         const avg = s.qty ? s.value / s.qty : 0;
         for (const [wh, q] of s.wh) whValue.set(wh, (whValue.get(wh) ?? 0) + (q === s.qty ? s.value : q * avg));
-        const quantity = warehouseId ? s.wh.get(warehouseId) ?? 0 : s.qty;
-        return { id: p.id, code: p.code, name: p.name, unit: p.unit, quantity, avgCost: round2(avg), value: warehouseId ? (quantity === s.qty ? s.value : franc(quantity * avg)) : s.value };
+        const quantity = whSet ? round3(whSet.reduce((sum, w) => sum + (s.wh.get(w) ?? 0), 0)) : s.qty;
+        return { id: p.id, code: p.code, name: p.name, unit: p.unit, quantity, avgCost: round2(avg), value: whSet ? (quantity === s.qty ? s.value : franc(quantity * avg)) : s.value };
       }).filter((i) => i.quantity > 0);
       const stockValue = await this.valueAt(trx, date);
       const ledger = await this.ledgerStock(trx, date);
@@ -458,31 +481,35 @@ export class StockService {
   async warehouses(t: TenantInfo) {
     return this.db.tenant(t.ctx, async (trx) => {
       await this.defaultWarehouse(trx, t);
-      const rows = await trx.selectFrom('warehouse').selectAll().orderBy('archived_at', 'desc').orderBy('is_default', 'desc').orderBy('code').execute();
+      const rows = await trx.selectFrom('warehouse as w').innerJoin('site as s', (j) => j.onRef('s.id', '=', 'w.site_id').onRef('s.company_id', '=', 'w.company_id'))
+        .selectAll('w').select(['s.name as site_name', 's.code as site_code']).orderBy('w.archived_at', 'desc').orderBy('w.is_default', 'desc').orderBy('w.code').execute();
       const stock = await trx.selectFrom('stock_level as l').innerJoin('product as p', (j) => j.onRef('p.id', '=', 'l.product_id').onRef('p.company_id', '=', 'l.company_id'))
         .select(['l.warehouse_id', 'l.quantity', 'p.stock_qty', 'p.stock_value', 'p.avg_cost']).where('l.quantity', '>', '0').execute();
       return rows.map((w) => {
         const mine = stock.filter((s) => s.warehouse_id === w.id);
         return {
           id: w.id, code: w.code, name: w.name, address: w.address, isDefault: w.is_default, archived: !!w.archived_at, products: mine.length,
+          siteId: w.site_id, siteName: w.site_name, siteCode: w.site_code,
           value: franc(mine.reduce((s, l) => s + (Number(l.quantity) === Number(l.stock_qty) ? Number(l.stock_value) : Number(l.quantity) * Number(l.avg_cost)), 0)),
         };
       });
     });
   }
 
-  async createWarehouse(t: TenantInfo, input: { code: string; name: string; address?: string | null }) {
+  async createWarehouse(t: TenantInfo, input: { code: string; name: string; address?: string | null; siteId?: string | null }) {
+    const siteId = input.siteId ?? workingSite(t);
+    assertSiteAccess(t, siteId);
     return this.db.tenant(t.ctx, async (trx) => {
       await this.defaultWarehouse(trx, t);
       const code = input.code.toUpperCase();
       if (await trx.selectFrom('warehouse').select('id').where('code', '=', code).executeTakeFirst()) throw conflict(`Le code ${code} est déjà utilisé.`, 'duplicate_code');
-      const w = await trx.insertInto('warehouse').values({ company_id: t.companyId, code, name: input.name, address: input.address ?? null }).returning(['id']).executeTakeFirstOrThrow();
+      const w = await trx.insertInto('warehouse').values({ company_id: t.companyId, code, name: input.name, address: input.address ?? null, ...(siteId ? { site_id: siteId } : {}) }).returning(['id']).executeTakeFirstOrThrow();
       await this.audit.tenant(trx, t.ctx, { action: 'warehouse.created', entityType: 'warehouse', entityId: w.id, data: { code, name: input.name } });
       return w;
     });
   }
 
-  async updateWarehouse(t: TenantInfo, id: string, input: { name?: string; address?: string | null; isDefault?: boolean; archived?: boolean }) {
+  async updateWarehouse(t: TenantInfo, id: string, input: { name?: string; address?: string | null; isDefault?: boolean; archived?: boolean; siteId?: string }) {
     return this.db.tenant(t.ctx, async (trx) => {
       if (!isUuid(id)) throw notFound('Entrepôt');
       const w = await trx.selectFrom('warehouse').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
@@ -490,6 +517,12 @@ export class StockService {
       const patch: Record<string, unknown> = {};
       if (input.name !== undefined) patch.name = input.name;
       if (input.address !== undefined) patch.address = input.address;
+      if (input.siteId && input.siteId !== w.site_id) {
+        // Rattacher l'entrepôt à un autre site : les documents déjà passés gardent leur site.
+        assertSiteAccess(t, w.site_id); assertSiteAccess(t, input.siteId);
+        if (!(await trx.selectFrom('site').select('id').where('id', '=', input.siteId).where('archived_at', 'is', null).executeTakeFirst())) throw badRequest('Site introuvable ou archivé.', undefined, 'unknown_site');
+        patch.site_id = input.siteId;
+      }
       if (input.archived !== undefined && input.archived !== !!w.archived_at) {
         if (input.archived) {
           if (w.is_default || input.isDefault) throw conflict("L'entrepôt par défaut ne peut pas être archivé : choisissez d'abord un autre entrepôt par défaut.", 'default_warehouse');
@@ -529,8 +562,12 @@ export class StockService {
         .select(['d.id', 'd.type', 'd.status', 'd.number', 'd.date', 'd.reason', 'd.reference', 'd.total_value as totalValue', 'w.name as warehouse', 'w2.name as destWarehouse', 'c.name as contactName',
           (eb) => eb.selectFrom('stock_document_line as l').select((e) => e.fn.countAll<string>().as('n')).whereRef('l.document_id', '=', 'd.id').as('lines'),
           (eb) => eb.selectFrom('stock_document_line as l').select((e) => e.fn.countAll<string>().as('n')).whereRef('l.document_id', '=', 'd.id').where('l.quantity', 'is not', null).as('counted')])
+        .select(['d.site_id as siteId', 'w.site_id as fromSiteId', 'w2.site_id as toSiteId'])
         .where('d.type', 'in', f.types).orderBy('d.created_at', 'desc').limit(1000);
       if (f.status) q = q.where('d.status', '=', f.status);
+      // Un site voit ses bons et les transferts qu'il reçoit.
+      const scope = siteScope(t);
+      if (scope) q = q.where((eb) => eb.or([eb('d.site_id', 'in', scope.length ? scope : [NONE]), eb('w2.site_id', 'in', scope.length ? scope : [NONE])]));
       return (await q.execute()).map((r) => ({ ...r, totalValue: Number(r.totalValue), lines: Number(r.lines), counted: Number(r.counted) }));
     });
   }
@@ -587,8 +624,9 @@ export class StockService {
       account = input.treasuryAccountId;
     }
     if (input.date && input.date > today()) throw badRequest('La date ne peut pas être dans le futur.', undefined, 'future_date');
+    assertSiteAccess(t, w.site_id);
     return {
-      warehouse_id: w.id, dest_warehouse_id: dest, reason, contact_id: input.contactId ?? null, treasury_account_id: account,
+      site_id: w.site_id, warehouse_id: w.id, dest_warehouse_id: dest, reason, contact_id: input.contactId ?? null, treasury_account_id: account,
       ...(input.date ? { date: input.date } : {}), ...(input.reference !== undefined ? { reference: input.reference } : {}), ...(input.notes !== undefined ? { notes: input.notes } : {}),
     };
   }

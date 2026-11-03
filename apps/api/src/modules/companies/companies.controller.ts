@@ -35,10 +35,15 @@ export class CompaniesController {
   @Permission(null) @AllowWhenReadOnly()
   @Get('company/context')
   async context(@Tenant() t: TenantInfo) {
-    const company = await this.db.tenant(t.ctx, (trx) => trx.selectFrom('company').select(['id', 'name', 'logo_key', 'currency', 'country_code', 'status']).where('id', '=', t.companyId).executeTakeFirstOrThrow());
+    const { company, sites } = await this.db.tenant(t.ctx, async (trx) => ({
+      company: await trx.selectFrom('company').select(['id', 'name', 'logo_key', 'currency', 'country_code', 'status']).where('id', '=', t.companyId).executeTakeFirstOrThrow(),
+      sites: await trx.selectFrom('site').select(['id', 'code', 'name', 'is_default as isDefault']).where('archived_at', 'is', null).orderBy('is_default', 'desc').orderBy('code').execute(),
+    }));
     return {
       company, membershipId: t.membershipId, isOwner: t.isOwner, permissions: [...t.permissions].sort(),
       entitlements: t.entitlements, subscriptionStatus: t.subscriptionStatus, readOnly: t.readOnly,
+      // Sites proposés dans l'en-tête : ceux permis à l'utilisateur ; site affiché (null : tous).
+      sites: t.allowedSiteIds ? sites.filter((s) => t.allowedSiteIds!.includes(s.id)) : sites, siteId: t.siteId, siteRestricted: !!t.allowedSiteIds,
     };
   }
 

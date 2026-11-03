@@ -124,7 +124,7 @@ export class AuthService {
       const m = await trx.selectFrom('company_membership').select(['id', 'valid_until']).where('company_id', '=', companyId)
         .where('user_id', '=', auth.userId).where('status', '=', 'active').executeTakeFirst();
       if (!m || (m.valid_until && m.valid_until < new Date().toISOString().slice(0, 10))) throw notFound('Entreprise');
-      await trx.updateTable('user_session').set({ active_company_id: companyId }).where('id', '=', auth.sessionId).execute();
+      await trx.updateTable('user_session').set({ active_company_id: companyId, active_site_id: null }).where('id', '=', auth.sessionId).execute();
     });
     await this.db.tenant({ companyId, userId: auth.userId, actorType: 'user', ip }, (t) =>
       this.audit.tenant(t, { companyId, userId: auth.userId, actorType: 'user', ip }, { action: 'session.company_selected' }));

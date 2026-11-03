@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { assertSiteAccess, inScope, workingSite } from '../../common/sites';
 import { parseImage } from '../../common/images';
 import { decrypt, encrypt } from '../../common/crypto';
 import { badRequest, conflict, forbidden, notFound } from '../../common/errors';
@@ -18,6 +19,7 @@ export interface EmployeeInput {
   baseSalary?: number; housingAllowance?: number; transportAllowance?: number; otherAllowances?: number;
   category?: string | null; targetNet?: number | null; extraSalary?: number;
   paymentMethod?: 'cash' | 'bank_transfer' | 'mobile_money'; bankDetails?: string | null; phone?: string | null; email?: string | null;
+  siteId?: string;
 }
 export interface PayslipInputs { overtime: number; bonus: number; absenceDays: number; advanceDeduction: number; otherDeduction: number }
 const NO_INPUTS: PayslipInputs = { overtime: 0, bonus: 0, absenceDays: 0, advanceDeduction: 0, otherDeduction: 0 };
@@ -27,7 +29,7 @@ const COLUMNS: Record<string, string> = {
   contractType: 'contract_type', cnpsNumber: 'cnps_number', maritalStatus: 'marital_status', children: 'children', partsOverride: 'parts_override',
   baseSalary: 'base_salary', housingAllowance: 'housing_allowance', transportAllowance: 'transport_allowance', otherAllowances: 'other_allowances',
   category: 'category', targetNet: 'target_net', extraSalary: 'extra_salary',
-  paymentMethod: 'payment_method', phone: 'phone', email: 'email',
+  paymentMethod: 'payment_method', phone: 'phone', email: 'email', siteId: 'site_id',
 };
 const SALARY_FIELDS = ['baseSalary', 'housingAllowance', 'transportAllowance', 'otherAllowances', 'targetNet', 'extraSalary'];
 const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
@@ -82,7 +84,7 @@ export class PayrollService {
       id: e.id, number: e.number, firstName: e.first_name, lastName: e.last_name, fullName: `${e.first_name} ${e.last_name}`, jobTitle: e.job_title, department: e.department,
       hireDate: e.hire_date, endDate: e.end_date, contractType: e.contract_type, cnpsNumber: e.cnps_number, maritalStatus: e.marital_status, children: e.children,
       partsOverride: e.parts_override === null ? null : Number(e.parts_override), parts, category: e.category, paymentMethod: e.payment_method, phone: e.phone, email: e.email,
-      active: !e.end_date || e.end_date >= today(), linked: !!e.user_id,
+      active: !e.end_date || e.end_date >= today(), linked: !!e.user_id, siteId: e.site_id,
       photo: photo ? `/company/employees/${e.id}/photo?v=${new Date(photo).getTime()}` : null,
       ...(salaries ? { baseSalary: Number(e.base_salary), extraSalary: Number(e.extra_salary), targetNet: e.target_net === null ? null : Number(e.target_net),
         housingAllowance: Number(e.housing_allowance), transportAllowance: Number(e.transport_allowance), otherAllowances: Number(e.other_allowances) } : {}),
@@ -98,6 +100,13 @@ export class PayrollService {
     }
   }
 
+  /** Site d'affectation : un site actif de l'entreprise. */
+  private async assertSite(trx: TenantTrx, siteId: string | undefined) {
+    if (siteId && !(await trx.selectFrom('site').select('id').where('id', '=', siteId).where('archived_at', 'is', null).executeTakeFirst())) {
+      throw badRequest('Site introuvable ou archivé.', undefined, 'unknown_site');
+    }
+  }
+
   private columns(input: Partial<EmployeeInput>) {
     const out: Record<string, unknown> = {};
     for (const [k, col] of Object.entries(COLUMNS)) if ((input as any)[k] !== undefined) out[col] = (input as any)[k];
@@ -110,6 +119,7 @@ export class PayrollService {
       let q = trx.selectFrom('employee').selectAll('employee')
         .leftJoin('employee_photo as ph', (j) => j.onRef('ph.employee_id', '=', 'employee.id').onRef('ph.company_id', '=', 'employee.company_id'))
         .select('ph.updated_at as photo_at').orderBy('last_name').orderBy('first_name');
+      q = inScope(q, t, 'employee.site_id');
       if (!f.includeLeft) q = q.where((eb) => eb.or([eb('end_date', 'is', null), eb('end_date', '>=', today())]));
       if (f.q) {
         const like = `%${f.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
@@ -152,7 +162,10 @@ export class PayrollService {
 
   async createEmployee(t: TenantInfo, input: EmployeeInput) {
     this.assertFieldRights(t, input);
+    input = { ...input, siteId: input.siteId ?? workingSite(t) ?? undefined };
+    assertSiteAccess(t, input.siteId);
     return this.db.tenant(t.ctx, async (trx) => {
+      await this.assertSite(trx, input.siteId);
       const number = await nextNumber(trx, t.companyId, 'employee', 'EMP');
       const e = await trx.insertInto('employee').values({ ...this.columns(input), number, company_id: t.companyId, created_by: t.ctx.userId } as any)
         .returningAll().executeTakeFirstOrThrow();
@@ -163,8 +176,10 @@ export class PayrollService {
 
   async updateEmployee(t: TenantInfo, id: string, input: Partial<EmployeeInput>) {
     this.assertFieldRights(t, input);
+    assertSiteAccess(t, input.siteId);
     return this.db.tenant(t.ctx, async (trx) => {
       const before = await this.employeeRow(trx, id);
+      await this.assertSite(trx, input.siteId);
       const patch = this.columns(input);
       if (input.endDate !== undefined && input.endDate && input.endDate < (input.hireDate ?? before.hire_date)) throw badRequest("La date de sortie précède la date d'embauche.", undefined, 'end_before_hire');
       const after = Object.keys(patch).length ? await trx.updateTable('employee').set(patch).where('id', '=', id).returningAll().executeTakeFirstOrThrow() : before;
@@ -248,7 +263,13 @@ export class PayrollService {
     });
   }
 
+  /** La paie couvre toute l'entreprise : un utilisateur limité à certains sites ne la prépare ni ne la valide. */
+  private assertWholeCompany(t: TenantInfo) {
+    if (t.allowedSiteIds) throw forbidden("La paie se prépare pour toute l'entreprise : elle demande un accès à tous les sites.", 'site_restricted');
+  }
+
   async createRun(t: TenantInfo, period: string) {
+    this.assertWholeCompany(t);
     if (period > today().slice(0, 7)) throw badRequest('On ne prépare pas la paie d’un mois futur.', undefined, 'future_period');
     const id = await this.db.tenant(t.ctx, async (trx) => {
       if (await trx.selectFrom('payroll_run').select('id').where('period', '=', period).executeTakeFirst()) throw conflict(`La paie de ${periodLabel(period)} existe déjà.`, 'run_exists');
@@ -340,6 +361,7 @@ export class PayrollService {
    */
   async validate(t: TenantInfo, runId: string) {
     this.assertSalaries(t);
+    this.assertWholeCompany(t);
     const run = await this.getRun(t, runId);
     if (run.status !== 'draft') throw conflict('Cette paie est déjà validée.', 'run_validated');
     await this.db.tenant(t.ctx, async (trx) => {

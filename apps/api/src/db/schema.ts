@@ -15,6 +15,7 @@ export interface PlatformRoleAssignmentTable { user_id: string; role: string; gr
 export interface UserSessionTable {
   id: Generated<string>; user_id: string; token_hash: string; active_company_id: string | null; mfa_verified: Generated<boolean>;
   ip: string | null; user_agent: string | null; created_at: Generated<Date>; last_seen_at: Generated<Date>; expires_at: Ts; revoked_at: TsNullable;
+  active_site_id: string | null;
 }
 export interface CompanyTable {
   id: string; name: string; legal_form: string | null; rccm: string | null; tax_id: string | null; tax_regime: string | null;
@@ -24,7 +25,7 @@ export interface CompanyTable {
 }
 export interface CompanyMembershipTable {
   company_id: string; id: Generated<string>; user_id: string; status: Generated<'active' | 'disabled'>; valid_until: ColumnType<string | null, string | null | undefined, string | null>;
-  is_owner: Generated<boolean>; created_at: Generated<Date>; updated_at: Generated<Date>;
+  is_owner: Generated<boolean>; site_ids: string[] | null; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 export interface RoleTable {
   company_id: string; id: Generated<string>; key: string; name: string; description: string | null; is_system: Generated<boolean>;
@@ -34,6 +35,7 @@ export interface MembershipRoleTable { company_id: string; membership_id: string
 export interface InvitationTable {
   company_id: string; id: Generated<string>; email: string; role_ids: string[]; token_hash: string; invited_by: string;
   expires_at: Ts; accepted_at: TsNullable; revoked_at: TsNullable; created_at: Generated<Date>; employee_id: Generated<string | null>;
+  site_ids: string[] | null;
 }
 export interface PlanTable { id: Generated<string>; code: string; name: string; is_public: Generated<boolean>; sort_order: Generated<number>; created_at: Generated<Date>; }
 export interface PlanVersionTable {
@@ -95,7 +97,7 @@ export type SalesDocType = 'quote' | 'order' | 'invoice' | 'credit_note';
 export type SalesDocStatus = 'draft' | 'sent' | 'accepted' | 'refused' | 'ordered' | 'invoiced' | 'confirmed' | 'cancelled' | 'issued' | 'partially_paid' | 'paid' | 'credited';
 type NumDefault = ColumnType<string, number | string | undefined, number | string>;
 export interface SalesDocumentTable {
-  company_id: string; id: Generated<string>; type: SalesDocType; status: Generated<SalesDocStatus>; number: string | null; contact_id: string;
+  company_id: string; site_id: Generated<string>; id: Generated<string>; type: SalesDocType; status: Generated<SalesDocStatus>; number: string | null; contact_id: string;
   customer: JsonDefault<Record<string, unknown>>; issue_date: DateCol; due_date: DateNullable; valid_until: DateNullable; currency: Generated<string>; notes: string | null;
   total_ht: NumDefault; total_vat: NumDefault; total_ttc: NumDefault; paid_amount: NumDefault; credited_amount: NumDefault; refunded_amount: NumDefault; restock: Generated<boolean>; source_quote_id: string | null; source_invoice_id: string | null;
   source_order_id: string | null; delivery_date: DateNullable; customer_ref: string | null; warehouse_id: string | null;
@@ -120,7 +122,7 @@ export interface SalesReminderTable {
 export type PurchaseDocType = 'order' | 'invoice';
 export type PurchaseDocStatus = 'draft' | 'sent' | 'cancelled' | 'invoiced' | 'to_pay' | 'partially_paid' | 'paid';
 export interface PurchaseDocumentTable {
-  company_id: string; id: Generated<string>; type: PurchaseDocType; status: Generated<PurchaseDocStatus>; number: string | null; contact_id: string;
+  company_id: string; site_id: Generated<string>; id: Generated<string>; type: PurchaseDocType; status: Generated<PurchaseDocStatus>; number: string | null; contact_id: string;
   supplier: JsonDefault<Record<string, unknown>>; supplier_ref: string | null; issue_date: DateCol; due_date: DateNullable; expected_date: DateNullable;
   currency: Generated<string>; notes: string | null; total_ht: NumDefault; total_vat: NumDefault; total_ttc: NumDefault; paid_amount: NumDefault;
   source_order_id: string | null; warehouse_id: string | null; validated_at: TsNullable; validated_by: string | null; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
@@ -130,7 +132,7 @@ export type PurchasePaymentTable = SalesPaymentTable;
 
 export type TreasuryKind = 'cash' | 'bank' | 'mobile_money';
 export interface TreasuryAccountTable {
-  company_id: string; id: Generated<string>; kind: TreasuryKind; name: string; bank_name: string | null; account_number: string | null; ledger_code: string;
+  company_id: string; site_id: Generated<string>; id: Generated<string>; kind: TreasuryKind; name: string; bank_name: string | null; account_number: string | null; ledger_code: string;
   opening_balance: NumDefault; opening_date: ColumnType<string, string | undefined, string>; archived_at: TsNullable; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 export type MovementSource = 'sales_payment' | 'purchase_payment' | 'sales_refund' | 'payroll' | 'expense' | 'income' | 'transfer' | 'cash_count' | 'stock_purchase' | 'reversal';
@@ -144,7 +146,7 @@ export interface LedgerAccountTable { company_id: string; code: string; name: st
 export interface JournalTable { company_id: string; code: string; name: string; }
 export type EntrySource = 'manual' | 'sales_document' | 'purchase_document' | 'treasury_movement' | 'treasury_opening' | 'stock_opening' | 'stock_variation' | 'payroll_run' | 'year_closing' | 'reversal';
 export interface JournalEntryTable {
-  company_id: string; id: Generated<string>; journal_code: string; number: string | null; date: string; label: string; reference: string | null;
+  company_id: string; site_id: string | null; id: Generated<string>; journal_code: string; number: string | null; date: string; label: string; reference: string | null;
   status: Generated<'draft' | 'posted'>; source_type: EntrySource; source_id: string | null; reversal_of: string | null; reversed_by: string | null;
   created_by: string | null; posted_by: string | null; posted_at: TsNullable; created_at: Generated<Date>;
 }
@@ -158,13 +160,13 @@ export interface StockMovementTable {
   qty_after: Num; value_after: Num; wh_qty_after: Num; reason: StockReason; source_id: string | null; document_id: string | null; label: string; created_by: string | null; created_at: Generated<Date>;
 }
 export interface WarehouseTable {
-  company_id: string; id: Generated<string>; code: string; name: string; address: string | null; is_default: Generated<boolean>;
+  company_id: string; site_id: Generated<string>; id: Generated<string>; code: string; name: string; address: string | null; is_default: Generated<boolean>;
   archived_at: TsNullable; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 export interface StockLevelTable { company_id: string; product_id: string; warehouse_id: string; quantity: NumDefault; }
 export type StockDocType = 'receipt' | 'issue' | 'transfer' | 'inventory';
 export interface StockDocumentTable {
-  company_id: string; id: Generated<string>; type: StockDocType; status: Generated<'draft' | 'done'>; number: string | null; date: DateCol;
+  company_id: string; site_id: Generated<string>; id: Generated<string>; type: StockDocType; status: Generated<'draft' | 'done'>; number: string | null; date: DateCol;
   warehouse_id: string; dest_warehouse_id: string | null; reason: string; contact_id: string | null; treasury_account_id: string | null; treasury_movement_id: string | null;
   reference: string | null; notes: string | null; total_value: NumDefault; validated_at: TsNullable; validated_by: string | null; created_by: string | null;
   created_at: Generated<Date>; updated_at: Generated<Date>;
@@ -177,7 +179,7 @@ export interface StockDocumentLineTable {
 
 type NumNullable = ColumnType<string | null, number | string | null | undefined, number | string | null>;
 export interface EmployeeTable {
-  company_id: string; id: Generated<string>; number: string; first_name: string; last_name: string; job_title: string | null; department: string | null;
+  company_id: string; site_id: Generated<string>; id: Generated<string>; number: string; first_name: string; last_name: string; job_title: string | null; department: string | null;
   hire_date: string; end_date: DateNullable; contract_type: Generated<'cdi' | 'cdd' | 'stage' | 'journalier'>; cnps_number: string | null;
   marital_status: Generated<'single' | 'married' | 'divorced' | 'widowed'>; children: Generated<number>; parts_override: NumNullable;
   base_salary: NumDefault; housing_allowance: NumDefault; transport_allowance: NumDefault; other_allowances: NumDefault;
@@ -187,6 +189,10 @@ export interface EmployeeTable {
   created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 export interface EmployeePhotoTable { company_id: string; employee_id: string; mime: string; data: Buffer; updated_at: Generated<Date>; }
+export interface SiteTable {
+  company_id: string; id: Generated<string>; code: string; name: string; address: string | null; city: string | null; phone: string | null;
+  is_default: Generated<boolean>; archived_at: TsNullable; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
 export interface ContactLogoTable { company_id: string; contact_id: string; mime: string; data: Buffer; updated_at: Generated<Date>; }
 export type LeaveType = 'annual' | 'sick' | 'maternity' | 'family_event' | 'unpaid' | 'other';
 export interface LeaveRequestTable {
@@ -231,6 +237,6 @@ export interface DB {
   treasury_account: TreasuryAccountTable; treasury_movement: TreasuryMovementTable;
   ledger_account: LedgerAccountTable; journal: JournalTable; journal_entry: JournalEntryTable; journal_line: JournalLineTable;
   stock_movement: StockMovementTable; warehouse: WarehouseTable; stock_level: StockLevelTable; stock_document: StockDocumentTable; stock_document_line: StockDocumentLineTable;
-  employee: EmployeeTable; employee_photo: EmployeePhotoTable; contact_logo: ContactLogoTable; payroll_settings: PayrollSettingsTable; payroll_run: PayrollRunTable; payslip: PayslipTable;
+  employee: EmployeeTable; employee_photo: EmployeePhotoTable; contact_logo: ContactLogoTable; site: SiteTable; payroll_settings: PayrollSettingsTable; payroll_run: PayrollRunTable; payslip: PayslipTable;
   email_message: EmailMessageTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable; leave_request: LeaveRequestTable;
 }

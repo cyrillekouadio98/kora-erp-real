@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { assertSiteAccess, inScope, workingSite } from '../../common/sites';
 import { config } from '../../config';
 import { randomToken, safeEqual, sha256 } from '../../common/crypto';
 import { badRequest, conflict, notFound } from '../../common/errors';
@@ -96,8 +97,10 @@ export class SalesService {
         .select(['d.id', 'd.type', 'd.status', 'd.number', 'd.issue_date as issueDate', 'd.due_date as dueDate', 'd.valid_until as validUntil',
           'd.total_ht as totalHt', 'd.total_vat as totalVat', 'd.total_ttc as totalTtc', 'd.paid_amount as paidAmount', 'd.credited_amount as creditedAmount', 'd.refunded_amount as refundedAmount', 'd.currency',
           'd.delivery_date as deliveryDate', 'd.customer_ref as customerRef',
-          'c.id as contactId', 'c.name as contactName', 'c.code as contactCode'])
+          'c.id as contactId', 'c.name as contactName', 'c.code as contactCode', 'd.site_id as siteId',
+          (eb) => eb.selectFrom('site as s').select('s.name').whereRef('s.id', '=', 'd.site_id').whereRef('s.company_id', '=', 'd.company_id').as('siteName')])
         .where('d.type', '=', f.type).orderBy('d.created_at', 'desc').limit(1000);
+      q = inScope(q, t, 'd.site_id');
       if (f.status) q = q.where('d.status', '=', f.status as any);
       if (f.q) {
         const like = `%${f.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
@@ -148,6 +151,7 @@ export class SalesService {
     }, {})).sort((a, b) => b.rate - a.rate);
     return {
       id: d.id, type: d.type, status: d.status, number: d.number, issueDate: d.issue_date, dueDate: d.due_date, validUntil: d.valid_until,
+      siteId: d.site_id, siteName: (await trx.selectFrom('site').select('name').where('id', '=', d.site_id).executeTakeFirst())?.name ?? null,
       currency: d.currency, notes: d.notes, restock: d.restock, validatedAt: d.validated_at, sourceQuoteId: d.source_quote_id, sourceOrderId: d.source_order_id,
       deliveryDate: d.delivery_date, customerRef: d.customer_ref, warehouseId: d.warehouse_id,
       customer: d.status === 'draft' ? contact : { ...contact, ...(d.customer as object) }, contact,
@@ -162,6 +166,17 @@ export class SalesService {
     };
   }
 
+  /** Site et entrepôt d'un nouveau document : ceux de l'entrepôt choisi, sinon le site affiché (le site principal à défaut). */
+  private async placement(trx: TenantTrx, t: TenantInfo, warehouseId?: string | null) {
+    if (warehouseId) {
+      const w = await this.stock.warehouseFor(trx, t, warehouseId);
+      assertSiteAccess(t, w.site_id);
+      return { warehouse_id: w.id, site_id: w.site_id };
+    }
+    const site = workingSite(t);
+    return { warehouse_id: null, ...(site ? { site_id: site } : {}) };
+  }
+
   async create(t: TenantInfo, type: SalesDocType, input: DocInput) {
     const id = await this.db.tenant(t.ctx, async (trx) => {
       await this.customer(trx, input.contactId);
@@ -169,7 +184,7 @@ export class SalesService {
         company_id: t.companyId, type, contact_id: input.contactId, issue_date: input.issueDate ?? today(), due_date: type === 'invoice' ? input.dueDate ?? null : null,
         valid_until: type === 'quote' ? input.validUntil ?? null : null, notes: input.notes ?? null, number: null, source_quote_id: null, validated_by: null, created_by: t.ctx.userId,
         ...(type === 'order' ? { delivery_date: input.deliveryDate ?? null, customer_ref: input.customerRef ?? null } : {}),
-        warehouse_id: input.warehouseId ? (await this.stock.warehouseFor(trx, t, input.warehouseId)).id : null,
+        ...(await this.placement(trx, t, input.warehouseId)),
       }).returning('id').executeTakeFirstOrThrow();
       const totals = await this.writeLines(trx, t, d.id, input.lines);
       await trx.updateTable('sales_document').set({ total_ht: totals.ht, total_vat: totals.vat, total_ttc: totals.ttc }).where('id', '=', d.id).execute();
@@ -194,7 +209,11 @@ export class SalesService {
       if (d.type === 'order' && input.deliveryDate !== undefined) patch.delivery_date = input.deliveryDate;
       if (d.type === 'order' && input.customerRef !== undefined) patch.customer_ref = input.customerRef;
       if (d.type === 'credit_note' && input.restock !== undefined) patch.restock = input.restock;
-      if (input.warehouseId !== undefined) patch.warehouse_id = input.warehouseId ? (await this.stock.warehouseFor(trx, t, input.warehouseId)).id : null;
+      if (input.warehouseId !== undefined) {
+        const w = input.warehouseId ? await this.stock.warehouseFor(trx, t, input.warehouseId) : null;
+        if (w && w.site_id !== d.site_id) throw badRequest("Cet entrepôt appartient à un autre site que le document.", undefined, 'warehouse_other_site');
+        patch.warehouse_id = w?.id ?? null;
+      }
       if (input.lines) {
         const totals = await this.writeLines(trx, t, id, input.lines);
         Object.assign(patch, { total_ht: totals.ht, total_vat: totals.vat, total_ttc: totals.ttc });
@@ -285,7 +304,7 @@ export class SalesService {
   private async copyAs(trx: TenantTrx, t: TenantInfo, src: SalesDocumentRow, type: 'order' | 'invoice', links: { source_quote_id: string | null; source_order_id?: string | null }) {
     await this.customer(trx, src.contact_id);
     const doc = await trx.insertInto('sales_document').values({
-      company_id: t.companyId, type, contact_id: src.contact_id, issue_date: today(), notes: src.notes, warehouse_id: src.warehouse_id, ...links,
+      company_id: t.companyId, type, contact_id: src.contact_id, issue_date: today(), notes: src.notes, warehouse_id: src.warehouse_id, site_id: src.site_id, ...links,
       total_ht: src.total_ht, total_vat: src.total_vat, total_ttc: src.total_ttc, number: null, due_date: null, valid_until: null, validated_by: null, created_by: t.ctx.userId,
       ...(type === 'order' ? { delivery_date: null, customer_ref: null } : {}),
     }).returning('id').executeTakeFirstOrThrow();
@@ -355,7 +374,7 @@ export class SalesService {
       if (p.amount > remaining) throw badRequest(`Le montant dépasse le reste à payer (${remaining.toLocaleString('fr-FR')} FCFA).`, undefined, 'amount_too_high');
       const paidOn = p.paidOn ?? today();
       if (paidOn > today()) throw badRequest("La date d'encaissement ne peut pas être dans le futur.", undefined, 'future_date');
-      const account = await this.treasury.resolveAccount(trx, p.accountId, p.method);
+      const account = await this.treasury.resolveAccount(trx, p.accountId, p.method, d.site_id);
       const pay = await trx.insertInto('sales_payment').values({ company_id: t.companyId, document_id: id, amount: p.amount, paid_on: paidOn, method: p.method, reference: p.reference ?? null, created_by: t.ctx.userId })
         .returning('id').executeTakeFirstOrThrow();
       await this.treasury.record(trx, t, { accountId: account.id, date: paidOn, direction: 'in', amount: p.amount, category: 'customer_payment', label: `Encaissement ${d.number}`,
@@ -375,7 +394,7 @@ export class SalesService {
       const { refundDue } = balance(d);
       if (refundDue <= 0) throw conflict(`La facture ${d.number} n'a pas de trop-perçu à rembourser.`, 'nothing_to_refund');
       if (r.amount > refundDue) throw badRequest(`Le remboursement dépasse le trop-perçu (${refundDue.toLocaleString('fr-FR')} FCFA).`, undefined, 'amount_too_high');
-      const account = await this.treasury.resolveAccount(trx, r.accountId, r.method);
+      const account = await this.treasury.resolveAccount(trx, r.accountId, r.method, d.site_id);
       await this.treasury.record(trx, t, { accountId: account.id, date: r.paidOn ?? today(), direction: 'out', amount: r.amount, category: 'customer_refund',
         label: `Remboursement du trop-perçu ${d.number}`, contactId: d.contact_id, sourceType: 'sales_refund', sourceId: d.id, reference: r.reference });
       await trx.updateTable('sales_document').set({ refunded_amount: Number(d.refunded_amount) + r.amount }).where('id', '=', id).execute();
@@ -404,7 +423,7 @@ export class SalesService {
       const pending = await trx.selectFrom('sales_document').select('id').where('source_invoice_id', '=', inv.id).where('status', '=', 'draft').executeTakeFirst();
       if (pending) return pending.id;
       const cn = await trx.insertInto('sales_document').values({
-        company_id: t.companyId, type: 'credit_note', contact_id: inv.contact_id, issue_date: today(), source_invoice_id: inv.id, notes: `Avoir sur la facture ${inv.number}`,
+        company_id: t.companyId, type: 'credit_note', contact_id: inv.contact_id, issue_date: today(), source_invoice_id: inv.id, notes: `Avoir sur la facture ${inv.number}`, site_id: inv.site_id,
         total_ht: inv.total_ht, total_vat: inv.total_vat, total_ttc: inv.total_ttc, number: null, due_date: null, valid_until: null, source_quote_id: null, validated_by: null, created_by: t.ctx.userId,
       }).returning('id').executeTakeFirstOrThrow();
       const lines = await trx.selectFrom('sales_document_line').selectAll().where('document_id', '=', inv.id).orderBy('position').execute();
@@ -516,7 +535,7 @@ export class SalesService {
           eb.selectFrom('sales_reminder as r').whereRef('r.document_id', '=', 'd.id').select(eb.fn.countAll<string>().as('n')).as('reminderCount'),
           eb.selectFrom('sales_reminder as r').whereRef('r.document_id', '=', 'd.id').select((e) => e.fn.max('r.created_at').as('m')).as('lastReminderAt'),
           eb.selectFrom('sales_reminder as r').whereRef('r.document_id', '=', 'd.id').where('r.promised_on', 'is not', null).orderBy('r.created_at', 'desc').limit(1).select('r.promised_on').as('promisedOn')])
-        .where('d.type', '=', 'invoice').where('d.status', 'in', OPEN_INVOICE).orderBy('d.due_date').execute();
+        .where('d.type', '=', 'invoice').where('d.status', 'in', OPEN_INVOICE).$call((q) => inScope(q, t, 'd.site_id')).orderBy('d.due_date').execute();
       const invoices = rows.map((r) => {
         const daysLate = r.due_date ? Math.floor((Date.parse(now) - Date.parse(r.due_date)) / 86400_000) : 0;
         return {

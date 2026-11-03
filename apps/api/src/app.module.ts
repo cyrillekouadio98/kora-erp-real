@@ -37,6 +37,7 @@ import { LeaveService } from './modules/leave/leave.service';
 import { DashboardController } from './modules/dashboard/dashboard.controller';
 import { DashboardService } from './modules/dashboard/dashboard.service';
 import { ContactsController } from './modules/contacts/contacts.controller';
+import { SitesController } from './modules/sites/sites.controller';
 import { CompaniesController } from './modules/companies/companies.controller';
 import { ProvisioningService } from './modules/companies/provisioning.service';
 import { ExportController } from './modules/exports/export.controller';
@@ -54,7 +55,7 @@ import { PlatformSupportController, SupportAccessController } from './modules/su
   controllers: [
     HealthController, AuthController, CompaniesController, MembersController, RolesController, BillingController, WebhooksController,
     DevController, AuditController, SupportAccessController, PlatformSupportController, PlatformController, ExportController,
-    ContactsController, ProductsController, SalesController, PurchasesController, TreasuryController, AccountingController, StockController, PayrollController, PublicDocumentsController, EmailsController, LeaveController, DashboardController,
+    ContactsController, ProductsController, SalesController, PurchasesController, TreasuryController, AccountingController, StockController, PayrollController, PublicDocumentsController, EmailsController, LeaveController, DashboardController, SitesController,
   ],
   providers: [
     AuditService, SessionService, AuthService, ProvisioningService, EntitlementService, QuotaService, BillingService, BillingScheduler, SalesService, PurchasesService, TreasuryService, AccountingService, FinancialService, StockService, PayrollService, PayrollInsightsService, MailService, LeaveService, DashboardService,

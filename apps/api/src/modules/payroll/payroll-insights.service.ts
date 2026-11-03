@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { inScope } from '../../common/sites';
 import { randomUUID } from 'node:crypto';
 import { forbidden, notFound } from '../../common/errors';
 import { isUuid } from '../../common/ids';
@@ -48,8 +49,8 @@ export class PayrollInsightsService {
     if (!t.permissions.has('payroll.salaries')) throw forbidden('Consulter les salaires demande la permission « voir les salaires et bulletins ».', 'salaries_forbidden');
   }
 
-  private employeeRows(trx: TenantTrx) {
-    return trx.selectFrom('employee').selectAll().orderBy('last_name').orderBy('first_name').execute();
+  private employeeRows(trx: TenantTrx, t: TenantInfo) {
+    return inScope(trx.selectFrom('employee').selectAll(), t, 'site_id').orderBy('last_name').orderBy('first_name').execute();
   }
 
   /** En cours, à venir, se termine bientôt (30 jours) ou terminé. */
@@ -79,7 +80,7 @@ export class PayrollInsightsService {
     return this.db.tenant(t.ctx, async (trx) => {
       const p = await this.payroll.params(trx);
       const salaries = t.permissions.has('payroll.salaries');
-      return (await this.employeeRows(trx)).map((e) => ({
+      return (await this.employeeRows(trx, t)).map((e) => ({
         id: e.id, number: e.number, name: `${e.first_name} ${e.last_name}`, jobTitle: e.job_title, department: e.department, category: e.category,
         contractType: e.contract_type, hireDate: e.hire_date, endDate: e.end_date, status: this.contractStatus(e), warnings: this.warnings(t, e, p),
         ...(salaries ? { monthlySalary: Number(e.base_salary) + Number(e.extra_salary) + Number(e.housing_allowance) + Number(e.transport_allowance) + Number(e.other_allowances) } : {}),
@@ -92,7 +93,7 @@ export class PayrollInsightsService {
     this.assertSalaries(t);
     return this.db.tenant(t.ctx, async (trx) => {
       const p = await this.payroll.params(trx);
-      const employees = await this.employeeRows(trx);
+      const employees = await this.employeeRows(trx, t);
       const now = today(), month = now.slice(0, 7);
       const runs = await trx.selectFrom('payroll_run').select(['id', 'period', 'status']).orderBy('period', 'desc').execute();
       const slips = await trx.selectFrom('payslip').select(['run_id', 'employee_id', 'gross', 'net', 'employer_cost', 'paid_at']).execute();
@@ -192,7 +193,7 @@ export class PayrollInsightsService {
   async workEntries(t: TenantInfo, period: string) {
     return this.db.tenant(t.ctx, async (trx) => {
       const start = `${period}-01`, end = monthEnd(period);
-      const employees = (await this.employeeRows(trx)).filter((e) => e.hire_date <= end && (!e.end_date || e.end_date >= start));
+      const employees = (await this.employeeRows(trx, t)).filter((e) => e.hire_date <= end && (!e.end_date || e.end_date >= start));
       const leaves = await trx.selectFrom('leave_request').select(['employee_id', 'type', 'start_date', 'end_date']).where('status', '=', 'approved')
         .where('start_date', '<=', end).where('end_date', '>=', start).execute();
       const run = await trx.selectFrom('payroll_run').select(['id', 'status']).where('period', '=', period).executeTakeFirst();

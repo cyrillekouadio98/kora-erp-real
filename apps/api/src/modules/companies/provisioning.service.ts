@@ -43,6 +43,9 @@ export class ProvisioningService {
     }).returning('id').executeTakeFirstOrThrow();
     await t.insertInto('subscription_event').values({ subscription_id: sub.id, company_id: companyId, type: 'trial_started', to_status: 'trialing', from_status: null, data: JSON.stringify({ trial_days: plan.trial_days }) }).execute();
 
+    // Site principal : entrepôts, caisses et employés s'y rattachent tant qu'il n'y a qu'un site.
+    await t.insertInto('site').values({ company_id: companyId, code: 'S01', name: 'Site principal', city: input.city ?? null, is_default: true }).execute();
+
     // Plan comptable SYSCOHADA, journaux, puis trois comptes de trésorerie avec leur sous-compte comptable.
     await sql`select seed_accounting(${companyId}::uuid), seed_accounting_extra(${companyId}::uuid)`.execute(t);
     const treasury = [

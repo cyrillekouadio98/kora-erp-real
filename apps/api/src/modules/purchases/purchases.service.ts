@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { assertSiteAccess, inScope, workingSite } from '../../common/sites';
 import { badRequest, conflict, notFound } from '../../common/errors';
 import { isUuid } from '../../common/ids';
 import { nextNumber } from '../../common/numbering';
@@ -69,8 +70,9 @@ export class PurchasesService {
     return this.db.tenant(t.ctx, async (trx) => {
       let q = trx.selectFrom('purchase_document as d').innerJoin('contact as c', (j) => j.onRef('c.id', '=', 'd.contact_id').onRef('c.company_id', '=', 'd.company_id'))
         .select(['d.id', 'd.type', 'd.status', 'd.number', 'd.supplier_ref as supplierRef', 'd.issue_date as issueDate', 'd.due_date as dueDate', 'd.expected_date as expectedDate',
-          'd.total_ht as totalHt', 'd.total_vat as totalVat', 'd.total_ttc as totalTtc', 'd.paid_amount as paidAmount', 'd.currency', 'c.id as contactId', 'c.name as contactName', 'c.code as contactCode'])
+          'd.total_ht as totalHt', 'd.total_vat as totalVat', 'd.total_ttc as totalTtc', 'd.paid_amount as paidAmount', 'd.currency', 'c.id as contactId', 'c.name as contactName', 'c.code as contactCode', 'd.site_id as siteId'])
         .where('d.type', '=', f.type).orderBy('d.created_at', 'desc').limit(1000);
+      q = inScope(q, t, 'd.site_id');
       if (f.status) q = q.where('d.status', '=', f.status as PurchaseDocStatus);
       if (f.q) {
         const like = `%${f.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
@@ -107,6 +109,7 @@ export class PurchasesService {
       return {
         id: d.id, type: d.type, status: d.status, number: d.number, supplierRef: d.supplier_ref, issueDate: d.issue_date, dueDate: d.due_date, expectedDate: d.expected_date,
         currency: d.currency, notes: d.notes, validatedAt: d.validated_at, sourceOrderId: d.source_order_id, warehouseId: d.warehouse_id,
+        siteId: d.site_id, siteName: (await trx.selectFrom('site').select('name').where('id', '=', d.site_id).executeTakeFirst())?.name ?? null,
         supplier: d.status === 'draft' ? contact : { ...contact, ...(d.supplier as object) }, contact,
         totalHt: Number(d.total_ht), totalVat: Number(d.total_vat), totalTtc: Number(d.total_ttc), paidAmount: Number(d.paid_amount),
         remaining: d.type === 'invoice' && d.status !== 'draft' ? remainingOf(d) : 0, vatBreakdown, related,
@@ -117,6 +120,17 @@ export class PurchasesService {
     });
   }
 
+  /** Site et entrepôt d'un nouveau document : ceux de l'entrepôt choisi, sinon le site affiché (le site principal à défaut). */
+  private async placement(trx: TenantTrx, t: TenantInfo, warehouseId?: string | null) {
+    if (warehouseId) {
+      const w = await this.stock.warehouseFor(trx, t, warehouseId);
+      assertSiteAccess(t, w.site_id);
+      return { warehouse_id: w.id, site_id: w.site_id };
+    }
+    const site = workingSite(t);
+    return { warehouse_id: null, ...(site ? { site_id: site } : {}) };
+  }
+
   async create(t: TenantInfo, type: PurchaseDocType, input: PurchaseInput) {
     if (input.issueDate && input.issueDate > today()) throw badRequest('La date du document ne peut pas être dans le futur.', undefined, 'future_date');
     const id = await this.db.tenant(t.ctx, async (trx) => {
@@ -125,7 +139,7 @@ export class PurchasesService {
         company_id: t.companyId, type, contact_id: input.contactId, issue_date: input.issueDate ?? today(), notes: input.notes ?? null, number: null,
         supplier_ref: type === 'invoice' ? input.supplierRef ?? null : null, due_date: type === 'invoice' ? input.dueDate ?? null : null,
         expected_date: type === 'order' ? input.expectedDate ?? null : null, source_order_id: null, validated_by: null, created_by: t.ctx.userId,
-        warehouse_id: input.warehouseId ? (await this.stock.warehouseFor(trx, t, input.warehouseId)).id : null,
+        ...(await this.placement(trx, t, input.warehouseId)),
       }).returning('id').executeTakeFirstOrThrow();
       const totals = await this.writeLines(trx, t, d.id, input.lines);
       await trx.updateTable('purchase_document').set({ total_ht: totals.ht, total_vat: totals.vat, total_ttc: totals.ttc }).where('id', '=', d.id).execute();
@@ -148,7 +162,11 @@ export class PurchasesService {
       if (d.type === 'invoice' && input.supplierRef !== undefined) patch.supplier_ref = input.supplierRef;
       if (d.type === 'invoice' && input.dueDate !== undefined) patch.due_date = input.dueDate;
       if (d.type === 'order' && input.expectedDate !== undefined) patch.expected_date = input.expectedDate;
-      if (input.warehouseId !== undefined) patch.warehouse_id = input.warehouseId ? (await this.stock.warehouseFor(trx, t, input.warehouseId)).id : null;
+      if (input.warehouseId !== undefined) {
+        const w = input.warehouseId ? await this.stock.warehouseFor(trx, t, input.warehouseId) : null;
+        if (w && w.site_id !== d.site_id) throw badRequest("Cet entrepôt appartient à un autre site que le document.", undefined, 'warehouse_other_site');
+        patch.warehouse_id = w?.id ?? null;
+      }
       if (input.lines) {
         const totals = await this.writeLines(trx, t, id, input.lines);
         Object.assign(patch, { total_ht: totals.ht, total_vat: totals.vat, total_ttc: totals.ttc });
@@ -235,7 +253,7 @@ export class PurchasesService {
       if (o.type !== 'order' || o.status !== 'sent') throw conflict('Seul un bon de commande envoyé peut être facturé.', 'invalid_state');
       await this.supplier(trx, o.contact_id);
       const inv = await trx.insertInto('purchase_document').values({
-        company_id: t.companyId, type: 'invoice', contact_id: o.contact_id, issue_date: today(), notes: o.notes, source_order_id: o.id, warehouse_id: o.warehouse_id,
+        company_id: t.companyId, type: 'invoice', contact_id: o.contact_id, issue_date: today(), notes: o.notes, source_order_id: o.id, warehouse_id: o.warehouse_id, site_id: o.site_id,
         total_ht: o.total_ht, total_vat: o.total_vat, total_ttc: o.total_ttc, number: null, supplier_ref: null, due_date: null, expected_date: null, validated_by: null, created_by: t.ctx.userId,
       }).returning('id').executeTakeFirstOrThrow();
       const lines = await trx.selectFrom('purchase_document_line').selectAll().where('document_id', '=', o.id).orderBy('position').execute();
@@ -255,7 +273,7 @@ export class PurchasesService {
       if (p.amount > remaining) throw badRequest(`Le montant dépasse le reste à payer (${remaining.toLocaleString('fr-FR')} FCFA).`, undefined, 'amount_too_high');
       const paidOn = p.paidOn ?? today();
       if (paidOn > today()) throw badRequest('La date du règlement ne peut pas être dans le futur.', undefined, 'future_date');
-      const account = await this.treasury.resolveAccount(trx, p.accountId, p.method);
+      const account = await this.treasury.resolveAccount(trx, p.accountId, p.method, d.site_id);
       const pay = await trx.insertInto('purchase_payment').values({ company_id: t.companyId, document_id: id, amount: p.amount, paid_on: paidOn, method: p.method, reference: p.reference ?? null, created_by: t.ctx.userId })
         .returning('id').executeTakeFirstOrThrow();
       await this.treasury.record(trx, t, { accountId: account.id, date: paidOn, direction: 'out', amount: p.amount, category: 'supplier_payment', label: `Règlement ${d.number}${d.supplier_ref ? ` (réf. ${d.supplier_ref})` : ''}`,
@@ -273,7 +291,7 @@ export class PurchasesService {
       const now = today();
       const rows = await trx.selectFrom('purchase_document as d').innerJoin('contact as c', (j) => j.onRef('c.id', '=', 'd.contact_id').onRef('c.company_id', '=', 'd.company_id'))
         .select(['d.id', 'd.number', 'd.supplier_ref', 'd.issue_date', 'd.due_date', 'd.total_ttc', 'd.paid_amount', 'c.id as contactId', 'c.code as contactCode', 'c.name as contactName', 'c.phone'])
-        .where('d.type', '=', 'invoice').where('d.status', 'in', OPEN).orderBy('d.due_date').execute();
+        .where('d.type', '=', 'invoice').where('d.status', 'in', OPEN).$call((q) => inScope(q, t, 'd.site_id')).orderBy('d.due_date').execute();
       const invoices = rows.map((r) => {
         const daysLate = r.due_date ? Math.floor((Date.parse(now) - Date.parse(r.due_date)) / 86400_000) : 0;
         return {

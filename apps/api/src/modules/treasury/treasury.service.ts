@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { sql } from 'kysely';
+import { assertSiteAccess, inScope, workingSite } from '../../common/sites';
 import { badRequest, conflict, notFound } from '../../common/errors';
 import { isUuid, uuidv7 } from '../../common/ids';
 import type { TenantInfo } from '../../common/request-context';
@@ -41,14 +43,16 @@ export class TreasuryService {
   }
 
   /** Compte indiqué, ou compte actif par défaut pour ce mode de paiement. */
-  async resolveAccount(trx: TenantTrx, accountId: string | null | undefined, method: PaymentMethod) {
+  /** Compte indiqué, sinon le premier compte actif du bon type — de préférence celui du site de l'opération. */
+  async resolveAccount(trx: TenantTrx, accountId: string | null | undefined, method: PaymentMethod, siteId?: string | null) {
     if (accountId) {
       const a = await this.account(trx, accountId);
       if (a.archived_at) throw conflict(`Le compte « ${a.name} » est archivé.`, 'account_archived');
       return a;
     }
     const kind = KIND_FOR_METHOD[method];
-    const a = await trx.selectFrom('treasury_account').selectAll().where('kind', '=', kind).where('archived_at', 'is', null).orderBy('created_at').executeTakeFirst();
+    const a = await trx.selectFrom('treasury_account').selectAll().where('kind', '=', kind).where('archived_at', 'is', null)
+      .$if(!!siteId, (q) => q.orderBy(sql`site_id = ${siteId}`, 'desc')).orderBy('created_at').executeTakeFirst();
     if (!a) throw badRequest(`Aucun compte ${kind === 'cash' ? 'de caisse' : kind === 'bank' ? 'bancaire' : 'mobile money'} actif : créez-en un dans Trésorerie ou choisissez le compte.`, undefined, 'no_account');
     return a;
   }
@@ -80,7 +84,7 @@ export class TreasuryService {
   // ------------------------------------------------------------------ comptes
   async accounts(t: TenantInfo, includeArchived = false) {
     return this.db.tenant(t.ctx, async (trx) => {
-      const accounts = await trx.selectFrom('treasury_account').selectAll().$if(!includeArchived, (q) => q.where('archived_at', 'is', null)).orderBy('created_at').execute();
+      const accounts = await inScope(trx.selectFrom('treasury_account').selectAll().$if(!includeArchived, (q) => q.where('archived_at', 'is', null)), t, 'site_id').orderBy('created_at').execute();
       const sums = await trx.selectFrom('treasury_movement').select(['account_id', 'direction', 'amount', 'date']).execute();
       const now = today();
       const monthStart = `${now.slice(0, 7)}-01`;
@@ -89,7 +93,7 @@ export class TreasuryService {
         const signed = (m: { direction: string; amount: string }) => (m.direction === 'in' ? 1 : -1) * Number(m.amount);
         return {
           id: a.id, kind: a.kind, name: a.name, bankName: a.bank_name, accountNumber: a.account_number, ledgerCode: a.ledger_code, openingBalance: Number(a.opening_balance), openingDate: a.opening_date,
-          archivedAt: a.archived_at, balance: Number(a.opening_balance) + mine.reduce((s, m) => s + signed(m), 0),
+          archivedAt: a.archived_at, siteId: a.site_id, balance: Number(a.opening_balance) + mine.reduce((s, m) => s + signed(m), 0),
           monthIn: mine.filter((m) => m.date >= monthStart && m.direction === 'in').reduce((s, m) => s + Number(m.amount), 0),
           monthOut: mine.filter((m) => m.date >= monthStart && m.direction === 'out').reduce((s, m) => s + Number(m.amount), 0),
         };
@@ -97,7 +101,9 @@ export class TreasuryService {
     });
   }
 
-  async createAccount(t: TenantInfo, input: { kind: TreasuryKind; name: string; bankName?: string | null; accountNumber?: string | null; openingBalance?: number; openingDate?: string }) {
+  async createAccount(t: TenantInfo, input: { kind: TreasuryKind; name: string; bankName?: string | null; accountNumber?: string | null; openingBalance?: number; openingDate?: string; siteId?: string | null }) {
+    const siteId = input.siteId ?? workingSite(t);
+    assertSiteAccess(t, siteId);
     if (input.kind === 'cash' && (input.openingBalance ?? 0) < 0) throw badRequest("Le solde d'ouverture d'une caisse ne peut pas être négatif.", undefined, 'negative_cash');
     return this.db.tenant(t.ctx, async (trx) => {
       const exists = await trx.selectFrom('treasury_account').select('id').where('name', '=', input.name).executeTakeFirst();
@@ -111,7 +117,7 @@ export class TreasuryService {
       await trx.insertInto('ledger_account').values({ company_id: t.companyId, code: ledgerCode, name: input.name, is_system: true }).execute();
       const a = await trx.insertInto('treasury_account').values({
         company_id: t.companyId, kind: input.kind, name: input.name, bank_name: input.bankName ?? null, account_number: input.accountNumber ?? null, ledger_code: ledgerCode,
-        opening_balance: input.openingBalance ?? 0, opening_date: input.openingDate ?? today(),
+        opening_balance: input.openingBalance ?? 0, opening_date: input.openingDate ?? today(), ...(siteId ? { site_id: siteId } : {}),
       }).returning('id').executeTakeFirstOrThrow();
       await this.accounting.postOpening(trx, t, a.id);
       await this.audit.tenant(trx, t.ctx, { action: 'treasury_account.created', entityType: 'treasury_account', entityId: a.id, data: { name: input.name, kind: input.kind, openingBalance: input.openingBalance ?? 0 } });
@@ -175,6 +181,7 @@ export class TreasuryService {
         .select(['m.id', 'm.date', 'm.direction', 'm.amount', 'm.category', 'm.label', 'm.reference', 'm.source_type as sourceType', 'm.source_id as sourceId',
           'm.transfer_id as transferId', 'm.reversal_of as reversalOf', 'm.reversed_by as reversedBy', 'm.created_at as createdAt',
           'a.id as accountId', 'a.name as accountName', 'a.kind as accountKind', 'c.id as contactId', 'c.name as contactName', 'u.full_name as by'])
+        .$call((qb) => inScope(qb, t, 'a.site_id'))
         .orderBy('m.date').orderBy('m.created_at').limit(5000);
       if (f.accountId) q = q.where('m.account_id', '=', f.accountId);
       if (f.kind) q = q.where('a.kind', '=', f.kind);

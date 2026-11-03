@@ -1,7 +1,7 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { config } from '../config';
-import { DatabaseService } from '../db/database.service';
+import { DatabaseService, TenantContext } from '../db/database.service';
 import { SessionService } from '../modules/auth/session.service';
 import { EntitlementService } from '../modules/billing/entitlement.service';
 import { entitlementFor } from '../modules/rbac/permissions';
@@ -54,25 +54,31 @@ export class AccessGuard implements CanActivate {
 
     if (!auth.activeCompanyId) throw badRequest('Choisissez une entreprise active.', undefined, 'no_active_company');
     const companyId = auth.activeCompanyId;
-    const tctx = { companyId, userId: auth.userId, actorType: 'user' as const, ip: clientIp(req) };
+    const tctx: TenantContext = { companyId, userId: auth.userId, actorType: 'user', ip: clientIp(req) };
 
     const info = await this.db.tenant(tctx, async (trx) => {
       const m = await trx.selectFrom('company_membership as m').innerJoin('company as c', 'c.id', 'm.company_id')
-        .select(['m.id', 'm.status', 'm.valid_until', 'm.is_owner', 'c.status as company_status'])
+        .select(['m.id', 'm.status', 'm.valid_until', 'm.is_owner', 'm.site_ids', 'c.status as company_status'])
         .where('m.company_id', '=', companyId).where('m.user_id', '=', auth.userId).executeTakeFirst();
       if (!m || m.status !== 'active' || (m.valid_until && m.valid_until < new Date().toISOString().slice(0, 10))) return null;
       const roles = await trx.selectFrom('membership_role as mr').innerJoin('role as r', (j) => j.onRef('r.id', '=', 'mr.role_id').onRef('r.company_id', '=', 'mr.company_id'))
         .select('r.permissions').where('mr.membership_id', '=', m.id).execute();
       const ent = await this.entitlements.forCompany(trx, companyId);
-      return { m, permissions: new Set(roles.flatMap((r) => r.permissions)), ...ent };
+      const sites = await trx.selectFrom('site').select('id').where('archived_at', 'is', null).execute();
+      return { m, permissions: new Set(roles.flatMap((r) => r.permissions)), sites: sites.map((s) => s.id), ...ent };
     });
     if (!info) throw forbidden("Vous n'avez pas ou plus accès à cette entreprise.", 'no_membership');
 
     const subStatus = info.subscription?.status ?? null;
     const readOnly = info.m.company_status !== 'active' || !subStatus || ['suspended', 'cancelled', 'archived'].includes(subStatus);
+    // Sites : limite de l'adhésion (sites actifs seulement), puis site choisi dans la session s'il reste permis.
+    const allowedSiteIds = info.m.site_ids ? info.m.site_ids.filter((s) => info.sites.includes(s)) : null;
+    const pick = auth.activeSiteId && info.sites.includes(auth.activeSiteId) && (!allowedSiteIds || allowedSiteIds.includes(auth.activeSiteId)) ? auth.activeSiteId : null;
+    if (allowedSiteIds) tctx.siteIds = allowedSiteIds;
     req.tenant = {
       ctx: tctx, companyId, membershipId: info.m.id, isOwner: info.m.is_owner, permissions: info.permissions,
       entitlements: info.entitlements, companyStatus: info.m.company_status, subscriptionStatus: subStatus, readOnly,
+      siteId: pick ?? (allowedSiteIds?.length === 1 ? allowedSiteIds[0] : null), allowedSiteIds,
     };
 
     if (permission) {

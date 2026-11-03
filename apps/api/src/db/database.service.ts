@@ -15,6 +15,8 @@ export interface TenantContext {
   companyId: string;
   userId: string;
   actorType: 'user' | 'support';
+  /** Sites auxquels l'utilisateur est limité (absent ou null : tous) ; la base filtre en conséquence. */
+  siteIds?: string[] | null;
   ip?: string | null;
 }
 
@@ -38,7 +40,9 @@ export class DatabaseService implements OnModuleDestroy {
   async tenant<T>(ctx: TenantContext, fn: (trx: TenantTrx) => Promise<T>): Promise<T> {
     if (!ctx.companyId || !ctx.userId) throw new Error('Contexte entreprise incomplet');
     return this.app.transaction().execute(async (trx) => {
-      await sql`select set_config('app.company_id', ${ctx.companyId}, true), set_config('app.user_id', ${ctx.userId}, true)`.execute(trx);
+      // Limite vide (sites tous archivés) : un identifiant qui ne correspond à rien, pour ne rien montrer.
+      const sites = ctx.siteIds ? (ctx.siteIds.length ? ctx.siteIds.join(',') : '00000000-0000-0000-0000-000000000000') : '';
+      await sql`select set_config('app.company_id', ${ctx.companyId}, true), set_config('app.user_id', ${ctx.userId}, true), set_config('app.site_ids', ${sites}, true)`.execute(trx);
       return fn(trx as TenantTrx);
     });
   }

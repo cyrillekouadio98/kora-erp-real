@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { inScope } from '../../common/sites';
 import { sql } from 'kysely';
 import { config } from '../../config';
 import { badRequest, conflict, forbidden, notFound } from '../../common/errors';
@@ -168,6 +169,7 @@ export class LeaveService {
         .selectAll('l').select(['e.first_name', 'e.last_name']).orderBy('l.start_date', 'desc').limit(f.year ? 5000 : 500);
       if (f.status) q = q.where('l.status', '=', f.status as any);
       if (f.employeeId) q = q.where('l.employee_id', '=', f.employeeId);
+      q = inScope(q, t, 'e.site_id');
       if (f.month) {
         const end = new Date(Date.UTC(Number(f.month.slice(0, 4)), Number(f.month.slice(5, 7)), 0)).toISOString().slice(0, 10);
         q = q.where('l.start_date', '<=', end).where('l.end_date', '>=', `${f.month}-01`);
@@ -179,8 +181,8 @@ export class LeaveService {
 
   async balances(t: TenantInfo) {
     return this.db.tenant(t.ctx, async (trx) => {
-      const employees = await trx.selectFrom('employee').select(['id', 'first_name', 'last_name', 'hire_date', 'end_date', 'email', 'user_id', 'leave_opening_balance', 'leave_opening_date', 'number'])
-        .where((eb) => eb.or([eb('end_date', 'is', null), eb('end_date', '>=', today())])).orderBy('last_name').execute();
+      const employees = await inScope(trx.selectFrom('employee').select(['id', 'first_name', 'last_name', 'hire_date', 'end_date', 'email', 'user_id', 'leave_opening_balance', 'leave_opening_date', 'number'])
+        .where((eb) => eb.or([eb('end_date', 'is', null), eb('end_date', '>=', today())])), t, 'site_id').orderBy('last_name').execute();
       const out = [];
       for (const e of employees) out.push({ employeeId: e.id, number: e.number, name: `${e.first_name} ${e.last_name}`, linked: !!e.user_id, ...(await this.balance(trx, e)) });
       return out;
