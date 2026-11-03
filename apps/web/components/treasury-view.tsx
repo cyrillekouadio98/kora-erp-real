@@ -194,6 +194,7 @@ export default function TreasuryView({ kind }: { kind?: TreasuryKind }) {
             </>}
             {modal.type === 'account' && <>
               <h2>{modal.id ? `Paramétrer « ${modal.name} »` : 'Nouveau compte de trésorerie'}</h2>
+              {!modal.id && (ctx?.sites.length ?? 0) > 1 && <p className="small muted" style={{ margin: 0 }}>Le compte appartient au site {ctx?.siteId ? <b>{ctx.sites.find((x) => x.id === ctx.siteId)?.name}</b> : <>principal (choisissez un site dans l'en-tête pour l'y rattacher)</>}.</p>}
               <Alert>{error}</Alert>
               <div className="grid2">
                 {!modal.id && !kind && <label className="field">Type<select className="input" value={modal.kind} onChange={set('kind')}>{Object.entries(ACCOUNT_KINDS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>}

@@ -9,7 +9,7 @@ import { Alert, Field, hue, Pill, shrinkImage, useAction } from '@/components/ui
 const EMPTY = {
   firstName: '', lastName: '', jobTitle: '', department: '', hireDate: new Date().toISOString().slice(0, 10), endDate: '', contractType: 'cdi', cnpsNumber: '',
   maritalStatus: 'single', children: 0, partsOverride: '', category: '', targetNet: '', baseSalary: 0, extraSalary: 0, housingAllowance: 0, transportAllowance: 0, otherAllowances: 0,
-  paymentMethod: 'bank_transfer', bankDetails: '', phone: '', email: '',
+  paymentMethod: 'bank_transfer', bankDetails: '', phone: '', email: '', siteId: '',
 };
 
 /** Fiche de l'API vers le formulaire : valeurs absentes (salaires masqués) remplacées par celles par défaut. */
@@ -42,7 +42,7 @@ function Avatar({ e, src = e.photo && `/api${e.photo}` }: { e: any; src?: string
 }
 
 /** Vignette d'un employé : photo, poste, contacts, matricule et service. */
-function EmployeeCard({ e, onOpen }: { e: any; onOpen?: () => void }) {
+function EmployeeCard({ e, onOpen, site }: { e: any; onOpen?: () => void; site?: string }) {
   const body = <>
     <Avatar e={e} />
     <div className="vg-body">
@@ -53,6 +53,7 @@ function EmployeeCard({ e, onOpen }: { e: any; onOpen?: () => void }) {
       <div className="vg-tags">
         <span className="vg-badge">{e.number} · {CONTRACTS[e.contractType]}</span>
         {e.department && <span className="vg-tag" style={{ '--h': hue(e.department) } as React.CSSProperties}>{e.department}</span>}
+        {site && <span className="site-tag">{site}</span>}
         {!e.active && <Pill>Sorti le {date(e.endDate)}</Pill>}
         {e.linked && <Pill tone="ok">Espace employé</Pill>}
       </div>
@@ -91,6 +92,9 @@ function Employees() {
   useEffect(() => { const h = setTimeout(load, 250); return () => clearTimeout(h); }, [load]);
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => { if (SIM_FIELDS.includes(k)) setSim(null); setEdit({ ...edit, [k]: e.target.value }); };
   const open = (e: any) => { setSim(null); setPhoto(undefined); setEdit(e); };
+  // Sites : rappel sur la vignette quand plusieurs sites sont affichés, choix du site sur la fiche.
+  const sites = ctx?.sites ?? [];
+  const siteOf = (id?: string) => (!ctx?.siteId && sites.length > 1 ? sites.find((s) => s.id === id)?.name : undefined);
   // Ouverture directe d'une fiche : /app/employes?id=… (liens depuis la paie)
   const direct = useSearchParams().get('id');
   useEffect(() => { if (direct) api(`/company/employees/${direct}`).then((e) => open(toForm(e)), () => {}); }, [direct]); // eslint-disable-line
@@ -111,6 +115,7 @@ function Employees() {
     for (const k of Object.keys(EMPTY)) {
       if (!salaries && [...MONEY_FIELDS, 'targetNet', 'category'].includes(k)) continue;
       if (k === 'bankDetails' && (!bank || edit.bankDetails === '••••')) continue;
+      if (k === 'siteId' && !edit.siteId) continue; // sans choix : le site affiché dans l'en-tête
       const v = edit[k];
       body[k] = ['children', ...MONEY_FIELDS].includes(k) ? Number(v || 0)
         : k === 'partsOverride' || k === 'targetNet' ? (v === '' || v === null ? null : Number(v)) : k === 'endDate' || k === 'category' ? v || null : v;
@@ -128,7 +133,7 @@ function Employees() {
   return (
     <>
       <div className="page-head"><h1>Employés</h1>
-        {can('employees.create') && writable && <button className="btn primary" onClick={() => open({ ...EMPTY })}>Nouvel employé</button>}</div>
+        {can('employees.create') && writable && <button className="btn primary" onClick={() => open({ ...EMPTY, siteId: ctx?.siteId ?? '' })}>Nouvel employé</button>}</div>
       <Alert kind="ok">{notice}</Alert>
       <Alert>{!edit && error}</Alert>
       {!salaries && <Alert kind="info">Les salaires et la paie ne sont visibles qu'avec la permission sensible « voir les salaires et bulletins ».</Alert>}
@@ -148,7 +153,7 @@ function Employees() {
       </nav>
       {view === 'cards' ? (
         <div className="vg-grid">
-          {shown.map((e) => <EmployeeCard key={e.id} e={e} onOpen={editable ? () => open(toForm(e)) : undefined} />)}
+          {shown.map((e) => <EmployeeCard key={e.id} e={e} site={siteOf(e.siteId)} onOpen={editable ? () => open(toForm(e)) : undefined} />)}
           {rows && !shown.length && <p className="muted">Aucun employé.</p>}
         </div>
       ) : <div className="table-wrap"><table>
@@ -193,6 +198,8 @@ function Employees() {
               <Field label="Nom" required value={edit.lastName} onChange={set('lastName')} />
               <Field label="Poste" value={edit.jobTitle ?? ''} onChange={set('jobTitle')} />
               <Field label="Service" value={edit.department ?? ''} onChange={set('department')} />
+              {sites.length > 1 && <label className="field">Site d'affectation<select className="input" value={edit.siteId ?? ''} onChange={set('siteId')}>
+                {!edit.id && <option value="">— Site affiché —</option>}{sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>}
               <label className="field">Contrat<select className="input" value={edit.contractType} onChange={set('contractType')}>{Object.entries(CONTRACTS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
               <Field label="N° CNPS" value={edit.cnpsNumber ?? ''} onChange={set('cnpsNumber')} />
               <Field label="Date d'embauche" type="date" required value={edit.hireDate} onChange={set('hireDate')} />

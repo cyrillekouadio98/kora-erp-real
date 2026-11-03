@@ -50,6 +50,11 @@ const ICONS: Record<string, React.ReactNode> = {
     <circle cx="24" cy="24" r="20" fill={T} /><circle cx="24" cy="19" r="7" fill={W} />
     <path d="M12 38c2-7 7-10 12-10s10 3 12 10c-3.5 3-7.6 4.6-12 4.6S15.5 41 12 38z" fill={W} />
   </>,
+  sites: <>
+    <path d="M4 18l4-10h32l4 10z" fill={O} /><rect x="6" y="18" width="36" height="24" rx="2" fill={N} />
+    <path d="M4 18h40v3a4.4 4.4 0 0 1-8.8 0 4.4 4.4 0 0 1-8.8 0 4.4 4.4 0 0 1-8.8 0 4.4 4.4 0 0 1-8.8 0 4.4 4.4 0 0 1-4.8 0z" fill={Y} />
+    <rect x="11" y="27" width="10" height="15" rx="1.5" fill={T} /><rect x="26" y="27" width="11" height="8" rx="1.5" fill={W} opacity=".75" />
+  </>,
   company: <>
     <rect x="8" y="8" width="20" height="36" rx="2" fill={N} /><rect x="26" y="20" width="14" height="24" rx="2" fill={O} />
     {[14, 21, 28].map((y) => [12, 19].map((x) => <rect key={`${x}-${y}`} x={x} y={y} width="5" height="4" rx="1" fill={Y} />))}
@@ -120,6 +125,9 @@ export const APPS: App[] = [
     { href: '/app/paie/configuration', label: 'Paramètres' },
   ] },
   { key: 'me', label: 'Mon espace', href: '/app/moi', perm: 'employees.self', module: 'hr' },
+  { key: 'sites', label: 'Sites et magasins', href: '/app/sites', perm: 'sales.read', pages: [
+    { href: '/app/sites', label: 'Comparatif' }, { href: '/app/sites/parametres', label: 'Sites', perm: 'settings.read' },
+  ] },
   { key: 'company', label: 'Entreprise', href: '/app/entreprise', perm: 'settings.read' },
   { key: 'users', label: 'Utilisateurs', href: '/app/utilisateurs', perm: 'users.read' },
   { key: 'roles', label: 'Rôles', href: '/app/roles', perm: 'users.read' },

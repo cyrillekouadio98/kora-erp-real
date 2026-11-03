@@ -252,7 +252,13 @@ export class StockService {
       const def = await this.defaultWarehouse(trx, t);
       const warehouses = await inScope(trx.selectFrom('warehouse').select(['id', 'code', 'name', 'is_default as isDefault', 'site_id as siteId']).where('archived_at', 'is', null), t, 'site_id')
         .orderBy('is_default', 'desc').orderBy('code').execute();
-      if (warehouseId && !warehouses.some((w) => w.id === warehouseId)) throw notFound('Entrepôt');
+      if (warehouseId && !warehouses.some((w) => w.id === warehouseId)) {
+        // Entrepôt d'un autre site demandé nommément (bon de transfert) : permis sans limite de site.
+        const other = !t.allowedSiteIds && isUuid(warehouseId)
+          ? await trx.selectFrom('warehouse').select(['id', 'code', 'name', 'is_default as isDefault', 'site_id as siteId']).where('id', '=', warehouseId).where('archived_at', 'is', null).executeTakeFirst() : null;
+        if (!other) throw notFound('Entrepôt');
+        warehouses.push(other);
+      }
       // Entrepôts comptés : celui demandé, sinon ceux du site affiché ; null = toute l'entreprise.
       const whSet = warehouseId ? [warehouseId] : siteScope(t) ? warehouses.map((w) => w.id) : null;
       const inSet = (id: string) => !whSet || whSet.includes(id);

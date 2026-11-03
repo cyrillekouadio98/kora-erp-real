@@ -15,6 +15,10 @@ const toLine = (l: any): Line => ({ productId: l.productId, quantity: l.quantity
 export function StockDocument({ id, type: newType, base }: { id?: string; type?: string; base: string }) {
   const router = useRouter();
   const { can, ctx } = useSession();
+  // Sites : on part d'un entrepôt du site affiché (ou des sites permis) ; on peut livrer n'importe quel site.
+  const multiSite = (ctx?.sites.length ?? 0) > 1 || !!ctx?.siteRestricted;
+  const fromHere = (w: any) => (ctx?.siteId ? w.siteId === ctx.siteId : !ctx?.siteRestricted || !!ctx.sites.some((s) => s.id === w.siteId));
+  const whLabel = (w: any) => `${w.code} · ${w.name}${multiSite ? ` — ${w.siteName}` : ''}`;
   const writable = !ctx?.readOnly;
   const [doc, setDoc] = useState<any>(null);
   const [warehouses, setWarehouses] = useState<any[]>([]);
@@ -42,7 +46,9 @@ export function StockDocument({ id, type: newType, base }: { id?: string; type?:
       const w = (await api('/company/stock/warehouses')).filter((x: any) => !x.archived);
       setWarehouses(w);
       if (!id) {
-        setForm({ warehouseId: w.find((x: any) => x.isDefault)?.id ?? '', destWarehouseId: '', reason: newType === 'receipt' ? 'production' : newType === 'issue' ? 'consumption' : newType, date: today(), contactId: '', treasuryAccountId: '', reference: '', notes: '' });
+        // Départ : un entrepôt du site affiché (son principal d'abord).
+        const mine = w.filter(fromHere);
+        setForm({ warehouseId: (mine.find((x: any) => x.isDefault) ?? mine[0] ?? w.find((x: any) => x.isDefault))?.id ?? '', destWarehouseId: '', reason: newType === 'receipt' ? 'production' : newType === 'issue' ? 'consumption' : newType, date: today(), contactId: '', treasuryAccountId: '', reference: '', notes: '' });
         setLines([]);
       }
       await load();
@@ -100,6 +106,8 @@ export function StockDocument({ id, type: newType, base }: { id?: string; type?:
 
   if (!form) return <Alert>{error}</Alert>;
   const wName = (wid: string) => warehouses.find((w) => w.id === wid)?.name ?? doc?.warehouse?.name;
+  const fromW = warehouses.find((w) => w.id === form?.warehouseId), toW = warehouses.find((w) => w.id === form?.destWarehouseId);
+  const interSite = fromW && toW && fromW.siteId !== toW.siteId ? `${fromW.siteName} → ${toW.siteName}` : '';
   const reasons = type === 'receipt' ? RECEIPT_REASONS : type === 'issue' ? ISSUE_REASONS : null;
   const title = doc?.number ? `${STOCK_DOC[type]} ${doc.number}` : `${STOCK_DOC[type]}${doc ? ' — brouillon' : ' — nouveau'}`;
 
@@ -163,13 +171,17 @@ export function StockDocument({ id, type: newType, base }: { id?: string; type?:
         <div className="grid2 no-print">
           <label className="field">{type === 'transfer' ? 'Entrepôt de départ' : 'Entrepôt'}
             <select className="input" disabled={!editable || (isInventory && !!doc)} value={form.warehouseId} onChange={set('warehouseId')}>
-              {warehouses.map((w) => <option key={w.id} value={w.id}>{w.code} · {w.name}</option>)}
+              {warehouses.filter((w) => fromHere(w) || w.id === form.warehouseId).map((w) => <option key={w.id} value={w.id}>{whLabel(w)}</option>)}
             </select></label>
           {type === 'transfer' && <label className="field">Entrepôt d'arrivée
             <select className="input" required disabled={!editable} value={form.destWarehouseId} onChange={set('destWarehouseId')}>
               <option value="">— Choisir —</option>
-              {warehouses.filter((w) => w.id !== form.warehouseId).map((w) => <option key={w.id} value={w.id}>{w.code} · {w.name}</option>)}
+              {multiSite
+                ? [...new Set(warehouses.map((w) => w.siteName))].map((site) => (
+                  <optgroup key={site} label={site}>{warehouses.filter((w) => w.siteName === site && w.id !== form.warehouseId).map((w) => <option key={w.id} value={w.id}>{w.code} · {w.name}</option>)}</optgroup>))
+                : warehouses.filter((w) => w.id !== form.warehouseId).map((w) => <option key={w.id} value={w.id}>{w.code} · {w.name}</option>)}
             </select>
+            {interSite && <span className="small" style={{ fontWeight: 600, color: 'var(--accent)' }}>Transfert inter-sites : {interSite}</span>}
             {warehouses.length < 2 && <span className="small muted" style={{ fontWeight: 400 }}>Un seul entrepôt : <Link href="/app/stocks/entrepots">créez-en un autre</Link>.</span>}</label>}
           {reasons && <label className="field">Motif
             <select className="input" disabled={!editable} value={form.reason} onChange={set('reason')}>

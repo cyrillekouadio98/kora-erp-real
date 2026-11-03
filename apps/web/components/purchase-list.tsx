@@ -11,6 +11,8 @@ const STATUSES = { order: ['draft', 'sent', 'cancelled', 'invoiced'], invoice: [
 /** Liste des bons de commande ou des factures fournisseurs. */
 export function PurchaseList({ type }: { type: 'order' | 'invoice' }) {
   const { can, ctx } = useSession();
+  // Plusieurs sites affichés ensemble : le site de chaque document est rappelé.
+  const siteOf = (id?: string) => (!ctx?.siteId && (ctx?.sites.length ?? 0) > 1 ? ctx!.sites.find((x) => x.id === id)?.name ?? '' : '');
   const [rows, setRows] = useState<any[] | null>(null);
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
@@ -45,7 +47,7 @@ export function PurchaseList({ type }: { type: 'order' | 'invoice' }) {
             <tr key={d.id}>
               <td style={{ whiteSpace: 'nowrap' }}><Link href={`/app/achats/${d.id}`}>{d.number ?? 'Brouillon'}</Link></td>
               {isInvoice && <td className="small">{d.supplierRef ?? '—'}</td>}
-              <td><b>{d.contactName}</b><div className="small muted">{d.contactCode}</div></td>
+              <td><b>{d.contactName}</b><div className="small muted">{d.contactCode}{siteOf(d.siteId) && <> <span className="site-tag">{siteOf(d.siteId)}</span></>}</div></td>
               <td style={{ whiteSpace: 'nowrap' }}>{date(d.issueDate)}</td>
               <td style={{ whiteSpace: 'nowrap' }}>{date(isInvoice ? d.dueDate : d.expectedDate)}{d.overdue && <> <Pill tone="crit">En retard</Pill></>}</td>
               <td><Pill tone={PURCHASE_STATUS[d.status][1]}>{PURCHASE_STATUS[d.status][0]}</Pill></td>

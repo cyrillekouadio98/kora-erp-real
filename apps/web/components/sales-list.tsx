@@ -19,6 +19,8 @@ const EMPTY_TEXT = { quote: 'Aucun devis pour l’instant.', order: 'Aucun bon d
 /** Liste des devis ou des factures, avec recherche et filtre par statut. */
 export function SalesList({ type }: { type: DocType }) {
   const { can, ctx } = useSession();
+  // Plusieurs sites affichés ensemble : le site de chaque document est rappelé.
+  const siteOf = (id?: string) => (!ctx?.siteId && (ctx?.sites.length ?? 0) > 1 ? ctx!.sites.find((x) => x.id === id)?.name ?? '' : '');
   const [rows, setRows] = useState<any[] | null>(null);
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
@@ -55,7 +57,7 @@ export function SalesList({ type }: { type: DocType }) {
           {rows?.map((d) => (
             <tr key={d.id}>
               <td style={{ whiteSpace: 'nowrap' }}><Link href={`/app/ventes/${d.id}`}>{d.number ?? 'Brouillon'}</Link></td>
-              <td><b>{d.contactName}</b><div className="small muted">{d.contactCode}</div></td>
+              <td><b>{d.contactName}</b><div className="small muted">{d.contactCode}{siteOf(d.siteId) && <> <span className="site-tag">{siteOf(d.siteId)}</span></>}</div></td>
               <td style={{ whiteSpace: 'nowrap' }}>{date(d.issueDate)}</td>
               {isOrder && <td className="small">{d.customerRef ?? '—'}</td>}
               {!isCredit && <td style={{ whiteSpace: 'nowrap' }}>{date(isInvoice ? d.dueDate : isOrder ? d.deliveryDate : d.validUntil)}{d.overdue && <> <Pill tone="crit">En retard</Pill></>}</td>}

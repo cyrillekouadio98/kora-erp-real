@@ -16,6 +16,8 @@ export interface CompanyContext {
   company: { id: string; name: string; currency: string; status: string };
   isOwner: boolean; permissions: string[]; readOnly: boolean; subscriptionStatus: string | null;
   entitlements: { modules: string[]; quotas: Record<string, number | null> };
+  /** Sites proposés (ceux permis à l'utilisateur), site affiché (null : tous) et limite éventuelle. */
+  sites: { id: string; code: string; name: string; isDefault: boolean }[]; siteId: string | null; siteRestricted: boolean;
 }
 
 const Ctx = createContext<{ me: Me; ctx: CompanyContext | null; can: (p: string) => boolean; refresh: () => Promise<void> } | null>(null);
@@ -51,6 +53,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const allowed = (x: { perm?: string; module?: string }) => (!x.perm || can(x.perm)) && (!x.module || !!ctx?.entitlements.modules.includes(x.module));
   const pages = app?.pages?.filter(allowed) ?? [];
   const activePage = activeHref(path, pages.map((p) => p.href));
+  // Site affiché : filtre toute l'application ; la page est rechargée pour que chaque écran relise ses données.
+  const switchSite = async (siteId: string) => { await api('/company/sites/active', { body: { siteId: siteId || null } }); window.location.reload(); };
+  const sites = ctx?.sites ?? [];
+  const siteSelect = sites.length > 1 ? (
+    <select className="input site-select" value={ctx!.siteId ?? ''} onChange={(e) => switchSite(e.target.value)} aria-label="Site affiché">
+      {!(ctx!.siteRestricted && sites.length === 1) && <option value="">{ctx!.siteRestricted ? 'Tous mes sites' : 'Tous les sites'}</option>}
+      {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+    </select>
+  ) : ctx?.siteRestricted && sites[0] ? <span className="small site-badge" title="Vous êtes rattaché à ce site">{sites[0].name}</span> : null;
   const companySelect = me.companies.length > 0 && (
     <select className="input" value={me.activeCompanyId ?? ''} onChange={(e) => switchTo(e.target.value)} aria-label="Changer d'entreprise">
       {me.companies.map((c) => <option key={c.companyId} value={c.companyId}>{c.name}</option>)}
@@ -72,6 +83,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="row topbar-end">
             {status && <Pill tone={status[1]}>{status[0]}</Pill>}
             {companySelect && <div style={{ width: 200 }}>{companySelect}</div>}
+            {siteSelect}
             {me.platformRoles.length > 0 && <Link className="btn sm" href="/console">Console éditeur</Link>}
             <span className="small muted who">{me.user.fullName}</span>
             <button className="btn sm" onClick={logout}>Se déconnecter</button>
