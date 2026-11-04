@@ -45,7 +45,7 @@ export class AccessGuard implements CanActivate {
     const platformRoles = this.meta<string[]>(META.platformRoles, ctx);
     if (platformRoles) {
       if (!auth.platformRoles.some((r) => platformRoles.includes(r))) throw forbidden();
-      if (!auth.mfaEnabled) throw forbidden('Activez la double authentification pour accéder à la console éditeur.', 'mfa_setup_required');
+      if (config.platformMfaRequired && !auth.mfaEnabled) throw forbidden('Activez la double authentification pour accéder à la console éditeur.', 'mfa_setup_required');
       return true;
     }
 

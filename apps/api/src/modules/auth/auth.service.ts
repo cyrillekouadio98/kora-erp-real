@@ -113,7 +113,7 @@ export class AuthService {
         .where('m.user_id', '=', auth.userId).where('m.status', '=', 'active').orderBy('c.name').execute();
       return {
         user: { id: u.id, email: u.email, fullName: u.full_name, phone: u.phone, mfaEnabled: u.mfa_enabled },
-        platformRoles: auth.platformRoles, activeCompanyId: auth.activeCompanyId, mfaVerified: auth.mfaVerified, companies: memberships,
+        platformRoles: auth.platformRoles, platformMfaRequired: config.platformMfaRequired, activeCompanyId: auth.activeCompanyId, mfaVerified: auth.mfaVerified, companies: memberships,
       };
     });
   }

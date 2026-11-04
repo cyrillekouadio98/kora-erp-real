@@ -16,6 +16,8 @@ function req(name: string, fallback?: string): string {
 
 export const config = {
   env: process.env.NODE_ENV ?? 'development',
+  /** Double authentification exigée pour la console éditeur : partout sauf en développement local (PLATFORM_MFA_REQUIRED force le choix). */
+  platformMfaRequired: process.env.PLATFORM_MFA_REQUIRED ? process.env.PLATFORM_MFA_REQUIRED === 'true' : (process.env.NODE_ENV ?? 'development') !== 'development',
   port: Number(process.env.PORT ?? 3001),
   webUrl: req('WEB_URL', 'http://localhost:3000'),
   db: {

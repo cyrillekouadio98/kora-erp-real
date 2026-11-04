@@ -92,7 +92,7 @@ npm run dev:api
 npm run dev:web
 ```
 
-Le super administrateur doit activer la double authentification (menu « Ma sécurité ») avant d'accéder à la console éditeur.
+En production, le super administrateur doit activer la double authentification (menu « Ma sécurité ») avant d'accéder à la console éditeur. En développement local, elle est facultative (`PLATFORM_MFA_REQUIRED=true` la rend obligatoire).
 
 ### Tests
 

@@ -23,7 +23,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
           {me.companies.length > 0 && <><small>Mon entreprise</small><Link href="/app">Espace entreprise</Link></>}
         </nav>
         <div className="foot"><div className="muted">{me.user.fullName}<br />Rôles : {me.platformRoles.join(', ')}</div>
-          {!me.user.mfaEnabled && <Link href="/app/securite" className="small">Activer la double authentification (obligatoire)</Link>}
+          {!me.user.mfaEnabled && <Link href="/app/securite" className="small">Activer la double authentification{me.platformMfaRequired ? ' (obligatoire)' : ' (recommandée)'}</Link>}
           <button className="btn sm" onClick={async () => { await api('/auth/logout', { method: 'POST', body: {} }); router.replace('/connexion'); }}>Se déconnecter</button></div>
       </aside>
       <main className="main"><div className="wrap">{children}</div></main>
