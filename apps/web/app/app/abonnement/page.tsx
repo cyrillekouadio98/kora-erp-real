@@ -68,7 +68,7 @@ export default function SubscriptionPage() {
                 <div key={p.code} className="card" style={{ display: 'grid', gap: 8 }}>
                   <h3>{p.name}</h3>
                   <div style={{ fontSize: 20, fontWeight: 700 }}>{money(cycle === 'yearly' ? p.priceYearly : p.priceMonthly)}<span className="small muted"> / {cycle === 'yearly' ? 'an' : 'mois'}</span></div>
-                  <div className="small muted">{p.entitlements.quotas.users ?? 'Illimité'} utilisateurs · {p.entitlements.modules.length} modules{p.entitlements.modules.includes('payroll') ? ' · paie incluse' : ''}</div>
+                  <div className="small muted">{p.entitlements.quotas.users === null ? 'Utilisateurs illimités' : `${p.entitlements.quotas.users} utilisateurs`} · {p.entitlements.modules.length} modules{p.entitlements.modules.includes('payroll') ? ' · paie incluse' : ''}</div>
                   <button className="btn sm" disabled={busy || current} onClick={() => change(p.code)}>{current ? 'Formule actuelle' : 'Choisir'}</button>
                 </div>
               );

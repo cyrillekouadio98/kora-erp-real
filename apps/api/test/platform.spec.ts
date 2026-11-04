@@ -87,7 +87,7 @@ describe('Console éditeur et accès exceptionnel du support', () => {
       entitlements: { modules: ['contacts', 'sales', 'cash', 'purchases', 'bank', 'accounting'], quotas: { users: 8, companies: 1, storage_mb: 10240, employees: 0 }, features: { export_advanced: true, api: false, support_level: 'email_48h' } },
     });
     expect(v.status).toBe(201);
-    expect((await before.agent.get('/company/subscription')).body.plan.priceMonthly).toBe(35000);
+    expect((await before.agent.get('/company/subscription')).body.plan.priceMonthly).toBe(40000);
     const after = await signup(app);
     expect((await after.agent.get('/company/subscription')).body.plan.priceMonthly).toBe(45000);
     const plans = await request(app.getHttpServer()).get('/plans');

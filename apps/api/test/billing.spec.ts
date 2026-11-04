@@ -33,13 +33,13 @@ describe('Abonnements, facturation et paiements', () => {
     expect(sub.body.status).toBe('grace');
     expect(sub.body.openInvoices).toHaveLength(1);
     const inv = sub.body.openInvoices[0];
-    expect(inv.amount).toBe(35000);
+    expect(inv.amount).toBe(40000);
 
     // Le cycle est idempotent : pas de seconde facture
     await billing.runCycle(new Date(end.getTime() + 2000));
     expect((await u.agent.get('/company/invoices')).body).toHaveLength(1);
 
-    const payload = { event_id: 'evt-1', invoice_id: inv.id, reference: 'ref-1', amount: 35000, currency: 'XOF', status: 'succeeded' };
+    const payload = { event_id: 'evt-1', invoice_id: inv.id, reference: 'ref-1', amount: 40000, currency: 'XOF', status: 'succeeded' };
     expect((await webhook(app, payload, 'signature-invalide')).status).toBe(400);
     expect((await webhook(app, payload)).body.status).toBe('paid');
     expect((await webhook(app, payload)).body.status).toBe('duplicate');
@@ -95,7 +95,7 @@ describe('Abonnements, facturation et paiements', () => {
     const change = await u.agent.post('/company/subscription/change').send({ planCode: 'premium', billingCycle: 'monthly' });
     expect(change.body.applied).toBe('on_payment');
     expect(change.body.invoice.amount).toBeGreaterThan(0);
-    expect(change.body.invoice.amount).toBeLessThanOrEqual(75000 - 35000);
+    expect(change.body.invoice.amount).toBeLessThanOrEqual(75000 - 40000);
     expect((await u.agent.get('/company/subscription')).body.plan.code).toBe('business');
     await u.agent.post(`/dev/sandbox/pay/${change.body.invoice.id}`);
     const after = await u.agent.get('/company/subscription');
@@ -118,7 +118,7 @@ describe('Abonnements, facturation et paiements', () => {
     const newEnd = new Date(sub.body.currentPeriodEnd);
     await billing.runCycle(new Date(newEnd.getTime() - 6 * DAY));
     const renewal = (await u.agent.get('/company/subscription')).body.openInvoices[0];
-    expect(renewal.amount).toBe(15000);
+    expect(renewal.amount).toBe(20000);
     await u.agent.post(`/dev/sandbox/pay/${renewal.id}`);
     expect((await u.agent.get('/company/subscription')).body.plan.code).toBe('starter');
   });
@@ -163,7 +163,7 @@ describe('Abonnements, facturation et paiements', () => {
     expect((await billingUser.agent.post(`/platform/invoices/${inv.id}/mark-paid`).send({ reference: 'VIR-2026-001' })).status).toBe(409);
     const m = await billingUser.agent.get('/platform/metrics');
     expect(m.body).toEqual(expect.objectContaining({ mrrEstimated: expect.any(Number), invoicedThisMonth: expect.any(Number), collectedThisMonth: expect.any(Number) }));
-    expect(m.body.mrrEstimated).toBeGreaterThanOrEqual(35000);
+    expect(m.body.mrrEstimated).toBeGreaterThanOrEqual(40000);
     // Le client voit le paiement dans son propre journal
     const audit = await u.agent.get('/company/audit');
     expect(audit.body.some((a: any) => a.action === 'subscription.payment_received')).toBe(true);
