@@ -273,14 +273,16 @@ export class PayrollService {
     if (period > today().slice(0, 7)) throw badRequest('On ne prépare pas la paie d’un mois futur.', undefined, 'future_period');
     const id = await this.db.tenant(t.ctx, async (trx) => {
       if (await trx.selectFrom('payroll_run').select('id').where('period', '=', period).executeTakeFirst()) throw conflict(`La paie de ${periodLabel(period)} existe déjà.`, 'run_exists');
+      await this.applyDueRaises(trx, t, period);
       const params = await this.params(trx);
+      const bonuses = await this.evaluationBonuses(trx, period);
       const employees = await trx.selectFrom('employee').selectAll().where('hire_date', '<=', periodEnd(period))
         .where((eb) => eb.or([eb('end_date', 'is', null), eb('end_date', '>=', `${period}-01`)])).execute();
       if (!employees.length) throw badRequest('Aucun employé présent sur cette période.', undefined, 'no_employees');
       const r = await trx.insertInto('payroll_run').values({ company_id: t.companyId, period, params: JSON.stringify(params), validated_by: null, created_by: t.ctx.userId })
         .returning('id').executeTakeFirstOrThrow();
-      // Les congés sans solde validés du mois sont repris comme absences (modifiables ensuite).
-      for (const e of employees) await this.writeSlip(trx, t, r.id, e, { ...NO_INPUTS, absenceDays: await this.leave.unpaidDays(trx, e.id, period) }, params);
+      // Les congés sans solde validés du mois sont repris comme absences, les primes d'évaluation approuvées comme primes (modifiables ensuite).
+      for (const e of employees) await this.writeSlip(trx, t, r.id, e, { ...NO_INPUTS, absenceDays: await this.leave.unpaidDays(trx, e.id, period), bonus: bonuses.get(e.id) ?? 0 }, params);
       await this.audit.tenant(trx, t.ctx, { action: 'payroll.run_created', entityType: 'payroll_run', entityId: r.id, data: { period, employees: employees.length } });
       return r.id;
     });
@@ -327,6 +329,54 @@ export class PayrollService {
       await this.writeSlip(trx, t, runId, await this.employeeRow(trx, s.employee_id), merged, await this.params(trx));
     });
     return this.getRun(t, runId);
+  }
+
+  // ------------------------------------------------------------------ évaluations : primes et augmentations
+  /** Primes d'évaluation approuvées à verser avec la paie du mois, par employé. */
+  private async evaluationBonuses(trx: TenantTrx, period: string) {
+    const rows = await trx.selectFrom('evaluation').select('employee_id').select((eb) => eb.fn.sum<string>('bonus_amount').as('total'))
+      .where('status', '=', 'approved').where('bonus_period', '=', period).groupBy('employee_id').execute();
+    return new Map(rows.map((r) => [r.employee_id, Number(r.total)]));
+  }
+
+  /** Bulletins en brouillon d'un employé à partir d'un mois : recalculés d'après sa fiche, avec leurs éléments variables. */
+  private async rewriteDraftSlips(trx: TenantTrx, t: TenantInfo, employeeId: string, fromPeriod: string) {
+    const slips = await trx.selectFrom('payslip as s').innerJoin('payroll_run as r', (j) => j.onRef('r.id', '=', 's.run_id').onRef('r.company_id', '=', 's.company_id'))
+      .select(['s.run_id', 's.inputs']).where('s.employee_id', '=', employeeId).where('r.status', '=', 'draft').where('r.period', '>=', fromPeriod).execute();
+    if (!slips.length) return;
+    const e = await this.employeeRow(trx, employeeId);
+    const params = await this.params(trx);
+    for (const s of slips) await this.writeSlip(trx, t, s.run_id, e, { ...NO_INPUTS, ...(s.inputs as object) }, params);
+  }
+
+  /** Augmentations approuvées dont le mois d'effet est arrivé : le salaire de base de la fiche change. */
+  async applyDueRaises(trx: TenantTrx, t: TenantInfo, upTo: string) {
+    const due = await trx.selectFrom('evaluation').select(['id', 'employee_id', 'new_base_salary', 'raise_period'])
+      .where('status', '=', 'approved').where('raise_applied_at', 'is', null).where('new_base_salary', 'is not', null).where('raise_period', '<=', upTo).orderBy('raise_period').execute();
+    for (const r of due) {
+      // Le net visé de la fiche ne correspond plus au nouveau salaire : il est effacé.
+      await trx.updateTable('employee').set({ base_salary: Number(r.new_base_salary), target_net: null }).where('id', '=', r.employee_id).execute();
+      await trx.updateTable('evaluation').set({ raise_applied_at: new Date() }).where('id', '=', r.id).execute();
+      await this.audit.tenant(trx, t.ctx, { action: 'employee.raise_applied', entityType: 'employee', entityId: r.employee_id, data: { evaluationId: r.id, from: r.raise_period } });
+      await this.rewriteDraftSlips(trx, t, r.employee_id, r.raise_period!);
+    }
+    return due.length;
+  }
+
+  /**
+   * Ajoute (delta > 0) ou retire une prime d'évaluation au bulletin du mois s'il est en brouillon.
+   * Sans paie pour ce mois, la prime sera reprise à sa création. Une paie validée ne bouge plus.
+   */
+  async adjustDraftBonus(trx: TenantTrx, t: TenantInfo, period: string, employeeId: string, delta: number) {
+    const r = await trx.selectFrom('payroll_run').select(['id', 'status']).where('period', '=', period).forUpdate().executeTakeFirst();
+    if (!r) return false;
+    if (r.status !== 'draft') throw conflict(`La paie de ${periodLabel(period)} est déjà validée : choisissez un mois suivant pour la prime.`, 'run_validated');
+    const s = await trx.selectFrom('payslip').select('inputs').where('run_id', '=', r.id).where('employee_id', '=', employeeId).executeTakeFirst();
+    if (!s) return false;
+    const inputs = { ...NO_INPUTS, ...(s.inputs as object) };
+    inputs.bonus = Math.max(0, inputs.bonus + delta);
+    await this.writeSlip(trx, t, r.id, await this.employeeRow(trx, employeeId), inputs, await this.params(trx));
+    return true;
   }
 
   /** Recalcule tous les bulletins d'une paie en brouillon d'après les fiches et paramètres actuels. */

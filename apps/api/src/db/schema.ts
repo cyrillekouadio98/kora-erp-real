@@ -200,6 +200,17 @@ export interface AppointmentTable {
   reminder_minutes: number | null; reminded_at: TsNullable; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 export interface AppointmentAttendeeTable { company_id: string; appointment_id: string; user_id: string; }
+export interface EvaluationCampaignTable {
+  company_id: string; id: Generated<string>; name: string; period_start: string; period_end: string; due_date: DateNullable; criteria: Json;
+  status: Generated<'open' | 'closed'>; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface EvaluationTable {
+  company_id: string; id: Generated<string>; campaign_id: string; employee_id: string; evaluator_id: string | null; scores: JsonDefault; score: NumNullable;
+  strengths: string | null; improvements: string | null; goals: string | null; comment: string | null;
+  status: Generated<'draft' | 'submitted' | 'approved' | 'refused'>; submitted_at: TsNullable;
+  bonus_amount: NumDefault; bonus_period: string | null; new_base_salary: NumNullable; previous_base_salary: NumNullable; raise_period: string | null; raise_applied_at: TsNullable;
+  decided_by: string | null; decided_at: TsNullable; decision_note: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
 export interface ContactLogoTable { company_id: string; contact_id: string; mime: string; data: Buffer; updated_at: Generated<Date>; }
 export type LeaveType = 'annual' | 'sick' | 'maternity' | 'family_event' | 'unpaid' | 'other';
 export interface LeaveRequestTable {
@@ -244,6 +255,6 @@ export interface DB {
   treasury_account: TreasuryAccountTable; treasury_movement: TreasuryMovementTable;
   ledger_account: LedgerAccountTable; journal: JournalTable; journal_entry: JournalEntryTable; journal_line: JournalLineTable;
   stock_movement: StockMovementTable; warehouse: WarehouseTable; stock_level: StockLevelTable; stock_document: StockDocumentTable; stock_document_line: StockDocumentLineTable;
-  employee: EmployeeTable; employee_photo: EmployeePhotoTable; contact_logo: ContactLogoTable; site: SiteTable; appointment: AppointmentTable; appointment_attendee: AppointmentAttendeeTable; payroll_settings: PayrollSettingsTable; payroll_run: PayrollRunTable; payslip: PayslipTable;
+  employee: EmployeeTable; employee_photo: EmployeePhotoTable; contact_logo: ContactLogoTable; site: SiteTable; appointment: AppointmentTable; appointment_attendee: AppointmentAttendeeTable; evaluation_campaign: EvaluationCampaignTable; evaluation: EvaluationTable; payroll_settings: PayrollSettingsTable; payroll_run: PayrollRunTable; payslip: PayslipTable;
   email_message: EmailMessageTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable; leave_request: LeaveRequestTable;
 }

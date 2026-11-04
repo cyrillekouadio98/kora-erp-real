@@ -139,3 +139,7 @@ export const CONTRACT_STATUS: Record<string, [string, 'ok' | 'warn' | 'mute' | '
 export const SETTLEMENT_REASONS: Record<string, string> = {
   dismissal: 'Licenciement', resignation: 'Démission', end_of_contract: 'Fin de CDD', mutual: "Rupture d'un commun accord", retirement: 'Départ à la retraite', serious_misconduct: 'Licenciement pour faute lourde',
 };
+export const EVAL_STATUS: Record<string, [string, 'ok' | 'warn' | 'crit' | 'mute']> = {
+  draft: ['À remplir', 'mute'], submitted: ['À approuver', 'warn'], approved: ['Approuvée', 'ok'], refused: ['Refusée', 'crit'],
+};
+export const RATINGS: Record<string, string> = { insufficient: 'Insuffisant', improve: 'À améliorer', good: 'Satisfaisant', very_good: 'Très bien', excellent: 'Excellent' };

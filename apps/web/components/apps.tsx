@@ -55,6 +55,10 @@ const ICONS: Record<string, React.ReactNode> = {
     <rect x="14" y="4" width="4" height="10" rx="2" fill={N} /><rect x="30" y="4" width="4" height="10" rx="2" fill={N} />
     {[25, 33].map((y) => [12, 21, 30].map((x) => <rect key={`${x}-${y}`} x={x} y={y} width="6" height="5" rx="1.5" fill={x === 21 && y === 25 ? O : Y} />))}
   </>,
+  evaluations: <>
+    <rect x="6" y="6" width="28" height="36" rx="3" fill={B} /><rect x="11" y="13" width="14" height="3" rx="1.5" fill={W} opacity=".6" /><rect x="11" y="20" width="10" height="3" rx="1.5" fill={W} opacity=".6" />
+    <path d="M34 22l3.5 7.1 7.8 1.1-5.6 5.5 1.3 7.8-7-3.7-7 3.7 1.3-7.8-5.6-5.5 7.8-1.1z" fill={Y} stroke={O} strokeWidth="1.5" strokeLinejoin="round" />
+  </>,
   sites: <>
     <path d="M4 18l4-10h32l4 10z" fill={O} /><rect x="6" y="18" width="36" height="24" rx="2" fill={N} />
     <path d="M4 18h40v3a4.4 4.4 0 0 1-8.8 0 4.4 4.4 0 0 1-8.8 0 4.4 4.4 0 0 1-8.8 0 4.4 4.4 0 0 1-8.8 0 4.4 4.4 0 0 1-4.8 0z" fill={Y} />
@@ -125,6 +129,7 @@ export const APPS: App[] = [
   { key: 'contacts', label: 'Contacts', href: '/app/contacts', perm: 'contacts.read' },
   { key: 'employees', label: 'Employés', href: '/app/employes', perm: 'employees.read', module: 'hr' },
   { key: 'leave', label: 'Congés', href: '/app/conges', perm: 'leave.read', module: 'hr' },
+  { key: 'evaluations', label: 'Évaluations', href: '/app/evaluations', perm: 'evaluations.read', module: 'hr' },
   { key: 'payroll', label: 'Paie', href: '/app/paie', perm: 'payroll.read', module: 'payroll', pages: [
     { href: '/app/paie', label: "Vue d'ensemble" }, { href: '/app/paie/fiches', label: 'Bulletins' }, { href: '/app/paie/prestations', label: 'Temps et absences' },
     { href: '/app/paie/contrats', label: 'Contrats' }, { href: '/app/paie/solde', label: 'Départs' }, { href: '/app/paie/analyse', label: 'Masse salariale' },

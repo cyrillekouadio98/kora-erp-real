@@ -4,6 +4,7 @@ import { sql } from 'kysely';
 import type { TenantInfo } from '../../common/request-context';
 import { DatabaseService, TenantTrx } from '../../db/database.service';
 import { AccountingService } from '../accounting/accounting.service';
+import { EvaluationsService } from '../evaluations/evaluations.service';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const round = (n: number) => Math.round(n);
@@ -26,7 +27,7 @@ export interface Alert { kind: string; severity: 'critical' | 'warning' | 'info'
  */
 @Injectable()
 export class DashboardService {
-  constructor(private readonly db: DatabaseService, private readonly accounting: AccountingService) {}
+  constructor(private readonly db: DatabaseService, private readonly accounting: AccountingService, private readonly evaluations: EvaluationsService) {}
 
   async build(t: TenantInfo, months: number) {
     const can = (perm: string, module?: string) => t.permissions.has(perm) && (!module || t.entitlements.modules.includes(module));
@@ -140,6 +141,11 @@ export class DashboardService {
         .select('a.id').where('x.user_id', '=', t.ctx.userId).where('a.status', '=', 'planned')
         .where('a.start_at', '<', new Date(`${now}T23:59:59.999Z`)).where('a.end_at', '>=', new Date(`${now}T00:00:00Z`)).execute();
       if (mine.length) out.push({ kind: 'appointments_today', severity: 'info', label: "Rendez-vous aujourd'hui", count: mine.length, href: '/app/calendrier' });
+    }
+    if (can('evaluations.read', 'hr')) {
+      const e = await this.evaluations.pending(trx, t);
+      if (e.toFill) out.push({ kind: 'evaluations_to_fill', severity: 'info', label: 'Évaluations à remplir', count: e.toFill, href: '/app/evaluations' });
+      if (e.toDecide) out.push({ kind: 'evaluations_to_decide', severity: 'info', label: 'Évaluations à approuver', count: e.toDecide, href: '/app/evaluations' });
     }
     if (can('accounting.read', 'accounting')) {
       const pending = (await this.accounting.pending(trx)).length;

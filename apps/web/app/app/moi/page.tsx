@@ -1,24 +1,27 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { CONTRACTS, date, LEAVE_STATUS, LEAVE_TYPES, money, periodLabel } from '@/lib/format';
+import { Score, Stars } from '@/components/evaluations';
 import { useSession } from '@/components/session';
 import { Payslip } from '@/components/payslip';
 import { Alert, Field, Pill, useAction } from '@/components/ui';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-/** Espace personnel du salarié : sa fiche, ses bulletins, ses congés. */
+/** Espace personnel du salarié : sa fiche, ses bulletins, ses congés, ses évaluations. */
 export default function MySpacePage() {
   const { can, ctx } = useSession();
   const [me, setMe] = useState<any>(null);
   const [slips, setSlips] = useState<any[]>([]);
   const [slip, setSlip] = useState<any>(null);
+  const [evals, setEvals] = useState<any[]>([]);
   const [form, setForm] = useState<any>(null);
   const { busy, error, run, setError } = useAction();
   const load = useCallback(() => run(async () => {
     setMe(await api('/company/me'));
     if (ctx?.permissions.includes('payroll.self')) setSlips(await api('/company/me/payslips').catch(() => []));
+    if (ctx?.permissions.includes('evaluations.self')) setEvals(await api('/company/me/evaluations').catch(() => []));
   }), [ctx]); // eslint-disable-line
   useEffect(() => { load(); }, [load]);
   if (!me) return <><div className="page-head"><h1>Mon espace</h1></div><Alert>{error || null}</Alert></>;
@@ -57,6 +60,20 @@ export default function MySpacePage() {
               <td className="n"><button className="btn sm" onClick={() => api(`/company/me/payslips/${s.id}`).then(setSlip)}>Voir</button></td></tr>))}
             {!slips.length && <tr><td colSpan={5} className="muted" style={{ textAlign: 'center' }}>Aucun bulletin pour l'instant.</td></tr>}</tbody>
         </table></div></div>}
+
+      {evals.length > 0 && <div className="card"><header><h2>Mes évaluations</h2></header>
+        <div className="ev-mine">{evals.map((v) => (
+          <details key={v.id} className="ev-mine-item">
+            <summary><b>{v.campaignName}</b> <span className="small muted">({date(v.periodStart)} – {date(v.periodEnd)})</span> <Score score={v.score} rating={v.rating} /></summary>
+            <dl className="ev-mine-crit">{v.criteria.map((c: any) => <Fragment key={c.key}><dt>{c.label}{v.scores[c.key]?.comment && <div className="small muted">{v.scores[c.key].comment}</div>}</dt>
+              <dd><Stars value={v.scores[c.key]?.score ?? null} size="sm" /></dd></Fragment>)}</dl>
+            {([['strengths', 'Points forts'], ['improvements', 'Axes de progrès'], ['goals', 'Objectifs'], ['comment', 'Commentaire']] as const).filter(([k]) => v[k]).map(([k, l]) => (
+              <p key={k} className="small" style={{ margin: '6px 0 0' }}><b>{l} :</b> {v[k]}</p>))}
+            {(v.bonusAmount > 0 || v.newBaseSalary) && <p className="small" style={{ margin: '6px 0 0' }}>
+              {v.bonusAmount > 0 && <>Prime de <b>{money(v.bonusAmount)}</b> avec la paie de {periodLabel(v.bonusPeriod)}. </>}
+              {v.newBaseSalary && <>Nouveau salaire de base : <b>{money(v.newBaseSalary)}</b> à partir de {periodLabel(v.raisePeriod)}.</>}</p>}
+            <p className="small muted" style={{ margin: '6px 0 0' }}>Évaluation de {v.evaluator ?? '—'}, finalisée le {date(v.decidedAt)}.</p>
+          </details>))}</div></div>}
 
       {slip && <div className="modal-back" onClick={() => setSlip(null)}><div className="modal" style={{ width: 'min(960px, 100%)' }} onClick={(e) => e.stopPropagation()}>
         <Payslip slip={slip.slip} period={slip.period} company={{ ...slip.company }} onClose={() => setSlip(null)} /></div></div>}

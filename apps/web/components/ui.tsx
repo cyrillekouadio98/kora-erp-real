@@ -36,6 +36,12 @@ export function PaidRows({ payments }: { payments: { id?: string; paidOn: string
 /** Teinte stable tirée d'un texte : même nom, même couleur (initiales, étiquettes). */
 export const hue = (text: string) => [...text].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
 
+/** Photo d'une personne, ou ses initiales sur une teinte stable (vignettes employés, évaluations). */
+export function Avatar({ e, src = e.photo && `/api${e.photo}` }: { e: any; src?: string | null }) {
+  if (src) return <img className="vg-photo" src={src} alt="" loading="lazy" />;
+  return <div className="vg-photo vg-initials" style={{ '--h': hue(e.fullName ?? e.name ?? `${e.firstName} ${e.lastName}`) } as React.CSSProperties} aria-hidden>{`${(e.firstName ?? '')[0] ?? ''}${(e.lastName ?? '')[0] ?? ''}`.toUpperCase()}</div>;
+}
+
 /** Réduit l'image choisie à une vignette carrée de 320 px (JPEG), centrée. */
 export function shrinkImage(file: File): Promise<string> {
   return new Promise((resolve, reject) => {

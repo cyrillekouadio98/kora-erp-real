@@ -4,7 +4,7 @@ import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { CONTRACTS, date, MARITAL, money, PAYMENT_METHODS } from '@/lib/format';
 import { useSession } from '@/components/session';
-import { Alert, Field, hue, Pill, shrinkImage, useAction } from '@/components/ui';
+import { Alert, Avatar, Field, hue, Pill, shrinkImage, useAction } from '@/components/ui';
 
 const EMPTY = {
   firstName: '', lastName: '', jobTitle: '', department: '', hireDate: new Date().toISOString().slice(0, 10), endDate: '', contractType: 'cdi', cnpsNumber: '',
@@ -36,11 +36,6 @@ function SimulatedSlip({ slip }: { slip: any }) {
 }
 
 /** Photo de l'employé, ou ses initiales sur une teinte qui lui est propre. */
-function Avatar({ e, src = e.photo && `/api${e.photo}` }: { e: any; src?: string | null }) {
-  if (src) return <img className="vg-photo" src={src} alt="" loading="lazy" />;
-  return <div className="vg-photo vg-initials" style={{ '--h': hue(e.fullName ?? `${e.firstName} ${e.lastName}`) } as React.CSSProperties} aria-hidden>{`${(e.firstName ?? '')[0] ?? ''}${(e.lastName ?? '')[0] ?? ''}`.toUpperCase()}</div>;
-}
-
 /** Vignette d'un employé : photo, poste, contacts, matricule et service. */
 function EmployeeCard({ e, onOpen, site }: { e: any; onOpen?: () => void; site?: string }) {
   const body = <>
