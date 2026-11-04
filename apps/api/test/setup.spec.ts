@@ -25,7 +25,8 @@ describe('Console : préparation d’une entreprise pour un client', () => {
     id = r.body.id;
     expect(r.body).toMatchObject({ status: 'preparing', subscription: { planCode: 'starter', billingCycle: 'yearly', userQuota: 5 }, company: { name: 'Boulangerie du Plateau', city: 'Abidjan' } });
     expect(r.body.sites).toHaveLength(1);
-    expect(r.body.accounts.map((a: any) => a.kind).sort()).toEqual(['bank', 'cash', 'mobile_money']);
+    expect(r.body.accounts.map((a: any) => a.kind).sort()).toEqual(['cash', 'mobile_money']); // Starter : pas de banque
+    expect((await sales.agent.post(`/platform/setup/${r.body.id}/accounts`).send({ kind: 'bank', name: 'SGCI' })).body.error.code).toBe('module_not_in_plan');
     expect(r.body.canHandOver).toBe(false); // pas encore de propriétaire
     // L'équipe de l'éditeur n'a aucune adhésion : l'espace entreprise lui reste fermé.
     const c = await ownerClient();
@@ -39,8 +40,10 @@ describe('Console : préparation d’une entreprise pour un client', () => {
     const site = await sales.agent.post(`/platform/setup/${id}/sites`).send({ name: 'Boutique Cocody', city: 'Abidjan' });
     expect(site.body.sites.map((s: any) => s.name)).toContain('Boutique Cocody');
     expect(site.body.accounts.some((a: any) => a.name === 'Caisse Boutique Cocody')).toBe(true);
-    const bank = site.body.accounts.find((a: any) => a.kind === 'bank');
-    const s = await sales.agent.patch(`/platform/setup/${id}/accounts/${bank.id}`).send({ name: 'SGCI', bankName: 'Société Générale Côte d’Ivoire', accountNumber: 'CI008 01234 000123456789 12' });
+    const bank = await sales.agent.post(`/platform/setup/${id}/accounts`).send({ kind: 'bank', name: 'SGCI', bankName: 'Société Générale Côte d’Ivoire' });
+    expect(bank.body.checklist.find((i: any) => i.key === 'treasury').done).toBe(false); // numéro de compte manquant
+    const sgci = bank.body.accounts.find((a: any) => a.name === 'SGCI');
+    const s = await sales.agent.patch(`/platform/setup/${id}/accounts/${sgci.id}`).send({ accountNumber: 'CI008 01234 000123456789 12' });
     expect(s.body.checklist.find((i: any) => i.key === 'treasury').done).toBe(true);
     expect(s.body.checklist.find((i: any) => i.key === 'company').done).toBe(true);
     expect(s.body.subscription).toMatchObject({ planCode: 'business', trialDays: 30, userQuota: 10 });

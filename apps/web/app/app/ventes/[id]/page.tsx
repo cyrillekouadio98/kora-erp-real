@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
-import { CHAIN_ORDER, date, dateTime, DOC_LABEL, docStatus, DocType, money, PAYMENT_METHODS, paymentStamp, REMINDER_CHANNELS } from '@/lib/format';
+import { CHAIN_ORDER, date, dateTime, DOC_LABEL, docStatus, DocType, money, PAYMENT_METHODS, paymentMethods, paymentStamp, REMINDER_CHANNELS } from '@/lib/format';
 import { useSession } from '@/components/session';
 import { SalesEditor } from '@/components/sales-editor';
 import { Alert, Field, PaidRows, Pill, useAction } from '@/components/ui';
@@ -44,6 +44,7 @@ export default function SalesDocumentPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { can, ctx } = useSession();
+  const bank = !!ctx?.entitlements.modules.includes('bank');
   const [doc, setDoc] = useState<any>(null);
   const [company, setCompany] = useState<any>(null);
   const [pay, setPay] = useState<any>(null);
@@ -118,7 +119,7 @@ export default function SalesDocumentPage() {
       <Chain doc={doc} />
       {doc.related?.filter((r: any) => r.type === 'credit_note' || isCredit).map((r: any) => <Alert key={r.id} kind="info">{relation(doc, r)} <Link href={`/app/ventes/${r.id}`}>{r.number ?? 'brouillon'}</Link>{r.status === 'draft' ? ' (brouillon à émettre)' : ''}.</Alert>)}
       {doc.refundDue > 0 && <Alert kind="warn">Le client a payé <b>{money(doc.refundDue)}</b> de plus que ce qu'il doit après avoir : ce trop-perçu est à lui rembourser.
-        {writable && can('cash.create') && <> <button className="btn sm" onClick={() => setRefund({ amount: doc.refundDue, method: 'bank_transfer', accountId: '', paidOn: new Date().toISOString().slice(0, 10), reference: '' })}>Rembourser le client</button></>}</Alert>}
+        {writable && can('cash.create') && <> <button className="btn sm" onClick={() => setRefund({ amount: doc.refundDue, method: bank ? 'bank_transfer' : 'cash', accountId: '', paidOn: new Date().toISOString().slice(0, 10), reference: '' })}>Rembourser le client</button></>}</Alert>}
 
       {doc.status === 'draft' && writable && can('sales.update')
         ? <SalesEditor key={doc.id} type={type} doc={doc} onSaved={setDoc} onDirtyChange={setDirty} />
@@ -184,7 +185,7 @@ export default function SalesDocumentPage() {
             <Alert>{error}</Alert>
             <Field label="Montant remboursé (FCFA)" type="number" min={1} max={doc.refundDue} required value={refund.amount} onChange={(e) => setRefund({ ...refund, amount: e.target.value })} />
             <label className="field">Mode de remboursement
-              <select className="input" value={refund.method} onChange={(e) => setRefund({ ...refund, method: e.target.value })}>{Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+              <select className="input" value={refund.method} onChange={(e) => setRefund({ ...refund, method: e.target.value })}>{paymentMethods(ctx?.entitlements.modules ?? []).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
             </label>
             <AccountSelect method={refund.method} value={refund.accountId} onChange={(v) => setRefund({ ...refund, accountId: v })} label="Payé depuis" />
             <Field label="Date" type="date" required max={new Date().toISOString().slice(0, 10)} value={refund.paidOn} onChange={(e) => setRefund({ ...refund, paidOn: e.target.value })} />
@@ -213,7 +214,7 @@ export default function SalesDocumentPage() {
             <Alert>{error}</Alert>
             <Field label="Montant (FCFA)" type="number" min={1} max={doc.remaining} required value={pay.amount} onChange={(e) => setPay({ ...pay, amount: e.target.value })} />
             <label className="field">Mode de paiement
-              <select className="input" value={pay.method} onChange={(e) => setPay({ ...pay, method: e.target.value })}>{Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+              <select className="input" value={pay.method} onChange={(e) => setPay({ ...pay, method: e.target.value })}>{paymentMethods(ctx?.entitlements.modules ?? []).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
             </label>
             <AccountSelect method={pay.method} value={pay.accountId ?? ''} onChange={(v) => setPay({ ...pay, accountId: v })} />
             <Field label="Date" type="date" required max={new Date().toISOString().slice(0, 10)} value={pay.paidOn} onChange={(e) => setPay({ ...pay, paidOn: e.target.value })} />

@@ -15,6 +15,8 @@ export default function PayrollRunPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { can, ctx } = useSession();
+  // Sans le module Banque, le salaire se paie en espèces ou par mobile money.
+  const bank = !!ctx?.entitlements.modules.includes('bank');
   const writable = !ctx?.readOnly;
   const [r, setR] = useState<any>(null);
   const [company, setCompany] = useState<any>(null);
@@ -28,6 +30,7 @@ export default function PayrollRunPage() {
   useEffect(() => { const p = fiche && r?.payslips.find((x: any) => x.id === fiche); if (p) setModal({ type: 'slip', slip: p }); }, [fiche, r?.id]); // eslint-disable-line
   if (!r) return <Alert>{error || null}</Alert>;
   const draft = r.status === 'draft';
+  const usable = accounts.filter((a) => bank || a.kind !== 'bank');
   const d = r.declarations;
 
   return (
@@ -40,7 +43,7 @@ export default function PayrollRunPage() {
           {draft && writable && can('payroll.update') && <button className="btn" disabled={busy} onClick={() => run(async () => setR(await api(`/company/payroll/runs/${id}/recompute`, { body: {} })))}>Recalculer d'après les fiches</button>}
           {draft && writable && can('payroll.validate') && <button className="btn primary" disabled={busy} onClick={() => { if (window.confirm('Valider la paie ? Les bulletins ne pourront plus être modifiés et la paie sera passée en comptabilité.')) run(async () => setR(await api(`/company/payroll/runs/${id}/validate`, { body: {} }))); }}>Valider la paie</button>}
           {!draft && !r.totals.paid && writable && can('payroll.validate') && <button className="btn" disabled={busy} onClick={() => { if (window.confirm(`Remettre la paie de ${r.label} en brouillon ? Son écriture comptable sera contre-passée et les bulletins redeviendront modifiables.`)) run(async () => setR(await api(`/company/payroll/runs/${id}/reset-to-draft`, { body: {} }))); }}>Remettre en brouillon</button>}
-          {!draft && r.totals.paid < r.payslips.length && writable && can('payroll.validate') && <button className="btn primary" onClick={() => { setError(''); setModal({ type: 'pay', accountId: accounts.find((a) => a.kind === 'bank')?.id ?? accounts[0]?.id ?? '', date: new Date().toISOString().slice(0, 10) }); }}>Payer les salaires</button>}
+          {!draft && r.totals.paid < r.payslips.length && writable && can('payroll.validate') && <button className="btn primary" onClick={() => { setError(''); setModal({ type: 'pay', accountId: usable.find((a) => a.kind === 'bank')?.id ?? usable[0]?.id ?? '', date: new Date().toISOString().slice(0, 10) }); }}>Payer les salaires</button>}
         </div>
       </div>
       <Alert>{!modal && error}</Alert>
@@ -100,7 +103,7 @@ export default function PayrollRunPage() {
               <p className="small muted" style={{ margin: 0 }}>Un décaissement par salarié non encore payé, pour un total de <b>{money(r.payslips.filter((p: any) => !p.paidAt).reduce((s: number, p: any) => s + p.net, 0))}</b>.</p>
               <Alert>{error}</Alert>
               <label className="field">Payé depuis<select className="input" value={modal.accountId} onChange={(e) => setModal({ ...modal, accountId: e.target.value })}>
-                {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({money(a.balance)})</option>)}</select></label>
+                {usable.map((a) => <option key={a.id} value={a.id}>{a.name} ({money(a.balance)})</option>)}</select></label>
               <Field label="Date du paiement" type="date" required max={new Date().toISOString().slice(0, 10)} value={modal.date} onChange={(e) => setModal({ ...modal, date: e.target.value })} />
               <div className="row"><button className="btn primary" disabled={busy}>Enregistrer le paiement</button><button type="button" className="btn" onClick={() => setModal(null)}>Annuler</button></div>
             </>}

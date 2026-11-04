@@ -124,4 +124,27 @@ describe('Trésorerie : caisse, banque, mobile money', () => {
     expect((await cashier.post('/company/treasury/accounts').send({ kind: 'cash', name: 'Caisse 2' })).status).toBe(403);
     expect((await cashier.get('/company/treasury/movements').query({ from: addDays(today(), -1) })).status).toBe(200);
   });
+
+  it('réserve la banque aux formules qui l’incluent ; l’historique reste consultable', async () => {
+    const u = await signup(app); // essai Business : banque incluse
+    const accounts = (await u.agent.get('/company/treasury/accounts')).body;
+    const bank = accounts.find((a: any) => a.kind === 'bank').id;
+    const cash = accounts.find((a: any) => a.kind === 'cash').id;
+    const income = (accountId: string) => u.agent.post('/company/treasury/movements').send({ kind: 'income', accountId, amount: 100000, category: 'capital', label: 'Apport' });
+    const m = await income(bank);
+    expect(m.status).toBe(201);
+    // Passage à Starter (sans le module Banque)
+    const c = await ownerClient();
+    try {
+      await c.query(`UPDATE subscription SET plan_version_id = (SELECT v.id FROM plan_version v JOIN plan p ON p.id = v.plan_id WHERE p.code = 'starter' ORDER BY v.version DESC LIMIT 1) WHERE company_id = $1`, [u.companyId]);
+    } finally { await c.end(); }
+    const refused = await income(bank);
+    expect(refused.status).toBe(402);
+    expect(refused.body.error.code).toBe('module_not_in_plan');
+    expect((await u.agent.post('/company/treasury/accounts').send({ kind: 'bank', name: 'BICICI' })).body.error.code).toBe('module_not_in_plan');
+    expect((await income(cash)).status).toBe(201);
+    expect((await u.agent.post('/company/treasury/accounts').send({ kind: 'mobile_money', name: 'Wave' })).status).toBe(201);
+    expect((await u.agent.get('/company/treasury/accounts')).body.find((a: any) => a.id === bank).balance).toBe(100000);
+    expect((await u.agent.post(`/company/treasury/movements/${m.body.id}/reverse`).send({ reason: 'Saisie en double' })).status).toBe(200);
+  });
 });

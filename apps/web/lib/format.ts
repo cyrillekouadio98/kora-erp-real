@@ -72,6 +72,8 @@ export const docStatus = (type: string, status: string): [string, 'ok' | 'warn' 
 export const CHAIN_ORDER = ['quote', 'order', 'invoice'];
 export const REMINDER_CHANNELS: Record<string, string> = { phone: 'Appel téléphonique', whatsapp: 'WhatsApp', sms: 'SMS', email: 'E-mail', letter: 'Courrier', visit: 'Visite' };
 export const PAYMENT_METHODS: Record<string, string> = { cash: 'Espèces', mobile_money: 'Mobile money', bank_transfer: 'Virement', cheque: 'Chèque', card: 'Carte bancaire' };
+/** Modes de paiement proposés : virement, chèque et carte demandent le module Banque de la formule. */
+export const paymentMethods = (modules: string[]) => Object.entries(PAYMENT_METHODS).filter(([k]) => modules.includes('bank') || !['bank_transfer', 'cheque', 'card'].includes(k));
 export const DOC_LABEL = { quote: 'Devis', order: 'Bon de commande', invoice: 'Facture', credit_note: 'Avoir' } as const;
 export type DocType = keyof typeof DOC_LABEL;
 export const VAT_RATES = [18, 9, 0];

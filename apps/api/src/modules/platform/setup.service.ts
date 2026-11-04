@@ -117,7 +117,9 @@ export class SetupService {
         { key: 'company', label: 'Fiche de l’entreprise', done: !!(company.legalForm && company.city && (company.rccm || company.taxId)), hint: 'Forme juridique, ville, RCCM ou NCC : ils figurent sur les factures.' },
         { key: 'subscription', label: 'Formule', done: true, hint: `${sub.name}, ${sub.billing_cycle === 'yearly' ? 'annuelle' : 'mensuelle'}` },
         { key: 'sites', label: 'Sites', done: true, hint: `${sites.length} site(s)` },
-        { key: 'treasury', label: 'Comptes bancaires', done: banks.length > 0 && banks.every((b) => b.bank_name && b.account_number), hint: 'Banque et numéro de compte de chaque compte bancaire.' },
+        base.subscription.modules.includes('bank')
+          ? { key: 'treasury', label: 'Comptes bancaires', done: banks.length > 0 && banks.every((b) => b.bank_name && b.account_number), hint: 'Banque et numéro de compte de chaque compte bancaire.' }
+          : { key: 'treasury', label: 'Trésorerie', done: true, hint: 'Formule sans banque : caisses et mobile money.' },
         { key: 'owner', label: 'Propriétaire', done: !!s.owner_email, required: true, hint: 'La personne qui recevra l’entreprise et en aura tous les droits.' },
         { key: 'users', label: 'Collaborateurs', done: quota === null || seats <= quota, hint: quota === null ? `${users.length} prévu(s)` : `${seats} / ${quota} utilisateurs de la formule` },
       ];

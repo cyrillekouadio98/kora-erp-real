@@ -26,7 +26,7 @@ export default function PreparationPage() {
   const [accounts, setAccounts] = useState<Record<string, any>>({});
   const [sites, setSites] = useState<Record<string, any>>({});
   const [newSite, setNewSite] = useState({ name: '', city: '', withCash: true });
-  const [newAccount, setNewAccount] = useState({ kind: 'bank', name: '', bankName: '', accountNumber: '', siteId: '' });
+  const [newAccount, setNewAccount] = useState({ kind: 'mobile_money', name: '', bankName: '', accountNumber: '', siteId: '' });
   const [links, setLinks] = useState<any>(null);
   const [notice, setNotice] = useState('');
   const { busy, error, run, setError } = useAction();
@@ -140,9 +140,9 @@ export default function PreparationPage() {
             <form className="prep-add" onSubmit={(e) => {
               e.preventDefault();
               save('/accounts', { kind: newAccount.kind, name: newAccount.name, siteId: newAccount.siteId || null, ...(newAccount.kind === 'bank' ? { bankName: newAccount.bankName, accountNumber: newAccount.accountNumber } : {}) }, `Compte « ${newAccount.name} » ajouté.`, 'POST');
-              setNewAccount({ kind: 'bank', name: '', bankName: '', accountNumber: '', siteId: '' });
+              setNewAccount({ kind: 'mobile_money', name: '', bankName: '', accountNumber: '', siteId: '' });
             }}>
-              <select className="input" aria-label="Type de compte" value={newAccount.kind} onChange={(e) => setNewAccount({ ...newAccount, kind: e.target.value })}>{Object.entries(KINDS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+              <select className="input" aria-label="Type de compte" value={newAccount.kind} onChange={(e) => setNewAccount({ ...newAccount, kind: e.target.value })}>{Object.entries(KINDS).filter(([k]) => k !== 'bank' || s.subscription.modules.includes('bank')).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
               <input className="input" placeholder="Nom du compte" aria-label="Nom du nouveau compte" required minLength={2} value={newAccount.name} onChange={(e) => setNewAccount({ ...newAccount, name: e.target.value })} />
               {newAccount.kind === 'bank' && <input className="input" placeholder="Banque" aria-label="Banque du nouveau compte" value={newAccount.bankName} onChange={(e) => setNewAccount({ ...newAccount, bankName: e.target.value })} />}
               {s.sites.length > 1 && <select className="input" aria-label="Site" value={newAccount.siteId} onChange={(e) => setNewAccount({ ...newAccount, siteId: e.target.value })}>

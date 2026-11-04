@@ -4,7 +4,7 @@ import { uuidv7 } from '../../common/ids';
 import { badRequest } from '../../common/errors';
 import { setTenantContext, TenantContext, Trx } from '../../db/database.service';
 import { AuditService } from '../audit/audit.service';
-import { DEFAULT_TRIAL_PLAN } from '../billing/entitlements';
+import { DEFAULT_TRIAL_PLAN, normalizeEntitlements } from '../billing/entitlements';
 import { DEFAULT_ROLES } from '../rbac/permissions';
 
 export interface NewCompany {
@@ -44,7 +44,7 @@ export class ProvisioningService {
     }
 
     const plan = await t.selectFrom('plan_version as v').innerJoin('plan as p', 'p.id', 'v.plan_id')
-      .select(['v.id', 'v.trial_days']).where('p.code', '=', opts.planCode ?? DEFAULT_TRIAL_PLAN).where('v.published_at', 'is not', null)
+      .select(['v.id', 'v.trial_days', 'v.entitlements']).where('p.code', '=', opts.planCode ?? DEFAULT_TRIAL_PLAN).where('v.published_at', 'is not', null)
       .orderBy('v.version', 'desc').limit(1).executeTakeFirst();
     if (!plan) throw badRequest(opts.planCode ? `La formule ${opts.planCode} n'est pas publiée.` : "Aucune formule d'essai n'est publiée. Contactez l'éditeur.", undefined, 'no_trial_plan');
     const start = new Date();
@@ -59,9 +59,11 @@ export class ProvisioningService {
 
     // Plan comptable SYSCOHADA, journaux, puis trois comptes de trésorerie avec leur sous-compte comptable.
     await sql`select seed_accounting(${companyId}::uuid), seed_accounting_extra(${companyId}::uuid)`.execute(t);
+    // Pas de compte bancaire quand la formule n'inclut pas la banque (Starter).
+    const withBank = normalizeEntitlements(plan.entitlements).modules.includes('bank');
     const treasury = [
       { kind: 'cash' as const, name: 'Caisse principale', ledger_code: '571100' },
-      { kind: 'bank' as const, name: 'Banque principale', ledger_code: '521100' },
+      ...(withBank ? [{ kind: 'bank' as const, name: 'Banque principale', ledger_code: '521100' }] : []),
       { kind: 'mobile_money' as const, name: 'Mobile money', ledger_code: '552100' },
     ];
     await t.insertInto('ledger_account').values(treasury.map((a) => ({ company_id: companyId, code: a.ledger_code, name: a.name, is_system: true }))).execute();

@@ -9,8 +9,9 @@ import { Alert, Pill, useAction } from '@/components/ui';
 const PLAN_MODULES: [string, string, string][] = [
   ['contacts', 'Contacts', 'et calendrier'],
   ['sales', 'Ventes', 'devis, factures, articles, stocks'],
-  ['cash', 'Trésorerie', 'caisse, banque, mobile money'],
+  ['cash', 'Trésorerie', 'caisses et mobile money'],
   ['purchases', 'Achats', 'commandes, factures fournisseurs, échéancier'],
+  ['bank', 'Banque', 'comptes bancaires, virements, chèques, cartes'],
   ['accounting', 'Comptabilité', 'écritures, TVA, bilan'],
   ['hr', 'Ressources humaines', 'employés, congés, évaluations'],
   ['payroll', 'Paie', 'bulletins, CNPS, ITS'],

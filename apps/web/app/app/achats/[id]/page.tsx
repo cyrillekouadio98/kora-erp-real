@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
-import { date, money, PAYMENT_METHODS, PURCHASE_LABEL, PURCHASE_STATUS } from '@/lib/format';
+import { date, money, PAYMENT_METHODS, paymentMethods, PURCHASE_LABEL, PURCHASE_STATUS } from '@/lib/format';
 import { useSession } from '@/components/session';
 import { SalesEditor } from '@/components/sales-editor';
 import { Alert, Field, PaidRows, Pill, useAction } from '@/components/ui';
@@ -13,6 +13,7 @@ export default function PurchaseDocumentPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { can, ctx } = useSession();
+  const bank = !!ctx?.entitlements.modules.includes('bank');
   const [doc, setDoc] = useState<any>(null);
   const [company, setCompany] = useState<any>(null);
   const [pay, setPay] = useState<any>(null);
@@ -55,7 +56,7 @@ export default function PurchaseDocumentPage() {
           {type === 'order' && doc.status === 'sent' && writable && can('purchases.cancel') && <button className="btn" disabled={busy} onClick={() => act('cancel', 'Annuler ce bon de commande ?')}>Annuler la commande</button>}
           {type === 'order' && doc.status === 'sent' && writable && can('purchases.create') && <button className="btn primary" disabled={busy} onClick={() => act('convert')}>Saisir la facture reçue</button>}
           {isOpen && writable && can('cash.create') &&
-            <button className="btn primary" onClick={() => setPay({ amount: doc.remaining, method: 'bank_transfer', paidOn: new Date().toISOString().slice(0, 10), reference: '' })}>Enregistrer un règlement</button>}
+            <button className="btn primary" onClick={() => setPay({ amount: doc.remaining, method: bank ? 'bank_transfer' : 'cash', paidOn: new Date().toISOString().slice(0, 10), reference: '' })}>Enregistrer un règlement</button>}
           {doc.status !== 'draft' && <button className="btn" onClick={() => window.print()}>Imprimer / PDF</button>}
         </div>
       </div>
@@ -120,7 +121,7 @@ export default function PurchaseDocumentPage() {
             <Alert>{error}</Alert>
             <Field label="Montant (FCFA)" type="number" min={1} max={doc.remaining} required value={pay.amount} onChange={(e) => setPay({ ...pay, amount: e.target.value })} />
             <label className="field">Mode de paiement
-              <select className="input" value={pay.method} onChange={(e) => setPay({ ...pay, method: e.target.value })}>{Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+              <select className="input" value={pay.method} onChange={(e) => setPay({ ...pay, method: e.target.value })}>{paymentMethods(ctx?.entitlements.modules ?? []).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
             </label>
             <AccountSelect method={pay.method} value={pay.accountId ?? ''} onChange={(v) => setPay({ ...pay, accountId: v })} />
             <Field label="Date" type="date" required max={new Date().toISOString().slice(0, 10)} value={pay.paidOn} onChange={(e) => setPay({ ...pay, paidOn: e.target.value })} />

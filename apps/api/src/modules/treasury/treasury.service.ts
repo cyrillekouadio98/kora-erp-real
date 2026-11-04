@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { assertSiteAccess, inScope, workingSite } from '../../common/sites';
-import { badRequest, conflict, notFound } from '../../common/errors';
+import { badRequest, conflict, notFound, paymentRequired } from '../../common/errors';
 import { isUuid, uuidv7 } from '../../common/ids';
 import type { TenantInfo } from '../../common/request-context';
 import { DatabaseService, TenantTrx } from '../../db/database.service';
@@ -34,6 +34,13 @@ export class TreasuryService {
     return a;
   }
 
+  /** Comptes bancaires (virements, chèques, cartes) : réservés aux formules qui incluent le module Banque. */
+  private assertBank(t: TenantInfo, kind: TreasuryKind) {
+    if (kind === 'bank' && !t.entitlements.modules.includes('bank')) {
+      throw paymentRequired("La banque n'est pas incluse dans votre formule : réglez en espèces ou par mobile money, ou passez à une formule supérieure.", 'module_not_in_plan', { module: 'bank' });
+    }
+  }
+
   /** Solde courant (solde d'ouverture + entrées − sorties), éventuellement arrêté à une date. */
   async balance(trx: TenantTrx, accountId: string, until?: string) {
     const a = await this.account(trx, accountId);
@@ -64,6 +71,8 @@ export class TreasuryService {
   async record(trx: TenantTrx, t: TenantInfo, m: MovementInput) {
     const a = await this.account(trx, m.accountId, true);
     if (a.archived_at) throw conflict(`Le compte « ${a.name} » est archivé.`, 'account_archived');
+    // Après un passage à une formule sans banque, l'historique reste consultable et se corrige (contre-passation).
+    if (!m.reversalOf) this.assertBank(t, a.kind);
     if (m.date > today()) throw badRequest('La date du mouvement ne peut pas être dans le futur.', undefined, 'future_date');
     if (m.date < a.opening_date) throw badRequest(`La date est antérieure à l'ouverture du compte « ${a.name} » (${a.opening_date}).`, undefined, 'before_opening');
     if (m.direction === 'out' && a.kind === 'cash') {
@@ -102,6 +111,7 @@ export class TreasuryService {
   }
 
   async createAccount(t: TenantInfo, input: { kind: TreasuryKind; name: string; bankName?: string | null; accountNumber?: string | null; openingBalance?: number; openingDate?: string; siteId?: string | null }) {
+    this.assertBank(t, input.kind);
     const siteId = input.siteId ?? workingSite(t);
     assertSiteAccess(t, siteId);
     if (input.kind === 'cash' && (input.openingBalance ?? 0) < 0) throw badRequest("Le solde d'ouverture d'une caisse ne peut pas être négatif.", undefined, 'negative_cash');
