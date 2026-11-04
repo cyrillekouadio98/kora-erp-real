@@ -201,7 +201,7 @@ export class MembersController {
 
   private async loadInvitation(trx: TenantTrx, token: { invitationId: string; secret: string }) {
     const inv = await trx.selectFrom('invitation as i').innerJoin('company as c', 'c.id', 'i.company_id')
-      .select(['i.id', 'i.email', 'i.role_ids', 'i.site_ids', 'i.employee_id', 'i.token_hash', 'i.expires_at', 'i.accepted_at', 'i.revoked_at', 'c.name as companyName', 'c.status as companyStatus'])
+      .select(['i.id', 'i.email', 'i.role_ids', 'i.site_ids', 'i.employee_id', 'i.is_owner', 'i.token_hash', 'i.expires_at', 'i.accepted_at', 'i.revoked_at', 'c.name as companyName', 'c.status as companyStatus'])
       .where('i.id', '=', token.invitationId).executeTakeFirst();
     if (!inv || !safeEqual(inv.token_hash, sha256(token.secret)) || inv.accepted_at || inv.revoked_at || new Date(inv.expires_at) < new Date()) {
       throw notFound('Invitation');
@@ -252,8 +252,10 @@ export class MembersController {
       const existing = await t.selectFrom('company_membership').select(['id', 'status']).where('user_id', '=', userId).executeTakeFirst();
       let membershipId = existing?.id;
       if (existing?.status === 'active') throw conflict('Vous avez déjà accès à cette entreprise.', 'already_member');
-      if (existing) await t.updateTable('company_membership').set({ status: 'active', site_ids: inv.site_ids }).where('id', '=', existing.id).execute();
-      else membershipId = (await t.insertInto('company_membership').values({ company_id: tk.companyId, user_id: userId, site_ids: inv.site_ids }).returning('id').executeTakeFirstOrThrow()).id;
+      // Invitation du propriétaire (entreprise préparée par l'éditeur) : l'adhésion devient propriétaire.
+      const owner = inv.is_owner ? { is_owner: true } : {};
+      if (existing) await t.updateTable('company_membership').set({ status: 'active', site_ids: inv.site_ids, ...owner }).where('id', '=', existing.id).execute();
+      else membershipId = (await t.insertInto('company_membership').values({ company_id: tk.companyId, user_id: userId, site_ids: inv.site_ids, ...owner }).returning('id').executeTakeFirstOrThrow()).id;
       const roles = await t.selectFrom('role').select('id').where('id', 'in', inv.role_ids).execute();
       await t.deleteFrom('membership_role').where('membership_id', '=', membershipId!).execute();
       if (roles.length) await t.insertInto('membership_role').values(roles.map((r) => ({ company_id: tk.companyId, membership_id: membershipId!, role_id: r.id }))).execute();

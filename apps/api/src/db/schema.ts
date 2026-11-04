@@ -35,7 +35,11 @@ export interface MembershipRoleTable { company_id: string; membership_id: string
 export interface InvitationTable {
   company_id: string; id: Generated<string>; email: string; role_ids: string[]; token_hash: string; invited_by: string;
   expires_at: Ts; accepted_at: TsNullable; revoked_at: TsNullable; created_at: Generated<Date>; employee_id: Generated<string | null>;
-  site_ids: string[] | null;
+  site_ids: string[] | null; is_owner: Generated<boolean>;
+}
+export interface CompanySetupTable {
+  company_id: string; owner_name: string | null; owner_email: string | null; users: JsonDefault; trial_days: number | null; notes: string | null;
+  prepared_by: string; handed_over_at: TsNullable; handed_over_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 export interface PlanTable { id: Generated<string>; code: string; name: string; is_public: Generated<boolean>; sort_order: Generated<number>; created_at: Generated<Date>; }
 export interface PlanVersionTable {
@@ -247,7 +251,7 @@ export interface FiscalYearClosingTable {
 export interface DB {
   user_account: UserAccountTable; platform_role_assignment: PlatformRoleAssignmentTable; user_session: UserSessionTable;
   company: CompanyTable; company_membership: CompanyMembershipTable; role: RoleTable; membership_role: MembershipRoleTable;
-  invitation: InvitationTable; plan: PlanTable; plan_version: PlanVersionTable; subscription: SubscriptionTable;
+  invitation: InvitationTable; company_setup: CompanySetupTable; plan: PlanTable; plan_version: PlanVersionTable; subscription: SubscriptionTable;
   subscription_event: SubscriptionEventTable; platform_invoice: PlatformInvoiceTable; platform_payment: PlatformPaymentTable;
   payment_webhook_event: PaymentWebhookEventTable; notification: NotificationTable; support_access_grant: SupportAccessGrantTable;
   audit_log: AuditLogTable; numbering_sequence: NumberingSequenceTable; outbox_event: OutboxEventTable; contact: ContactTable;

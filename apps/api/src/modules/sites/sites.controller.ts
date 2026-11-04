@@ -12,8 +12,7 @@ import { DatabaseService, TenantTrx } from '../../db/database.service';
 import { AuditService } from '../audit/audit.service';
 import { isoDate } from '../sales/sales.controller';
 import { today } from '../sales/sales.service';
-import { StockService } from '../stock/stock.service';
-import { TreasuryService } from '../treasury/treasury.service';
+import { SitesService } from './sites.service';
 
 const opt = (max: number) => z.string().trim().max(max).transform((v) => v || null).nullable().optional();
 const SiteSchema = z.object({
@@ -30,7 +29,7 @@ const CreateSchema = SiteSchema.extend({ withCash: z.boolean().default(true) });
 @ApiTags('Sites')
 @Controller('company/sites')
 export class SitesController {
-  constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly stock: StockService, private readonly treasury: TreasuryService) {}
+  constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly sites: SitesService) {}
 
   private async site(trx: TenantTrx, id: string) {
     if (!isUuid(id)) throw notFound('Site');
@@ -64,36 +63,8 @@ export class SitesController {
   /** Nouveau site, avec son entrepôt et (au choix) sa caisse. */
   @Permission('settings.admin')
   @Post()
-  async create(@Tenant() t: TenantInfo, @Body() body: unknown) {
-    const input = parse(CreateSchema, body);
-    const site = await this.db.tenant(t.ctx, async (trx) => {
-      let code = input.code;
-      if (code) {
-        if (await trx.selectFrom('site').select('id').where('code', '=', code).executeTakeFirst()) throw conflict(`Le code ${code} est déjà utilisé par un autre site.`, 'duplicate_code');
-      } else {
-        const used = new Set((await trx.selectFrom('site').select('code').execute()).map((s) => s.code));
-        for (let n = 1; !code; n++) if (!used.has(`S${String(n).padStart(2, '0')}`)) code = `S${String(n).padStart(2, '0')}`;
-      }
-      const s = await trx.insertInto('site').values({ company_id: t.companyId, code, name: input.name, address: input.address ?? null, city: input.city ?? null, phone: input.phone ?? null })
-        .returningAll().executeTakeFirstOrThrow();
-      await this.audit.tenant(trx, t.ctx, { action: 'site.created', entityType: 'site', entityId: s.id, data: { code, name: s.name } });
-      return s;
-    });
-    const whCode = await this.db.tenant(t.ctx, async (trx) => {
-      const used = new Set((await trx.selectFrom('warehouse').select('code').execute()).map((w) => w.code));
-      const base = site.code.replace(/[^A-Z0-9-]/g, '').slice(0, 8) || 'SITE';
-      let c = `${base}-DP`;
-      for (let n = 2; used.has(c); n++) c = `${base}-DP${n}`;
-      return c;
-    });
-    await this.stock.createWarehouse(t, { code: whCode, name: `Dépôt ${site.name}`, address: site.address, siteId: site.id });
-    if (input.withCash) {
-      const names = await this.db.tenant(t.ctx, async (trx) => new Set((await trx.selectFrom('treasury_account').select('name').execute()).map((a) => a.name)));
-      let name = `Caisse ${site.name}`;
-      for (let n = 2; names.has(name); n++) name = `Caisse ${site.name} ${n}`;
-      await this.treasury.createAccount(t, { kind: 'cash', name, siteId: site.id });
-    }
-    return { id: site.id, code: site.code, name: site.name };
+  create(@Tenant() t: TenantInfo, @Body() body: unknown) {
+    return this.sites.create(t, parse(CreateSchema, body));
   }
 
   @Permission('settings.admin')

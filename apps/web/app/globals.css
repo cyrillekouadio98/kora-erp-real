@@ -517,3 +517,34 @@ button.vg-card { cursor: pointer; } button.vg-card:hover { border-color: var(--a
 .plan-modules li > span:first-child { width: 14px; flex: none; font-weight: 700; color: var(--ok, #1a7f4b); }
 .plan-modules li.off { opacity: .55; }
 .plan-modules li.off > span:first-child { color: var(--muted, #888); }
+
+/* Console : préparation d'une entreprise pour un client */
+.prep-layout { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 16px; align-items: start; }
+.prep-main { display: grid; gap: 12px; min-width: 0; }
+.prep-tabs { flex-wrap: wrap; max-width: 100%; }
+.prep-side { display: grid; gap: 10px; position: sticky; top: 16px; }
+.prep-side h2 { font-size: 16px; margin: 0; }
+.prep-row { display: grid; grid-template-columns: 90px repeat(4, minmax(0, 1fr)) auto; gap: 8px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+.form .prep-row { grid-template-columns: repeat(4, minmax(0, 1fr)) auto; }
+.prep-row .prep-wide { grid-column: span 2; }
+.prep-row .prep-span4 { grid-column: span 4; }
+.prep-code { line-height: 1.3; }
+.prep-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-top: 12px; border-top: 1px solid var(--line); }
+.prep-add .input { flex: 1 1 160px; width: auto; }
+.prep-plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
+.prep-plan { display: grid; gap: 4px; padding: 12px; cursor: pointer; }
+.prep-plan input { justify-self: start; margin: 0; }
+.prep-plan.on { outline: 2px solid var(--accent); background: var(--accent-soft); }
+.prep-check { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.prep-check li { display: flex; gap: 8px; align-items: baseline; }
+.prep-check li > span:first-child { width: 14px; flex: none; font-weight: 700; color: var(--muted); }
+.prep-check li.done > span:first-child { color: var(--ok); }
+.prep-check li.missing > span:first-child { color: var(--crit); }
+.prep-links { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.prep-links li { display: grid; gap: 4px; }
+@media (max-width: 900px) {
+  .prep-layout { grid-template-columns: 1fr; }
+  .prep-side { position: static; order: -1; }
+  .prep-row, .form .prep-row { grid-template-columns: 1fr 1fr; }
+  .prep-row .prep-wide, .prep-row .prep-span4 { grid-column: span 2; }
+}

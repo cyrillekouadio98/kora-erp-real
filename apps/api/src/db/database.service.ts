@@ -14,7 +14,7 @@ export type Trx = Transaction<DB>;
 export interface TenantContext {
   companyId: string;
   userId: string;
-  actorType: 'user' | 'support';
+  actorType: 'user' | 'support' | 'platform';
   /** Sites auxquels l'utilisateur est limité (absent ou null : tous) ; la base filtre en conséquence. */
   siteIds?: string[] | null;
   ip?: string | null;

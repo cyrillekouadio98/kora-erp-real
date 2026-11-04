@@ -3,6 +3,10 @@ export const money = (n: number, currency = 'XOF') => `${nf.format(Math.round(n)
 export const date = (v?: string | null) => (v ? new Date(v).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 export const dateTime = (v?: string | null) => (v ? new Date(v).toLocaleString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
 
+/** Entreprise préparée par l'éditeur (console). */
+export const SETUP_STATUS: Record<string, [string, 'ok' | 'warn' | 'mute']> = {
+  preparing: ['En préparation', 'warn'], handed_over: ['Remise, en attente du client', 'mute'], active: ['Prise en main', 'ok'],
+};
 export const SUB_STATUS: Record<string, [string, 'ok' | 'warn' | 'crit' | 'mute']> = {
   trialing: ["Période d'essai", 'ok'], active: ['Actif', 'ok'], grace: ['Paiement en attente', 'warn'],
   suspended: ['Suspendu', 'crit'], cancelled: ['Résilié', 'mute'], archived: ['Archivé', 'mute'],
