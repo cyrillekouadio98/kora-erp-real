@@ -1,8 +1,9 @@
 'use client';
 import { Suspense, useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
-import { CONTRACTS, date, MARITAL, money, PAYMENT_METHODS } from '@/lib/format';
+import { CONTRACTS, date, MARITAL, money, PAYMENT_METHODS, periodLabel } from '@/lib/format';
 import { useSession } from '@/components/session';
 import { Alert, Avatar, Field, hue, Pill, shrinkImage, useAction } from '@/components/ui';
 
@@ -79,6 +80,7 @@ function Employees() {
   const [view, setView] = useState<'cards' | 'list'>(() => { try { return localStorage.getItem('kora.employes.vue') === 'list' ? 'list' : 'cards'; } catch { return 'cards'; } });
   const [dept, setDept] = useState<string | null>(null);
   const [photo, setPhoto] = useState<string | null | undefined>(undefined);
+  const [planned, setPlanned] = useState<any[]>([]);
   const pickView = (v: 'cards' | 'list') => { setView(v); try { localStorage.setItem('kora.employes.vue', v); } catch { /* sans stockage */ } };
   useEffect(() => { if (salaries) api('/company/payroll/settings').then((s) => setCategories(s.params.categories ?? []), () => {}); }, [salaries]);
   const catLabel = (code: string | null) => categories.find((c) => c.code === code)?.label ?? code;
@@ -92,6 +94,11 @@ function Employees() {
   const siteOf = (id?: string) => (!ctx?.siteId && sites.length > 1 ? sites.find((s) => s.id === id)?.name : undefined);
   // Ouverture directe d'une fiche : /app/employes?id=… (liens depuis la paie)
   const direct = useSearchParams().get('id');
+  // Augmentations approuvées par une évaluation, en attente de leur mois d'effet
+  useEffect(() => {
+    setPlanned([]);
+    if (salaries && edit?.id) api(`/company/employees/${edit.id}`).then((e) => setPlanned(e.plannedRaises ?? []), () => {});
+  }, [edit?.id, salaries]);
   useEffect(() => { if (direct) api(`/company/employees/${direct}`).then((e) => open(toForm(e)), () => {}); }, [direct]); // eslint-disable-line
 
   // « Calculer la fiche » : salaire de base et sursalaire qui donnent le net demandé (rien n'est enregistré avant « Enregistrer »).
@@ -226,6 +233,8 @@ function Employees() {
                 <span className="small muted" style={{ flex: 1, minWidth: 200 }}>Salaire de base = salaire catégoriel ; le sursalaire complète jusqu'au net à payer, compte tenu des indemnités, de la CNPS, de la CMU et de l'ITS.</span>
               </div>
               {sim?.warnings.map((w: string) => <Alert key={w} kind="warn">{w}</Alert>)}
+              {planned.map((r) => <Alert key={r.evaluationId} kind="info">Augmentation prévue : salaire de base de <b>{money(r.newBaseSalary)}</b> à partir de {periodLabel(r.period)}{' '}
+                (<Link href={`/app/evaluations/fiche/${r.evaluationId}`}>{r.campaignName}</Link>). Elle s&apos;appliquera à la préparation de cette paie.</Alert>)}
               <div className="grid2">
                 <Field label="Salaire de base (FCFA)" type="number" min={0} required value={edit.baseSalary} onChange={set('baseSalary')} />
                 <Field label="Sursalaire (FCFA)" type="number" min={0} value={edit.extraSalary} onChange={set('extraSalary')} />

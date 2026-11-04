@@ -209,6 +209,7 @@ export interface EvaluationTable {
   strengths: string | null; improvements: string | null; goals: string | null; comment: string | null;
   status: Generated<'draft' | 'submitted' | 'approved' | 'refused'>; submitted_at: TsNullable;
   bonus_amount: NumDefault; bonus_period: string | null; new_base_salary: NumNullable; previous_base_salary: NumNullable; raise_period: string | null; raise_applied_at: TsNullable;
+  proposed_bonus: NumNullable; proposed_raise_percent: NumNullable;
   decided_by: string | null; decided_at: TsNullable; decision_note: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 export interface ContactLogoTable { company_id: string; contact_id: string; mime: string; data: Buffer; updated_at: Generated<Date>; }

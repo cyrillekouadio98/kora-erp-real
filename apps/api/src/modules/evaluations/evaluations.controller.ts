@@ -27,6 +27,7 @@ const Money = { bonusAmount: money.optional(), bonusPeriod: period.nullable().op
 const EvaluationSchema = z.object({
   scores: z.record(z.string().max(40), z.object({ score: z.number().int().min(1).max(5).nullable(), comment: text(1000) }).strict()).optional(),
   strengths: text(3000), improvements: text(3000), goals: text(3000), comment: text(3000), evaluatorId: userId, ...Money,
+  proposedBonus: money.nullable().optional(), proposedRaisePercent: z.coerce.number().positive({ message: "Le pourcentage doit être positif" }).max(100).transform((v) => Math.round(v * 10) / 10).nullable().optional(),
 }).strict();
 
 @ApiTags('Évaluations')

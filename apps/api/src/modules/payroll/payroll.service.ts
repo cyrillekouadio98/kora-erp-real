@@ -130,7 +130,15 @@ export class PayrollService {
   }
 
   async getEmployee(t: TenantInfo, id: string) {
-    return this.db.tenant(t.ctx, async (trx) => this.present(t, await this.employeeRow(trx, id), await this.photoAt(trx, id)));
+    return this.db.tenant(t.ctx, async (trx) => {
+      const e = this.present(t, await this.employeeRow(trx, id), await this.photoAt(trx, id));
+      if (!t.permissions.has('payroll.salaries')) return e;
+      // Augmentation approuvée dont le mois d'effet n'est pas encore arrivé : la fiche l'annonce.
+      const planned = await trx.selectFrom('evaluation as v').innerJoin('evaluation_campaign as c', (j) => j.onRef('c.id', '=', 'v.campaign_id').onRef('c.company_id', '=', 'v.company_id'))
+        .select(['v.id', 'v.new_base_salary', 'v.raise_period', 'c.name']).where('v.employee_id', '=', id).where('v.status', '=', 'approved')
+        .where('v.raise_applied_at', 'is', null).where('v.new_base_salary', 'is not', null).orderBy('v.raise_period').execute();
+      return { ...e, plannedRaises: planned.map((r) => ({ evaluationId: r.id, newBaseSalary: Number(r.new_base_salary), period: r.raise_period, campaignName: r.name })) };
+    });
   }
 
   private async photoAt(trx: TenantTrx, id: string) {
@@ -347,6 +355,11 @@ export class PayrollService {
     const e = await this.employeeRow(trx, employeeId);
     const params = await this.params(trx);
     for (const s of slips) await this.writeSlip(trx, t, s.run_id, e, { ...NO_INPUTS, ...(s.inputs as object) }, params);
+  }
+
+  /** Dernier mois dont la paie est validée (null si aucune) : rien ne peut plus y être ajouté. */
+  async lastValidatedPeriod(trx: TenantTrx) {
+    return (await trx.selectFrom('payroll_run').select((eb) => eb.fn.max<string>('period').as('p')).where('status', '=', 'validated').executeTakeFirst())?.p ?? null;
   }
 
   /** Augmentations approuvées dont le mois d'effet est arrivé : le salaire de base de la fiche change. */

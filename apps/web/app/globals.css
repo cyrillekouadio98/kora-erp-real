@@ -497,6 +497,7 @@ button.vg-card { cursor: pointer; } button.vg-card:hover { border-color: var(--a
 .ev-big { font-size: 40px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; } .ev-big span { font-size: 18px; color: var(--muted); font-weight: 600; }
 .ev-money { display: flex; flex-direction: column; gap: 10px; }
 .ev-money .grid2 { gap: 8px; }
+.ev-proposal { padding: 8px 10px; border-radius: 8px; background: var(--surface-2); justify-content: space-between; }
 .ev-decide { display: flex; flex-direction: column; gap: 10px; }
 .ev-history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
 .ev-history li { display: flex; flex-direction: column; gap: 2px; }

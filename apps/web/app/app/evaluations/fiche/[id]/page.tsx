@@ -14,10 +14,10 @@ const TEXTS: [string, string, string][] = [
   ['goals', 'Objectifs pour la prochaine période', 'Objectifs concrets et mesurables'],
   ['comment', 'Commentaire général', ''],
 ];
-/** Mois proposés pour une prime ou une augmentation : ce mois-ci et les douze suivants. */
-const months = (keep?: string | null) => {
+/** Mois proposés pour une prime ou une augmentation : le premier mois dont la paie n'est pas validée et les douze suivants. */
+const months = (from: string, keep?: string | null) => {
   const out: string[] = [];
-  const d = new Date(); d.setUTCDate(1);
+  const d = new Date(`${from}-01T00:00:00Z`);
   for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() + 1); }
   return keep && !out.includes(keep) ? [keep, ...out] : out;
 };
@@ -34,6 +34,7 @@ const ratingOf = (s: number | null) => (s === null ? null : s >= 4.25 ? 'excelle
 const toForm = (v: any) => ({
   scores: v.scores ?? {}, strengths: v.strengths ?? '', improvements: v.improvements ?? '', goals: v.goals ?? '', comment: v.comment ?? '',
   bonusAmount: v.bonusAmount ? String(v.bonusAmount) : '', bonusPeriod: v.bonusPeriod ?? '', newBaseSalary: v.newBaseSalary ? String(v.newBaseSalary) : '', raisePeriod: v.raisePeriod ?? '',
+  proposedBonus: v.proposedBonus ? String(v.proposedBonus) : '', proposedRaisePercent: v.proposedRaisePercent ? String(v.proposedRaisePercent).replace('.', ',') : '',
   evaluatorId: v.evaluator?.id ?? '', note: '',
 });
 
@@ -63,10 +64,13 @@ export default function EvaluationSheet() {
   const pct = base && newBase ? Math.round(((newBase - base) / base) * 1000) / 10 : null;
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
   const setScore = (key: string, patch: object) => setF({ ...f, scores: { ...f.scores, [key]: { score: null, ...f.scores[key], ...patch } } });
+  const open = months(v.firstOpenPeriod);
+  const proposedPct = Number(f.proposedRaisePercent.replace(',', '.')) || 0;
+  const hasProposal = v.proposedBonus !== null || v.proposedRaisePercent !== null;
   const proposal = () => (moneyEditable ? {
     bonusAmount: Number(f.bonusAmount) || 0, bonusPeriod: Number(f.bonusAmount) ? f.bonusPeriod || null : null,
     newBaseSalary: newBase || null, raisePeriod: newBase ? f.raisePeriod || null : null,
-  } : {});
+  } : edit && !salaries ? { proposedBonus: Number(f.proposedBonus) || null, proposedRaisePercent: proposedPct || null } : {});
   const body = () => ({
     scores: Object.fromEntries(Object.entries(f.scores).map(([k, s]: [string, any]) => [k, { score: s.score ?? null, comment: s.comment || null }])),
     strengths: f.strengths || null, improvements: f.improvements || null, goals: f.goals || null, comment: f.comment || null,
@@ -83,7 +87,13 @@ export default function EvaluationSheet() {
     show(await api(`/company/evaluations/${id}/decide`, { body: { approve, note: f.note || null, ...(approve ? proposal() : {}) } }));
     setNotice(approve ? 'Évaluation approuvée. La prime rejoint la paie du mois choisi ; l’augmentation s’applique à la fiche à partir de son mois d’effet.' : 'Évaluation refusée.');
   });
-  const quick = (p: number) => base && setF({ ...f, newBaseSalary: String(Math.ceil((base * (1 + p / 100)) / 1000) * 1000), raisePeriod: f.raisePeriod || months()[1] });
+  const raised = (p: number) => String(Math.ceil((base! * (1 + p / 100)) / 1000) * 1000);
+  const quick = (p: number) => base && setF({ ...f, newBaseSalary: raised(p), raisePeriod: f.raisePeriod || open[1] });
+  // Reprend la proposition de l'évaluateur dans les montants à décider
+  const takeProposal = () => base && setF({ ...f,
+    ...(v.proposedBonus ? { bonusAmount: String(v.proposedBonus), bonusPeriod: f.bonusPeriod || open[0] } : {}),
+    ...(v.proposedRaisePercent ? { newBaseSalary: raised(v.proposedRaisePercent), raisePeriod: f.raisePeriod || open[1] } : {}) });
+  const proposalText = [v.proposedBonus && `prime de ${money(v.proposedBonus)}`, v.proposedRaisePercent && `augmentation de ${String(v.proposedRaisePercent).replace('.', ',')} %`].filter(Boolean).join(' et ');
 
   return (
     <>
@@ -146,24 +156,40 @@ export default function EvaluationSheet() {
             {v.submittedAt && <div className="small muted">Soumise le {dateTime(v.submittedAt)}</div>}
           </div>
 
-          {(salaries || v.hasBonus || v.hasRaise) && <div className="card"><header><h2>Prime et augmentation</h2></header>
-            {!salaries ? <p className="small muted" style={{ margin: 0 }}>{[v.hasBonus && 'Une prime', v.hasRaise && 'une augmentation'].filter(Boolean).join(' et ')} {v.status === 'approved' ? 'décidée(s)' : 'proposée(s)'}. Les montants sont réservés aux personnes qui voient les salaires.</p>
-              : moneyEditable ? <div className="ev-money">
+          {(salaries || edit || hasProposal || v.hasBonus || v.hasRaise) && <div className="card"><header><h2>Prime et augmentation</h2></header>
+            {!salaries ? <>
+              {edit ? <div className="ev-money">
+                <p className="small muted" style={{ margin: 0 }}>Proposez une prime et/ou une augmentation en pourcentage : une personne qui voit les salaires fixera les montants à l&apos;approbation.</p>
                 <div className="grid2">
-                  <label className="field">Prime (FCFA)<input className="input n" inputMode="numeric" placeholder="0" value={f.bonusAmount} onChange={(e) => setF({ ...f, bonusAmount: e.target.value.replace(/\D/g, ''), bonusPeriod: f.bonusPeriod || months()[0] })} /></label>
+                  <label className="field">Prime proposée (FCFA)<input className="input n" inputMode="numeric" placeholder="0" value={f.proposedBonus} onChange={(e) => setF({ ...f, proposedBonus: e.target.value.replace(/\D/g, '') })} /></label>
+                  <label className="field">Augmentation proposée (%)<input className="input n" inputMode="decimal" placeholder="0" value={f.proposedRaisePercent} onChange={(e) => setF({ ...f, proposedRaisePercent: e.target.value.replace(/[^\d,.]/g, '') })} /></label>
+                </div>
+                <div className="row small" style={{ gap: 6 }}>
+                  {[3, 5, 10].map((p) => <button key={p} type="button" className="btn sm" onClick={() => setF({ ...f, proposedRaisePercent: String(p) })}>+{p} %</button>)}
+                  {(f.proposedBonus || f.proposedRaisePercent) && <button type="button" className="btn sm" onClick={() => setF({ ...f, proposedBonus: '', proposedRaisePercent: '' })}>Aucune proposition</button>}
+                </div>
+              </div> : hasProposal && v.status !== 'approved' && <p className="small" style={{ margin: 0 }}>Proposition de l&apos;évaluateur : {proposalText}.</p>}
+              {(v.hasBonus || v.hasRaise) && <p className="small muted" style={{ margin: 0 }}>{[v.hasBonus && 'Une prime', v.hasRaise && 'une augmentation'].filter(Boolean).join(' et ')} {v.status === 'approved' ? 'décidée(s)' : 'préparée(s)'}. Les montants sont réservés aux personnes qui voient les salaires.</p>}
+            </>
+              : moneyEditable ? <div className="ev-money">
+                {hasProposal && <div className="row small ev-proposal" style={{ gap: 6 }}><span>Proposition de l&apos;évaluateur : <b>{proposalText}</b></span>
+                  <button type="button" className="btn sm" onClick={takeProposal}>Reprendre</button></div>}
+                <div className="grid2">
+                  <label className="field">Prime (FCFA)<input className="input n" inputMode="numeric" placeholder="0" value={f.bonusAmount} onChange={(e) => setF({ ...f, bonusAmount: e.target.value.replace(/\D/g, ''), bonusPeriod: f.bonusPeriod || open[0] })} /></label>
                   <label className="field">Paie de<select className="input" value={f.bonusPeriod} disabled={!Number(f.bonusAmount)} onChange={set('bonusPeriod')}>
-                    <option value="">—</option>{months(f.bonusPeriod).map((m) => <option key={m} value={m}>{periodLabel(m)}</option>)}</select></label>
+                    <option value="">—</option>{months(v.firstOpenPeriod, f.bonusPeriod).map((m) => <option key={m} value={m}>{periodLabel(m)}</option>)}</select></label>
                 </div>
                 <div className="grid2">
-                  <label className="field">Nouveau salaire de base<input className="input n" inputMode="numeric" value={f.newBaseSalary} onChange={(e) => setF({ ...f, newBaseSalary: e.target.value.replace(/\D/g, ''), raisePeriod: f.raisePeriod || months()[1] })} /></label>
+                  <label className="field">Nouveau salaire de base<input className="input n" inputMode="numeric" value={f.newBaseSalary} onChange={(e) => setF({ ...f, newBaseSalary: e.target.value.replace(/\D/g, ''), raisePeriod: f.raisePeriod || open[1] })} /></label>
                   <label className="field">À partir de<select className="input" value={f.raisePeriod} disabled={!newBase} onChange={set('raisePeriod')}>
-                    <option value="">—</option>{months(f.raisePeriod).map((m) => <option key={m} value={m}>{periodLabel(m)}</option>)}</select></label>
+                    <option value="">—</option>{months(v.firstOpenPeriod, f.raisePeriod).map((m) => <option key={m} value={m}>{periodLabel(m)}</option>)}</select></label>
                 </div>
                 <div className="row small" style={{ gap: 6 }}>
                   {[3, 5, 10].map((p) => <button key={p} type="button" className="btn sm" onClick={() => quick(p)}>+{p} %</button>)}
                   {newBase > 0 && <button type="button" className="btn sm" onClick={() => setF({ ...f, newBaseSalary: '', raisePeriod: '' })}>Sans augmentation</button>}
                   {pct !== null && <span style={pct > 0 ? undefined : { color: 'var(--crit)' }}>{pct > 0 ? '+' : ''}{String(pct).replace('.', ',')} % · {pct > 0 ? '+' : ''}{money(newBase - base!)} / mois</span>}
                 </div>
+                {v.firstOpenPeriod !== new Date().toISOString().slice(0, 7) && <p className="small muted" style={{ margin: 0 }}>Les paies validées ne bougent plus : prime et augmentation partent au plus tôt avec la paie de {periodLabel(v.firstOpenPeriod)}.</p>}
               </div>
               : <dl className="site-kpis">
                 <dt>Prime</dt><dd>{v.bonusAmount ? <>{money(v.bonusAmount)} · {periodLabel(v.bonusPeriod)}</> : '—'}</dd>
@@ -174,9 +200,10 @@ export default function EvaluationSheet() {
           {write && v.canDecide && <div className="card ev-decide"><header><h2>Décision</h2></header>
             <label className="field">Note de décision (facultative)<textarea className="input" rows={2} value={f.note} onChange={set('note')} /></label>
             <div className="row" style={{ gap: 6 }}>
-              <button className="btn primary" disabled={busy} onClick={() => decide(true)}>Approuver{salaries && (Number(f.bonusAmount) || newBase) ? ' avec ' + [Number(f.bonusAmount) && 'prime', newBase && 'augmentation'].filter(Boolean).join(' et ') : ''}</button>
+              <button className="btn primary" disabled={busy || (!salaries && hasProposal)} title={!salaries && hasProposal ? 'Une prime ou une augmentation est proposée : la décision revient à une personne qui voit les salaires' : undefined} onClick={() => decide(true)}>Approuver{salaries && (Number(f.bonusAmount) || newBase) ? ' avec ' + [Number(f.bonusAmount) && 'prime', newBase && 'augmentation'].filter(Boolean).join(' et ') : ''}</button>
               <button className="btn danger" disabled={busy} onClick={() => decide(false)}>Refuser</button>
             </div>
+            {!salaries && hasProposal && <p className="small" style={{ margin: 0 }}>Une prime ou une augmentation est proposée : l&apos;approbation revient à une personne qui voit les salaires. Vous pouvez refuser, ou retirer la proposition.</p>}
             <p className="small muted" style={{ margin: 0 }}>Approuvée, la prime est ajoutée au bulletin du mois choisi (aussitôt si sa paie est en brouillon) et l&apos;augmentation devient le salaire de base à partir de son mois d&apos;effet. L&apos;employé est prévenu par e-mail s&apos;il a un espace.</p>
           </div>}
           {(v.status === 'approved' || v.status === 'refused') && <div className="card small">

@@ -108,6 +108,25 @@ describe('Évaluations : notes, primes et augmentations', () => {
     expect((await owner.agent.post(`/company/evaluations/${koffiEval}/reopen`)).body.error.code).toBe('run_validated');
   });
 
+  it('la RH propose sans voir les salaires ; aucun montant sur un mois de paie validé', async () => {
+    const amaId = (await owner.agent.post('/company/employees').send({ firstName: 'Ama', lastName: 'Diallo', hireDate: '2025-02-01', baseSalary: 200_000 })).body.id;
+    const added = await owner.agent.post(`/company/evaluations/campaigns/${campaignId}/employees`).send({ employeeIds: [amaId], evaluatorId: hrId });
+    const amaEval = added.body.evaluations.find((v: any) => v.employee.id === amaId).id;
+    const p = await hr.patch(`/company/evaluations/${amaEval}`).send({ scores: all(5), proposedBonus: 40_000, proposedRaisePercent: 5 });
+    expect(p.body).toMatchObject({ proposedBonus: 40_000, proposedRaisePercent: 5, firstOpenPeriod: next });
+    await hr.post(`/company/evaluations/${amaEval}/submit`);
+    expect((await hr.post(`/company/evaluations/${amaEval}/decide`).send({ approve: true })).body.error.code).toBe('proposal_needs_salaries');
+
+    // La paie du mois est validée (test précédent) : ni prime ni augmentation sur ce mois
+    expect((await owner.agent.post(`/company/evaluations/${amaEval}/decide`).send({ approve: true, newBaseSalary: 210_000, raisePeriod: period })).body.error.code).toBe('raise_period_closed');
+    expect((await owner.agent.post(`/company/evaluations/${amaEval}/decide`).send({ approve: true, bonusAmount: 40_000, bonusPeriod: period })).body.error.code).toBe('run_validated');
+    const d = await owner.agent.post(`/company/evaluations/${amaEval}/decide`).send({ approve: true, bonusAmount: 40_000, bonusPeriod: next, newBaseSalary: 210_000, raisePeriod: next });
+    expect(d.body).toMatchObject({ status: 'approved', raiseApplied: false });
+    // La fiche annonce l'augmentation à venir, à qui voit les salaires
+    expect((await owner.agent.get(`/company/employees/${amaId}`)).body).toMatchObject({ baseSalary: 200_000, plannedRaises: [{ newBaseSalary: 210_000, period: next }] });
+    expect((await hr.get(`/company/employees/${amaId}`)).body.plannedRaises).toBeUndefined();
+  });
+
   it('exporte la campagne et protège les décisions prises', async () => {
     const csv = await owner.agent.get(`/company/evaluations/campaigns/${campaignId}/export`);
     expect(csv.headers['content-type']).toContain('text/csv');

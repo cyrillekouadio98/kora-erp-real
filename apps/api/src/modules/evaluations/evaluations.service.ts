@@ -35,11 +35,12 @@ export const rating = (score: number | null) => (score === null ? null : [...RAT
 export interface CampaignInput { name: string; periodStart: string; periodEnd: string; dueDate?: string | null; criteria?: Criterion[]; employeeIds?: string[]; evaluatorId?: string | null }
 export interface EvaluationInput {
   scores?: Record<string, { score: number | null; comment?: string | null }>; strengths?: string | null; improvements?: string | null; goals?: string | null; comment?: string | null;
-  evaluatorId?: string | null; bonusAmount?: number; bonusPeriod?: string | null; newBaseSalary?: number | null; raisePeriod?: string | null;
+  evaluatorId?: string | null; proposedBonus?: number | null; proposedRaisePercent?: number | null; bonusAmount?: number; bonusPeriod?: string | null; newBaseSalary?: number | null; raisePeriod?: string | null;
 }
 export interface DecisionInput { approve: boolean; note?: string | null; bonusAmount?: number; bonusPeriod?: string | null; newBaseSalary?: number | null; raisePeriod?: string | null }
 
 const month = () => new Date().toISOString().slice(0, 7);
+const addMonth = (p: string) => { const d = new Date(`${p}-01T00:00:00Z`); d.setUTCMonth(d.getUTCMonth() + 1); return d.toISOString().slice(0, 7); };
 const nextMonth = () => { const d = new Date(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + 1); return d.toISOString().slice(0, 7); };
 
 /** Note pondérée sur 5, arrondie au centième ; null tant qu'aucun critère n'est noté. */
@@ -96,6 +97,9 @@ export class EvaluationsService {
       status: v.status as EvaluationStatus, submittedAt: v.submitted_at, decidedAt: v.decided_at, decidedBy: v.decided_by_name, decisionNote: v.decision_note,
       hasBonus: Number(v.bonus_amount) > 0, hasRaise: newBase !== null, raiseApplied: !!v.raise_applied_at,
       bonusPeriod: v.bonus_period, raisePeriod: v.raise_period,
+      // Proposition de l'évaluateur : visible sans la permission salaires, la décision la reprend.
+      proposedBonus: v.proposed_bonus === null ? null : Number(v.proposed_bonus),
+      proposedRaisePercent: v.proposed_raise_percent === null ? null : Number(v.proposed_raise_percent),
       ...(salaries ? {
         bonusAmount: Number(v.bonus_amount), newBaseSalary: newBase, raiseAmount: newBase !== null ? newBase - previous : 0,
         raisePercent: newBase !== null && previous ? Math.round(((newBase - previous) / previous) * 1000) / 10 : null,
@@ -266,7 +270,7 @@ export class EvaluationsService {
       // Les évaluations approuvées des campagnes précédentes : l'évolution de l'employé.
       const history = (await this.base(trx, t).where('v.employee_id', '=', v.employee_id).where('v.id', '!=', id).where('v.status', '=', 'approved')
         .orderBy('c.period_end', 'desc').limit(10).execute()).map((h) => this.present(t, h));
-      return { ...this.present(t, v), criteria: v.criteria as Criterion[], ...this.rights(t, v), history };
+      return { ...this.present(t, v), criteria: v.criteria as Criterion[], ...this.rights(t, v), history, firstOpenPeriod: await this.firstOpenPeriod(trx) };
     });
   }
 
@@ -279,6 +283,13 @@ export class EvaluationsService {
       canDecide: open && !mine && validator && v.status === 'submitted',
       canReopen: open && !mine && validator && (v.status === 'approved' || v.status === 'refused'),
     };
+  }
+
+  /** Premier mois où une prime ou une augmentation peut prendre effet : après la dernière paie validée, et pas avant ce mois-ci. */
+  private async firstOpenPeriod(trx: TenantTrx) {
+    const last = await this.payroll.lastValidatedPeriod(trx);
+    const after = last ? addMonth(last) : null;
+    return after && after > month() ? after : month();
   }
 
   /** Montants (prime, augmentation) : réservés à qui voit les salaires. */
@@ -321,6 +332,8 @@ export class EvaluationsService {
         scores: JSON.stringify(scores), score: weighted(criteria, scores),
         ...Object.fromEntries((['strengths', 'improvements', 'goals', 'comment'] as const).filter((k) => input[k] !== undefined).map((k) => [k, input[k]])),
         ...(input.evaluatorId !== undefined ? { evaluator_id: input.evaluatorId } : {}),
+        ...(input.proposedBonus !== undefined ? { proposed_bonus: input.proposedBonus || null } : {}),
+        ...(input.proposedRaisePercent !== undefined ? { proposed_raise_percent: input.proposedRaisePercent || null } : {}),
         ...this.moneyColumns(input),
       }).where('id', '=', id).execute();
     });
@@ -365,10 +378,21 @@ export class EvaluationsService {
       if ((bonus > 0 || newBase !== null) && !this.salaries(t)) {
         throw forbidden('Approuver une prime ou une augmentation demande la permission « voir les salaires et bulletins ».', 'salaries_forbidden');
       }
+      if (!this.salaries(t) && (v.proposed_bonus !== null || v.proposed_raise_percent !== null)) {
+        throw forbidden("Une prime ou une augmentation est proposée : la décision revient à une personne qui voit les salaires (vous pouvez retirer la proposition, ou refuser).", 'proposal_needs_salaries');
+      }
       if (bonus > 0 && !bonusPeriod) throw badRequest('Choisissez le mois de paie de la prime.', undefined, 'bonus_period_required');
       if (newBase !== null) {
         if (!raisePeriod) throw badRequest("Choisissez le mois d'effet de l'augmentation.", undefined, 'raise_period_required');
         if (newBase <= Number(v.base_salary)) throw badRequest(`Le nouveau salaire de base doit dépasser le salaire actuel.`, undefined, 'raise_not_higher');
+      }
+      // Une paie validée ne bouge plus : ni prime ni augmentation sur un mois déjà clos (pas de rappel de salaire).
+      const last = await this.payroll.lastValidatedPeriod(trx);
+      if (last && bonus > 0 && bonusPeriod! <= last) {
+        throw conflict(`La paie de ${periodLabel(last)} est déjà validée : la prime ne peut être versée qu'à partir de ${periodLabel(addMonth(last))}.`, 'run_validated');
+      }
+      if (last && newBase !== null && raisePeriod! <= last) {
+        throw conflict(`La paie de ${periodLabel(last)} est déjà validée : l'augmentation ne peut prendre effet qu'à partir de ${periodLabel(addMonth(last))}.`, 'raise_period_closed');
       }
       await trx.updateTable('evaluation').set({
         status: 'approved', decided_by: t.ctx.userId, decided_at: new Date(), decision_note: input.note ?? null,
