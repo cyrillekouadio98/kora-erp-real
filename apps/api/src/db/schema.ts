@@ -193,6 +193,13 @@ export interface SiteTable {
   company_id: string; id: Generated<string>; code: string; name: string; address: string | null; city: string | null; phone: string | null;
   is_default: Generated<boolean>; archived_at: TsNullable; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
+export type AppointmentKind = 'meeting' | 'call' | 'visit' | 'delivery' | 'other';
+export interface AppointmentTable {
+  company_id: string; id: Generated<string>; site_id: Generated<string>; title: string; kind: Generated<AppointmentKind>; start_at: Date; end_at: Date; all_day: Generated<boolean>;
+  location: string | null; notes: string | null; contact_id: string | null; status: Generated<'planned' | 'done' | 'cancelled'>;
+  reminder_minutes: number | null; reminded_at: TsNullable; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface AppointmentAttendeeTable { company_id: string; appointment_id: string; user_id: string; }
 export interface ContactLogoTable { company_id: string; contact_id: string; mime: string; data: Buffer; updated_at: Generated<Date>; }
 export type LeaveType = 'annual' | 'sick' | 'maternity' | 'family_event' | 'unpaid' | 'other';
 export interface LeaveRequestTable {
@@ -237,6 +244,6 @@ export interface DB {
   treasury_account: TreasuryAccountTable; treasury_movement: TreasuryMovementTable;
   ledger_account: LedgerAccountTable; journal: JournalTable; journal_entry: JournalEntryTable; journal_line: JournalLineTable;
   stock_movement: StockMovementTable; warehouse: WarehouseTable; stock_level: StockLevelTable; stock_document: StockDocumentTable; stock_document_line: StockDocumentLineTable;
-  employee: EmployeeTable; employee_photo: EmployeePhotoTable; contact_logo: ContactLogoTable; site: SiteTable; payroll_settings: PayrollSettingsTable; payroll_run: PayrollRunTable; payslip: PayslipTable;
+  employee: EmployeeTable; employee_photo: EmployeePhotoTable; contact_logo: ContactLogoTable; site: SiteTable; appointment: AppointmentTable; appointment_attendee: AppointmentAttendeeTable; payroll_settings: PayrollSettingsTable; payroll_run: PayrollRunTable; payslip: PayslipTable;
   email_message: EmailMessageTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable; leave_request: LeaveRequestTable;
 }

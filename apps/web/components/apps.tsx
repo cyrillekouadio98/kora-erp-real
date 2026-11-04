@@ -50,6 +50,11 @@ const ICONS: Record<string, React.ReactNode> = {
     <circle cx="24" cy="24" r="20" fill={T} /><circle cx="24" cy="19" r="7" fill={W} />
     <path d="M12 38c2-7 7-10 12-10s10 3 12 10c-3.5 3-7.6 4.6-12 4.6S15.5 41 12 38z" fill={W} />
   </>,
+  calendar: <>
+    <rect x="6" y="9" width="36" height="33" rx="5" fill={W} stroke={B} strokeWidth="3" /><path d="M6 14a5 5 0 0 1 5-5h26a5 5 0 0 1 5 5v5H6z" fill={B} />
+    <rect x="14" y="4" width="4" height="10" rx="2" fill={N} /><rect x="30" y="4" width="4" height="10" rx="2" fill={N} />
+    {[25, 33].map((y) => [12, 21, 30].map((x) => <rect key={`${x}-${y}`} x={x} y={y} width="6" height="5" rx="1.5" fill={x === 21 && y === 25 ? O : Y} />))}
+  </>,
   sites: <>
     <path d="M4 18l4-10h32l4 10z" fill={O} /><rect x="6" y="18" width="36" height="24" rx="2" fill={N} />
     <path d="M4 18h40v3a4.4 4.4 0 0 1-8.8 0 4.4 4.4 0 0 1-8.8 0 4.4 4.4 0 0 1-8.8 0 4.4 4.4 0 0 1-8.8 0 4.4 4.4 0 0 1-4.8 0z" fill={Y} />
@@ -115,6 +120,7 @@ export const APPS: App[] = [
     { href: '/app/stocks/inventaires', label: 'Inventaires' }, { href: '/app/stocks/mouvements', label: 'Mouvements' },
     { href: '/app/stocks/valorisation', label: 'Valorisation' }, { href: '/app/stocks/entrepots', label: 'Entrepôts' },
   ] },
+  { key: 'calendar', label: 'Calendrier', href: '/app/calendrier', perm: 'calendar.read' },
   { key: 'products', label: 'Articles', href: '/app/articles', perm: 'products.read' },
   { key: 'contacts', label: 'Contacts', href: '/app/contacts', perm: 'contacts.read' },
   { key: 'employees', label: 'Employés', href: '/app/employes', perm: 'employees.read', module: 'hr' },

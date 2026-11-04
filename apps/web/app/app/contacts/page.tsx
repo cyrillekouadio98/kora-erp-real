@@ -160,6 +160,7 @@ export default function ContactsPage() {
             </div>
             <label className="field">Notes<textarea className="input" rows={3} value={edit.notes} onChange={set('notes')} /></label>
             <div className="row"><button className="btn primary" disabled={busy}>Enregistrer</button><button type="button" className="btn" onClick={() => setEdit(null)}>Annuler</button>
+              {edit.id && can('calendar.create') && <a className="btn" href={`/app/calendrier?nouveau=1&contact=${edit.id}`}>Planifier un rendez-vous</a>}
               {edit.id && can('contacts.cancel') && <button type="button" className="btn danger" style={{ marginLeft: 'auto' }} disabled={busy} onClick={() => run(async () => { await api(`/company/contacts/${edit.id}/archive`, { body: {} }); setEdit(null); await load(); })}>Archiver</button>}</div>
           </form>
         </div>

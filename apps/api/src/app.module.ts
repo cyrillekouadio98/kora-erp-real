@@ -38,6 +38,8 @@ import { DashboardController } from './modules/dashboard/dashboard.controller';
 import { DashboardService } from './modules/dashboard/dashboard.service';
 import { ContactsController } from './modules/contacts/contacts.controller';
 import { SitesController } from './modules/sites/sites.controller';
+import { CalendarController } from './modules/calendar/calendar.controller';
+import { CalendarService } from './modules/calendar/calendar.service';
 import { CompaniesController } from './modules/companies/companies.controller';
 import { ProvisioningService } from './modules/companies/provisioning.service';
 import { ExportController } from './modules/exports/export.controller';
@@ -55,10 +57,10 @@ import { PlatformSupportController, SupportAccessController } from './modules/su
   controllers: [
     HealthController, AuthController, CompaniesController, MembersController, RolesController, BillingController, WebhooksController,
     DevController, AuditController, SupportAccessController, PlatformSupportController, PlatformController, ExportController,
-    ContactsController, ProductsController, SalesController, PurchasesController, TreasuryController, AccountingController, StockController, PayrollController, PublicDocumentsController, EmailsController, LeaveController, DashboardController, SitesController,
+    ContactsController, ProductsController, SalesController, PurchasesController, TreasuryController, AccountingController, StockController, PayrollController, PublicDocumentsController, EmailsController, LeaveController, DashboardController, SitesController, CalendarController,
   ],
   providers: [
-    AuditService, SessionService, AuthService, ProvisioningService, EntitlementService, QuotaService, BillingService, BillingScheduler, SalesService, PurchasesService, TreasuryService, AccountingService, FinancialService, StockService, PayrollService, PayrollInsightsService, MailService, LeaveService, DashboardService,
+    AuditService, SessionService, AuthService, ProvisioningService, EntitlementService, QuotaService, BillingService, BillingScheduler, SalesService, PurchasesService, TreasuryService, AccountingService, FinancialService, StockService, PayrollService, PayrollInsightsService, MailService, LeaveService, DashboardService, CalendarService,
     { provide: APP_GUARD, useClass: AccessGuard },
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
   ],

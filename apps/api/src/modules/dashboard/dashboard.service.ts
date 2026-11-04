@@ -134,6 +134,13 @@ export class DashboardService {
         .select('r.id').where('r.status', '=', 'pending'), t, 'e.site_id').execute();
       if (pending.length) out.push({ kind: 'pending_leave', severity: 'info', label: 'Demandes de congé à traiter', count: pending.length, href: '/app/conges' });
     }
+    if (can('calendar.read')) {
+      // Rendez-vous du jour où l'on est participant (journée en heure locale ivoirienne, GMT).
+      const mine = await trx.selectFrom('appointment as a').innerJoin('appointment_attendee as x', (j) => j.onRef('x.appointment_id', '=', 'a.id').onRef('x.company_id', '=', 'a.company_id'))
+        .select('a.id').where('x.user_id', '=', t.ctx.userId).where('a.status', '=', 'planned')
+        .where('a.start_at', '<', new Date(`${now}T23:59:59.999Z`)).where('a.end_at', '>=', new Date(`${now}T00:00:00Z`)).execute();
+      if (mine.length) out.push({ kind: 'appointments_today', severity: 'info', label: "Rendez-vous aujourd'hui", count: mine.length, href: '/app/calendrier' });
+    }
     if (can('accounting.read', 'accounting')) {
       const pending = (await this.accounting.pending(trx)).length;
       if (pending) out.push({ kind: 'pending_accounting', severity: 'warning', label: 'Opérations non comptabilisées', count: pending, href: '/app/comptabilite' });
