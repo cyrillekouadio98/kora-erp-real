@@ -204,7 +204,7 @@ export default function TreasuryView({ kind }: { kind?: TreasuryKind }) {
                 <Field label="Solde d'ouverture (FCFA)" type="number" min={modal.kind === 'cash' ? 0 : undefined} value={modal.openingBalance} onChange={set('openingBalance')} />
                 <Field label="Date d'ouverture" type="date" required max={today()} value={modal.openingDate} onChange={set('openingDate')} />
               </div>
-              <p className="small muted" style={{ margin: 0 }}>Le solde d'ouverture est le montant réellement présent sur le compte à la date d'ouverture, avant tout mouvement saisi dans Kora.</p>
+              <p className="small muted" style={{ margin: 0 }}>Le solde d'ouverture est le montant réellement présent sur le compte à la date d'ouverture, avant tout mouvement saisi dans N'Ora.</p>
               {modal.id && <div><button type="button" className="btn sm danger" disabled={busy} onClick={() => run(async () => { await api(`/company/treasury/accounts/${modal.id}/archive`, { body: {} }); setModal(null); await refresh(); })}>Archiver ce compte</button></div>}
             </>}
             {modal.type === 'reverse' && <>

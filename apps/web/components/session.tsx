@@ -73,7 +73,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className={home ? 'shell home' : 'shell'}>
         <header className="topbar">
           {home || !app
-            ? <Link href="/app" className="brand" style={{ textDecoration: 'none', color: 'inherit' }}>Kora<span> ERP</span></Link>
+            ? <Link href="/app" className="brand" style={{ textDecoration: 'none', color: 'inherit' }}>N'Ora<span> ERP</span></Link>
             : <Link href="/app" className="app-title" title="Revenir à toutes les applications"><AppIcon name={app.key} size={26} />{app.label}</Link>}
           {pages.length > 1 && (
             <nav className="subnav" aria-label={`Menu ${app!.label}`}>

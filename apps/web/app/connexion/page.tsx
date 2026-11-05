@@ -30,7 +30,7 @@ export default function LoginPage() {
   return (
     <main className="auth">
       <form className="card form" onSubmit={submit}>
-        <div><div className="brand">Kora<span> ERP</span></div><p className="muted small">Connectez-vous à votre espace de gestion.</p></div>
+        <div><div className="brand">N'Ora<span> ERP</span></div><p className="muted small">Connectez-vous à votre espace de gestion.</p></div>
         <Alert>{error}</Alert>
         {step === 'password' ? (
           <>

@@ -200,7 +200,7 @@ export default function LeavePage() {
               <p className="small muted" style={{ margin: 0 }}>La demande est créée en attente ; elle doit ensuite être validée. Un congé sans solde validé est repris comme absence dans la paie du mois.</p>
             </> : <>
               <h2>Report de congés — {modal.employee.name}</h2><Alert>{error}</Alert>
-              <p className="small muted" style={{ margin: 0 }}>Jours de congés encore dus à l'employé au moment où vous commencez à utiliser Kora, et date à partir de laquelle Kora calcule l'acquisition (vide : date d'embauche).</p>
+              <p className="small muted" style={{ margin: 0 }}>Jours de congés encore dus à l'employé au moment où vous commencez à utiliser N'Ora, et date à partir de laquelle N'Ora calcule l'acquisition (vide : date d'embauche).</p>
               <Field label="Jours reportés" type="number" min={0} step={0.5} required value={modal.balance} onChange={(e) => setModal({ ...modal, balance: e.target.value })} />
               <Field label="Acquisition calculée à partir du" type="date" value={modal.date} onChange={(e) => setModal({ ...modal, date: e.target.value })} />
             </>}

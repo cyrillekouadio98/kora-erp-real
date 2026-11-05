@@ -1,4 +1,4 @@
-/** Applications de l'écran d'accueil : une tuile et une icône par domaine de Kora. */
+/** Applications de l'écran d'accueil : une tuile et une icône par domaine de N'Ora. */
 
 const P = '#8a4f7d', T = '#5ccfb8', O = '#f08a3c', C = '#ef7b7b', Y = '#f4bf4f', N = '#2c5d7c', B = '#4f9be8', G = '#2f9a72', W = '#ffffff';
 

@@ -182,7 +182,7 @@ export default function StockPage() {
             </>}
             {modal.type === 'opening' && <>
               <h2>Stock initial — {modal.item.name}</h2>
-              <p className="small muted" style={{ margin: 0 }}>Quantité présente avant l'utilisation de Kora, et son coût d'achat unitaire. Elle sera passée en comptabilité en à-nouveaux (311000 / 471000).</p>
+              <p className="small muted" style={{ margin: 0 }}>Quantité présente avant l'utilisation de N'Ora, et son coût d'achat unitaire. Elle sera passée en comptabilité en à-nouveaux (311000 / 471000).</p>
               <Alert>{error}</Alert>
               <div className="grid2">
                 <Field label={`Quantité (${modal.item.unit})`} type="number" min="0.001" step="any" required value={modal.quantity} onChange={set('quantity')} />

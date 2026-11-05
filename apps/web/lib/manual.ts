@@ -1,5 +1,5 @@
 /**
- * Manuel de procédures de Kora ERP, affiché dans l'application « Manuel ».
+ * Manuel de procédures de N'Ora ERP, affiché dans l'application « Manuel ».
  * Corps en Markdown simple (### sous-titres, listes, tableaux, **gras**, *italique*), rendu par components/markdown.tsx.
  * module : module de formule concerné (la section est signalée « hors formule » s'il manque) ;
  * platformOnly : réservé à l'équipe de l'éditeur.
@@ -11,9 +11,9 @@ export const MANUAL_UPDATED = '2026-11-05';
 export const MANUAL: ManualSection[] = [
   {
     id: 'objet', title: '1. Objet du manuel', body: `
-Ce manuel décrit, écran par écran, comment chaque service d'une entreprise utilise Kora ERP au quotidien : qui fait quoi, dans quel ordre, et quels contrôles l'application applique. Il s'adresse aux propriétaires, gérants, comptables, commerciaux, caissiers, magasiniers, responsables RH et gestionnaires de paie.
+Ce manuel décrit, écran par écran, comment chaque service d'une entreprise utilise N'Ora ERP au quotidien : qui fait quoi, dans quel ordre, et quels contrôles l'application applique. Il s'adresse aux propriétaires, gérants, comptables, commerciaux, caissiers, magasiniers, responsables RH et gestionnaires de paie.
 
-**Comment lire une procédure.** Chaque procédure indique le rôle concerné, le chemin dans l'application (par exemple *Ventes › Factures*), puis les étapes numérotées. Les points de contrôle signalent ce que Kora bloque ou vérifie.
+**Comment lire une procédure.** Chaque procédure indique le rôle concerné, le chemin dans l'application (par exemple *Ventes › Factures*), puis les étapes numérotées. Les points de contrôle signalent ce que N'Ora bloque ou vérifie.
 
 **Ce que vous voyez dépend de deux choses.**
 
@@ -49,13 +49,13 @@ Chaque utilisateur a un compte personnel, protégé par un mot de passe d'au moi
 2. Valider : l'entreprise est créée avec 14 jours d'essai gratuit, sans moyen de paiement.
 3. Le créateur devient **propriétaire** : il a tous les droits et invite ensuite ses collaborateurs (section 3).
 
-Si l'équipe Kora a préparé l'entreprise pour vous, vous recevez à la place une invitation de propriétaire par e-mail.
+Si l'équipe N'Ora a préparé l'entreprise pour vous, vous recevez à la place une invitation de propriétaire par e-mail.
 
 ### 2.2 Rejoindre une entreprise sur invitation
 
 1. Ouvrir le lien reçu par e-mail. Il est valable **7 jours**.
 2. Indiquer son nom complet et choisir un mot de passe, puis cliquer sur **Rejoindre l'entreprise**.
-3. Si l'adresse a déjà un compte Kora, l'entreprise s'ajoute à la liste de ses entreprises.
+3. Si l'adresse a déjà un compte N'Ora, l'entreprise s'ajoute à la liste de ses entreprises.
 
 ### 2.3 Se connecter
 
@@ -75,7 +75,7 @@ Si l'équipe Kora a préparé l'entreprise pour vous, vous recevez à la place u
 2. Ouvrir le lien reçu (valable **une heure** ; vérifier les courriers indésirables).
 3. Choisir un nouveau mot de passe. Toutes les sessions ouvertes sont alors fermées.
 
-Par sécurité, Kora affiche le même message que l'adresse existe ou non.
+Par sécurité, N'Ora affiche le même message que l'adresse existe ou non.
 
 ### 2.5 Activer la double authentification
 
@@ -150,7 +150,7 @@ Au départ d'un collaborateur, désactiver son accès le jour même.
 
 *Chemin : Rôles.*
 
-Kora fournit 11 rôles standard (annexe A). Pour un besoin particulier :
+N'Ora fournit 11 rôles standard (annexe A). Pour un besoin particulier :
 
 1. Cliquer sur **Nouveau rôle**, ou **Modifier** sur un rôle existant.
 2. Cocher les permissions module par module. Les modules hors formule sont signalés « hors formule ».
@@ -162,7 +162,7 @@ Le rôle Propriétaire ne se modifie pas. Les rôles standard se modifient mais 
 
 *Chemin : Journal d'audit.*
 
-Le journal liste toutes les actions sensibles (créations, validations, annulations, exports, changements de droits), y compris celles de l'éditeur Kora et de son support. Il indique la date, l'auteur, l'action et le détail. Personne ne peut le modifier.
+Le journal liste toutes les actions sensibles (créations, validations, annulations, exports, changements de droits), y compris celles de l'éditeur N'Ora et de son support. Il indique la date, l'auteur, l'action et le détail. Personne ne peut le modifier.
 
 Contrôle conseillé : le propriétaire le parcourt une fois par mois (annexe C).
 
@@ -173,7 +173,7 @@ Contrôle conseillé : le propriétaire le parcourt une fois par mois (annexe C)
   },
   {
     id: 'contacts', title: '4. Contacts (clients et fournisseurs)', module: 'contacts', body: `
-Tout document de vente ou d'achat s'appuie sur un contact. La fiche doit donc être complète avant la première facture : Kora refuse d'enregistrer une fiche incomplète.
+Tout document de vente ou d'achat s'appuie sur un contact. La fiche doit donc être complète avant la première facture : N'Ora refuse d'enregistrer une fiche incomplète.
 
 ### 4.1 Créer un contact
 
@@ -191,7 +191,7 @@ Tout document de vente ou d'achat s'appuie sur un contact. La fiche doit donc ê
 
 ### 4.2 Le code du contact
 
-Le code n'est jamais saisi : Kora le génère selon le type de tiers et l'affiche avant l'enregistrement.
+Le code n'est jamais saisi : N'Ora le génère selon le type de tiers et l'affiche avant l'enregistrement.
 
 | Type de tiers | Préfixe | Exemple |
 | --- | --- | --- |
@@ -224,7 +224,7 @@ Les ventes et les achats facturés mettent le stock à jour automatiquement. Le 
 
 1. Choisir le type : **Bien (marchandise)**, suivi en stock, ou **Service**, jamais stocké.
 2. Saisir la désignation, le prix de vente HT, le taux de TVA (0 % si exonéré) et, si connu, le prix d'achat HT. Laisser le code vide pour qu'il soit automatique.
-3. Pour un bien, indiquer le **seuil d'alerte** : en dessous, Kora propose de commander.
+3. Pour un bien, indiquer le **seuil d'alerte** : en dessous, N'Ora propose de commander.
 4. Enregistrer.
 
 Un article ne se supprime pas : il s'archive.
@@ -233,7 +233,7 @@ Un article ne se supprime pas : il s'archive.
 
 *Chemin : Stocks › Stock initial (sur la ligne de l'article).* À faire une seule fois, au démarrage.
 
-1. Saisir la quantité présente avant l'utilisation de Kora et son coût d'achat unitaire HT.
+1. Saisir la quantité présente avant l'utilisation de N'Ora et son coût d'achat unitaire HT.
 2. Valider. La valeur est passée en comptabilité en à-nouveaux (311000 / 471000).
 
 Un article qui a déjà des mouvements ne reçoit plus de stock initial : on le corrige par un inventaire.
@@ -259,11 +259,11 @@ Pour archiver un entrepôt, il doit être vide (transférer d'abord la marchandi
 | Sortie | Consommation interne, casse ou perte, vol, produit périmé, don, échantillon gratuit, autre |
 | Transfert | Déplacement d'un entrepôt à un autre |
 
-**Achat comptant** : indiquer le prix payé de chaque article et le compte (caisse, banque ou mobile money) qui a payé. À la validation, Kora enregistre l'entrée en stock, la sortie d'argent et l'écriture D 601000 / C trésorerie. Un achat avec facture passe par le module Achats.
+**Achat comptant** : indiquer le prix payé de chaque article et le compte (caisse, banque ou mobile money) qui a payé. À la validation, N'Ora enregistre l'entrée en stock, la sortie d'argent et l'écriture D 601000 / C trésorerie. Un achat avec facture passe par le module Achats.
 
 **Points de contrôle.**
 
-- Kora refuse une sortie ou un transfert supérieur au stock disponible de l'entrepôt.
+- N'Ora refuse une sortie ou un transfert supérieur au stock disponible de l'entrepôt.
 - La date d'un bon ne peut pas être dans le futur.
 - Un bon validé ne se modifie ni ne se supprime : on passe un bon inverse ou un inventaire.
 
@@ -289,7 +289,7 @@ Pour archiver un entrepôt, il doit être vide (transférer d'abord la marchandi
 Les achats de marchandises sont passés en charges (601). À chaque clôture, mensuelle ou annuelle :
 
 1. Choisir la date de clôture et vérifier la valeur du stock par article.
-2. Cliquer sur **Comptabiliser la variation**. Kora ajuste le compte 311000 à la valeur réelle (D 311 / C 6031 si le stock a augmenté, l'inverse sinon).
+2. Cliquer sur **Comptabiliser la variation**. N'Ora ajuste le compte 311000 à la valeur réelle (D 311 / C 6031 si le stock a augmenté, l'inverse sinon).
 
 Si le compte 311000 est déjà égal à la valeur du stock, aucune écriture n'est nécessaire.
 `,
@@ -360,7 +360,7 @@ Un avoir ne peut dépasser le montant encore créditable de la facture. Pour ann
 L'écran classe les factures non soldées par ancienneté : non échu, 1 à 30 jours, 31 à 60, 61 à 90, plus de 90 jours.
 
 1. Cliquer sur **Relancer** sur la facture.
-2. Choisir le canal : e-mail (envoyé par Kora), ou téléphone, WhatsApp, SMS (**Copier le message** pour le coller).
+2. Choisir le canal : e-mail (envoyé par N'Ora), ou téléphone, WhatsApp, SMS (**Copier le message** pour le coller).
 3. Noter le compte rendu et, le cas échéant, la date de paiement promise.
 
 Chaque relance est inscrite dans l'historique de la facture. Rythme conseillé : une relance à l'échéance, puis toutes les deux semaines.
@@ -392,7 +392,7 @@ Un bon de commande envoyé et non facturé peut être annulé (**Annuler la comm
 
 **Points de contrôle.**
 
-- Kora refuse d'enregistrer deux fois la même facture d'un fournisseur (même numéro).
+- N'Ora refuse d'enregistrer deux fois la même facture d'un fournisseur (même numéro).
 - La date ne peut pas être dans le futur.
 - Une facture validée sans règlement peut être **remise en brouillon** pour correction ; elle garde son numéro. Après un règlement, elle ne se modifie plus.
 
@@ -417,7 +417,7 @@ Chaque somme d'argent de l'entreprise est suivie dans un compte de trésorerie :
 
 1. Choisir le site dans l'en-tête (sinon le compte est rattaché au site principal).
 2. Saisir le nom du compte (ex. « Caisse boutique », « SGCI », « Orange Money »), puis la banque et le RIB, ou l'opérateur et le numéro marchand.
-3. Saisir le **solde d'ouverture** et sa **date** : le montant réellement présent à cette date, avant tout mouvement saisi dans Kora.
+3. Saisir le **solde d'ouverture** et sa **date** : le montant réellement présent à cette date, avant tout mouvement saisi dans N'Ora.
 4. Enregistrer.
 
 Un solde d'ouverture faux fausse tous les soldes suivants. Si un compte affiche un solde négatif, le corriger par **Paramétrer**.
@@ -450,7 +450,7 @@ Un solde d'ouverture faux fausse tous les soldes suivants. Si un compte affiche 
 *Qui : caissier, sous le contrôle d'un responsable ayant le droit « Caisse : valider ». Chemin : Trésorerie › Arrêté (sur la ligne de la caisse).* À faire chaque soir de fermeture.
 
 1. Compter les espèces présentes dans la caisse.
-2. Saisir le montant compté. Kora le compare au solde théorique.
+2. Saisir le montant compté. N'Ora le compare au solde théorique.
 3. En cas d'écart, en indiquer la raison (ex. erreur de rendu de monnaie). L'écart est enregistré et le solde de la caisse ajusté.
 
 Un écart répété doit être signalé au responsable.
@@ -459,7 +459,7 @@ Un écart répété doit être signalé au responsable.
 
 *Chemin : Trésorerie › Journal › Contre-passer.*
 
-Un mouvement saisi par erreur ne s'efface pas : on le **contre-passe**. Kora crée le mouvement inverse ; l'original reste visible, marqué « Contre-passé », puis on ressaisit le bon mouvement.
+Un mouvement saisi par erreur ne s'efface pas : on le **contre-passe**. N'Ora crée le mouvement inverse ; l'original reste visible, marqué « Contre-passé », puis on ressaisit le bon mouvement.
 
 Les mouvements issus d'une facture ou d'un arrêté de caisse ne se contre-passent pas ici : on corrige le document d'origine (avoir, nouvel arrêté).
 
@@ -470,11 +470,11 @@ Les mouvements issus d'une facture ou d'un arrêté de caisse ne se contre-passe
 1. Ouvrir le **Journal de trésorerie** filtré sur le compte et le mois, ou l'exporter en CSV.
 2. Pointer chaque ligne avec le relevé bancaire ou l'historique de l'opérateur.
 3. Saisir les mouvements manquants (frais bancaires, agios, commissions) et contre-passer les erreurs.
-4. Vérifier que le solde de Kora égale celui du relevé à la même date.
+4. Vérifier que le solde de N'Ora égale celui du relevé à la même date.
 
 ### 8.7 Archiver un compte
 
-Un compte fermé s'archive par **Paramétrer › Archiver ce compte**, après avoir viré son solde vers un autre compte : Kora refuse d'archiver un compte non vide.
+Un compte fermé s'archive par **Paramétrer › Archiver ce compte**, après avoir viré son solde vers un autre compte : N'Ora refuse d'archiver un compte non vide.
 `,
   },
   {
@@ -490,7 +490,7 @@ La comptabilité se tient d'elle-même : factures, avoirs, règlements, mouvemen
 3. Saisir les lignes : compte, libellé, débit ou crédit.
 4. **Enregistrer en brouillon** pour la faire relire, ou **Enregistrer et valider**.
 
-Kora refuse de valider une écriture déséquilibrée (elle peut rester en brouillon). Les autres journaux (VT ventes, AC achats, TR trésorerie) sont réservés aux écritures automatiques.
+N'Ora refuse de valider une écriture déséquilibrée (elle peut rester en brouillon). Les autres journaux (VT ventes, AC achats, TR trésorerie) sont réservés aux écritures automatiques.
 
 ### 9.2 Corriger une écriture
 
@@ -558,7 +558,7 @@ La fiche employé est la base des congés, des évaluations et de la paie. Ces m
 
 1. **Identité** : nom, prénom, photo, téléphone, e-mail (nécessaire pour l'espace employé), situation familiale, enfants à charge. Les parts fiscales se calculent automatiquement si le champ reste vide.
 2. **Emploi** : site, service, poste, catégorie, type de contrat (CDI, CDD, stage, journalier), date d'embauche, numéro CNPS.
-3. **Rémunération** : salaire de base (salaire catégoriel), sursalaire, indemnités de transport, de logement et autres. Pour partir d'un net convenu, saisir le net à payer puis **Calculer la fiche** : Kora déduit le sursalaire compte tenu de la CNPS, de la CMU et de l'ITS.
+3. **Rémunération** : salaire de base (salaire catégoriel), sursalaire, indemnités de transport, de logement et autres. Pour partir d'un net convenu, saisir le net à payer puis **Calculer la fiche** : N'Ora déduit le sursalaire compte tenu de la CNPS, de la CMU et de l'ITS.
 4. **Paiement** : mode de paiement du salaire, numéro mobile money ou coordonnées bancaires (permission sensible).
 5. Enregistrer. Le bulletin simulé affiché permet de vérifier brut et net.
 
@@ -574,7 +574,7 @@ Au départ d'un employé, renseigner sa **date de sortie** puis établir son sol
 
 Chaque employé acquiert 2,2 jours ouvrables de congé payé par mois de service. Les dimanches et jours fériés ne sont pas décomptés.
 
-**Au démarrage**, pour chaque employé : saisir le **report** (jours encore dus à la mise en service de Kora) et la date de début d'acquisition (vide : date d'embauche).
+**Au démarrage**, pour chaque employé : saisir le **report** (jours encore dus à la mise en service de N'Ora) et la date de début d'acquisition (vide : date d'embauche).
 
 **Pour une absence :**
 
@@ -584,7 +584,7 @@ Chaque employé acquiert 2,2 jours ouvrables de congé payé par mois de service
 
 Types : congé payé, maladie, maternité, permission exceptionnelle, congé sans solde, autre absence. Un congé sans solde validé est déduit dans la paie du mois.
 
-**Points de contrôle.** Kora refuse un congé payé supérieur au solde disponible (demandes en attente déduites) et deux demandes qui se chevauchent. Les fêtes musulmanes (Ramadan, Tabaski, Maouloud, Nuit du destin) dépendent de l'annonce officielle : elles ne sont pas comptées automatiquement.
+**Points de contrôle.** N'Ora refuse un congé payé supérieur au solde disponible (demandes en attente déduites) et deux demandes qui se chevauchent. Les fêtes musulmanes (Ramadan, Tabaski, Maouloud, Nuit du destin) dépendent de l'annonce officielle : elles ne sont pas comptées automatiquement.
 
 ### 10.4 Conduire une campagne d'évaluation
 
@@ -623,16 +623,16 @@ Ces valeurs sont à faire valider par l'expert-comptable. Une modification s'app
 *Chemin : Paie › Bulletins › Préparer la paie.*
 
 1. Vérifier dans **Paie › Temps et absences** que les congés et absences du mois sont validés.
-2. **Préparer la paie** du mois : Kora crée un bulletin brouillon par salarié présent. On ne prépare pas un mois futur.
+2. **Préparer la paie** du mois : N'Ora crée un bulletin brouillon par salarié présent. On ne prépare pas un mois futur.
 3. Saisir les **éléments variables** de chaque bulletin : heures supplémentaires, primes du mois, jours d'absence non rémunérés, autres retenues.
 4. Contrôler les bulletins et les totaux : net à payer, coût employeur, montants à déclarer à la CNPS et aux impôts.
 5. **Valider la paie** : les bulletins ne se modifient plus et l'écriture de paie est passée en comptabilité.
 
-Une paie validée peut être **remise en brouillon** tant qu'aucun salaire n'est payé. Kora refuse un net à payer négatif.
+Une paie validée peut être **remise en brouillon** tant qu'aucun salaire n'est payé. N'Ora refuse un net à payer négatif.
 
 ### 11.4 Payer les salaires et déclarer
 
-1. Sur la paie validée, cliquer sur **Payer les salaires** : choisir le compte (banque, mobile money, caisse) et la date. Kora enregistre un décaissement par salarié non encore payé.
+1. Sur la paie validée, cliquer sur **Payer les salaires** : choisir le compte (banque, mobile money, caisse) et la date. N'Ora enregistre un décaissement par salarié non encore payé.
 2. Remettre ou envoyer les bulletins (**Imprimer / PDF**). Les salariés qui ont un espace les y retrouvent.
 3. Reporter les totaux « À déclarer à la CNPS » (retraite, prestations familiales, accident du travail, CMU) et « À déclarer aux impôts » (ITS, taxes) sur les déclarations mensuelles, puis enregistrer leur paiement en trésorerie (catégorie Impôts et taxes).
 
@@ -672,13 +672,13 @@ Pour prévenir les participants d'un rendez-vous annulé, utiliser **Annuler le 
 
 ### 12.3 Suivre les e-mails envoyés
 
-*Chemin : E-mails.* Kora envoie les invitations, factures, relances et rappels depuis une file d'envoi. L'écran liste chaque message avec son destinataire, son objet et son statut (envoyé, en attente, en échec). Kora réessaie automatiquement ; un message resté en échec se renvoie par **Renvoyer**, après vérification de l'adresse.
+*Chemin : E-mails.* N'Ora envoie les invitations, factures, relances et rappels depuis une file d'envoi. L'écran liste chaque message avec son destinataire, son objet et son statut (envoyé, en attente, en échec). N'Ora réessaie automatiquement ; un message resté en échec se renvoie par **Renvoyer**, après vérification de l'adresse.
 
 ### 12.4 Autoriser ou refuser l'accès du support
 
 *Qui : propriétaire. Chemin : Support.*
 
-L'équipe Kora n'a pas accès aux données de l'entreprise. Pour aider, elle demande une autorisation précisant le motif, le périmètre et la durée.
+L'équipe N'Ora n'a pas accès aux données de l'entreprise. Pour aider, elle demande une autorisation précisant le motif, le périmètre et la durée.
 
 1. Lire la demande.
 2. **Accepter** si elle correspond à une demande d'aide de l'entreprise ; sinon **Refuser**.
@@ -717,7 +717,7 @@ Pour résilier, utiliser la résiliation à l'échéance ; tant que l'échéance
 `,
   },
   {
-    id: 'console', title: '14. Console éditeur (équipe Kora)', platformOnly: true, body: `
+    id: 'console', title: "14. Console éditeur (équipe N'Ora)", platformOnly: true, body: `
 Cette section concerne uniquement l'équipe de l'éditeur. La console affiche les informations commerciales des clients (formule, abonnement, utilisateurs), jamais leurs données métier. La double authentification y est exigée en production.
 
 ### 14.1 Préparer une entreprise pour un client
@@ -731,7 +731,7 @@ Cette section concerne uniquement l'équipe de l'éditeur. La console affiche le
 5. **Trésorerie** : compléter les caisses, banques (RIB) et comptes mobile money, chacun rattaché à un site.
 6. **Utilisateurs** : indiquer le propriétaire (obligatoire) et les collaborateurs avec leur rôle et leurs sites.
 
-Le panneau **Avancement** indique ce qui reste à faire. Kora refuse la remise si la formule ne couvre pas tous les utilisateurs prévus.
+Le panneau **Avancement** indique ce qui reste à faire. N'Ora refuse la remise si la formule ne couvre pas tous les utilisateurs prévus.
 
 ### 14.2 Remettre l'entreprise au client
 
@@ -773,7 +773,7 @@ Chaque entreprise reçoit ces 11 rôles. Ils se modifient (sauf Propriétaire) e
 
 ### B. Messages fréquents et conduite à tenir
 
-| Message de Kora | Cause | Que faire |
+| Message de N'Ora | Cause | Que faire |
 | --- | --- | --- |
 | Ce module n'est pas inclus dans votre formule | Module hors formule | Changer de formule (13.2) |
 | Votre compte est en lecture seule | Abonnement suspendu ou résilié | Régler l'abonnement (13.1) |

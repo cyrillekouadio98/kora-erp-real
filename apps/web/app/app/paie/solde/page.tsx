@@ -58,7 +58,7 @@ function FinalSettlement() {
           <Field label="Préavis non effectué, payé par l'employeur (mois)" type="number" min={0} max={12} step={0.5} placeholder="Proposé selon l'ancienneté" value={f.noticeMonths} onChange={(ev) => setF({ ...f, noticeMonths: ev.target.value })} />
           <Field label="Jours de congés à indemniser" type="number" min={0} max={400} step={0.1} placeholder="Solde du module Congés" value={f.leaveDays} onChange={(ev) => setF({ ...f, leaveDays: ev.target.value })} />
         </div>
-        {r && r.leave.available > 30 && Number(f.leaveDays) === r.leave.available && <Alert kind="warn">Le module Congés affiche {r.leave.available} jours non pris depuis l'embauche. Si des congés ont été pris avant Kora ou si un report d'ouverture manque, corrigez le nombre de jours à indemniser (ou le report dans <Link href="/app/conges">Congés</Link>) puis recalculez.</Alert>}
+        {r && r.leave.available > 30 && Number(f.leaveDays) === r.leave.available && <Alert kind="warn">Le module Congés affiche {r.leave.available} jours non pris depuis l'embauche. Si des congés ont été pris avant N'Ora ou si un report d'ouverture manque, corrigez le nombre de jours à indemniser (ou le report dans <Link href="/app/conges">Congés</Link>) puis recalculez.</Alert>}
         <Alert>{error}</Alert>
         <div className="row"><button className="btn primary" disabled={busy || !f.employeeId}>Calculer le solde</button>
           {r && <button type="button" className="btn" onClick={() => window.print()}>Imprimer / PDF</button>}

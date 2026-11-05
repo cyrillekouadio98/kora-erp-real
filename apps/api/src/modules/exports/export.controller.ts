@@ -73,7 +73,7 @@ export class ExportController {
     zip.pipe(res);
     zip.append(JSON.stringify(data, null, 2), { name: 'donnees-completes.json' });
     for (const [name, rows] of Object.entries(data)) zip.append(toCsv(rows as Record<string, unknown>[]), { name: `csv/${name}.csv` });
-    zip.append(`Export Kora ERP du ${stamp}\nEntreprise : ${t.companyId}\nFichiers CSV séparés par des points-virgules, encodés en UTF-8.\nLes coordonnées bancaires des employés, chiffrées, ne sont pas exportées.\n`, { name: 'LISEZ-MOI.txt' });
+    zip.append(`Export N'Ora ERP du ${stamp}\nEntreprise : ${t.companyId}\nFichiers CSV séparés par des points-virgules, encodés en UTF-8.\nLes coordonnées bancaires des employés, chiffrées, ne sont pas exportées.\n`, { name: 'LISEZ-MOI.txt' });
     await zip.finalize();
   }
 }

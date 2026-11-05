@@ -14,7 +14,7 @@ export interface VerifiedPayment {
 
 /**
  * Contrat commun aux prestataires (agrégateurs mobile money, carte, virement).
- * Aucune donnée de carte ni secret de paiement n'est stocké par Kora : seulement la référence du prestataire.
+ * Aucune donnée de carte ni secret de paiement n'est stocké par N'Ora : seulement la référence du prestataire.
  */
 export interface PaymentProvider {
   readonly code: string;

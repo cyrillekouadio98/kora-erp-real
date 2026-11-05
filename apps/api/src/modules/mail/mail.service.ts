@@ -16,13 +16,13 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 
 /** Mise en forme commune : version texte et version HTML sobre (lisible aussi sur téléphone). */
 export function renderMail(m: Pick<OutgoingMail, 'paragraphs' | 'action' | 'fromName'>) {
-  const text = [...m.paragraphs, ...(m.action ? [`${m.action.label} : ${m.action.url}`] : []), '', `— ${m.fromName ?? 'Kora ERP'}`].join('\n\n');
+  const text = [...m.paragraphs, ...(m.action ? [`${m.action.label} : ${m.action.url}`] : []), '', `— ${m.fromName ?? "N'Ora ERP"}`].join('\n\n');
   const html = `<!doctype html><html lang="fr"><body style="margin:0;background:#f4f5f2;font-family:Segoe UI,Arial,sans-serif;color:#16201b">
 <div style="max-width:560px;margin:0 auto;padding:24px 16px"><div style="background:#fff;border:1px solid #d8ddd5;border-radius:10px;padding:24px">
 ${m.paragraphs.map((p) => `<p style="margin:0 0 14px;line-height:1.5;white-space:pre-line">${esc(p)}</p>`).join('')}
 ${m.action ? `<p style="margin:20px 0"><a href="${esc(m.action.url)}" style="background:#1f6b4f;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block">${esc(m.action.label)}</a></p>
 <p style="margin:0;font-size:12px;color:#5a665f;word-break:break-all">${esc(m.action.url)}</p>` : ''}
-</div><p style="font-size:12px;color:#5a665f;text-align:center">${esc(m.fromName ?? 'Kora ERP')} · envoyé avec Kora ERP</p></div></body></html>`;
+</div><p style="font-size:12px;color:#5a665f;text-align:center">${esc(m.fromName ?? "N'Ora ERP")} · envoyé avec N'Ora ERP</p></div></body></html>`;
   return { text, html };
 }
 
@@ -54,7 +54,7 @@ export class MailService implements OnApplicationBootstrap, OnModuleDestroy {
   async enqueue(trx: Trx, m: OutgoingMail) {
     const { text, html } = renderMail(m);
     return trx.insertInto('email_message').values({
-      company_id: m.companyId, to_address: m.to, reply_to: m.replyTo ?? null, from_name: m.fromName ?? 'Kora ERP', subject: m.subject,
+      company_id: m.companyId, to_address: m.to, reply_to: m.replyTo ?? null, from_name: m.fromName ?? "N'Ora ERP", subject: m.subject,
       text_body: text, html_body: html, kind: m.kind, entity_id: m.entityId ?? null, created_by: m.createdBy ?? null, last_error: null, sent_at: null,
     }).returning('id').executeTakeFirstOrThrow();
   }

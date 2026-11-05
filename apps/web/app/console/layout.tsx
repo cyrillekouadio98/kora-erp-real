@@ -14,7 +14,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   return (
     <div className="shell with-side">
       <aside className="side">
-        <div className="brand">Kora<span> Console</span></div>
+        <div className="brand">N'Ora<span> Console</span></div>
         <nav className="nav">
           <small>Éditeur</small>
           <Link href="/console" className={path === '/console' ? 'active' : ''}>Clients et indicateurs</Link>
