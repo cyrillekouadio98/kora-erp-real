@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { addDays, today } from '../src/modules/sales/sales.service';
-import { createApp, ownerClient, resetDb, signup, uniqueEmail } from './helpers';
+import { createApp, ownerClient, resetDb, signup, uniqueEmail, TIERS } from './helpers';
 
 /** Lignes d'une écriture réduites à « compte : débit/crédit » pour des comparaisons lisibles. */
 const shape = (e: any) => e.lines.map((l: any) => `${l.account} ${l.debit ? `D ${l.debit}` : `C ${l.credit}`}`).sort();
@@ -20,8 +20,8 @@ describe('Comptabilité SYSCOHADA', () => {
     await resetDb();
     app = await createApp();
     owner = await signup(app);
-    customer = (await owner.agent.post('/company/contacts').send({ kind: 'customer', name: 'Client Comptable' })).body.id;
-    supplier = (await owner.agent.post('/company/contacts').send({ kind: 'supplier', name: 'Fournisseur Comptable' })).body.id;
+    customer = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'customer', name: 'Client Comptable' })).body.id;
+    supplier = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'supplier', name: 'Fournisseur Comptable' })).body.id;
     const accounts = (await owner.agent.get('/company/treasury/accounts')).body;
     cash = accounts.find((a: any) => a.kind === 'cash').id;
     bank = accounts.find((a: any) => a.kind === 'bank').id;

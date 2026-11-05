@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { addDays, today } from '../src/modules/sales/sales.service';
-import { createApp, ownerClient, resetDb, signup, uniqueEmail } from './helpers';
+import { createApp, ownerClient, resetDb, signup, uniqueEmail, TIERS } from './helpers';
 
 async function invite(app: INestApplication, owner: Awaited<ReturnType<typeof signup>>, roleKey: string) {
   const roles = await owner.agent.get('/company/roles');
@@ -25,12 +25,12 @@ describe('Achats : commandes, factures et règlements fournisseurs', () => {
     await resetDb();
     app = await createApp();
     owner = await signup(app);
-    supplierId = (await owner.agent.post('/company/contacts').send({ kind: 'supplier', name: 'Cimenterie du Sud', paymentTermsDays: 45 })).body.id;
+    supplierId = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'supplier', name: 'Cimenterie du Sud', paymentTermsDays: 45 })).body.id;
   });
   afterAll(async () => { await app.close(); });
 
   it("n'accepte qu'un fournisseur et refuse une date future", async () => {
-    const client = await owner.agent.post('/company/contacts').send({ kind: 'customer', name: 'Client seulement' });
+    const client = await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'customer', name: 'Client seulement' });
     const r = await owner.agent.post('/company/purchases/documents').send({ type: 'order', contactId: client.body.id, lines });
     expect(r.body.error.code).toBe('not_a_supplier');
     const f = await owner.agent.post('/company/purchases/documents').send({ type: 'invoice', contactId: supplierId, issueDate: addDays(today(), 2), lines });
@@ -67,7 +67,7 @@ describe('Achats : commandes, factures et règlements fournisseurs', () => {
     expect(refused.status).toBe(409);
     expect(refused.body.error.message).toContain(`ACH-${year}-00001`);
 
-    const otherSupplier = await owner.agent.post('/company/contacts').send({ kind: 'both', name: 'Quincaillerie Treichville' });
+    const otherSupplier = await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'both', name: 'Quincaillerie Treichville' });
     const same = await owner.agent.post('/company/purchases/documents').send({ type: 'invoice', contactId: otherSupplier.body.id, supplierRef: 'FV-2026/118', lines: [lines[1]] });
     expect((await owner.agent.post(`/company/purchases/documents/${same.body.id}/validate`)).body.number).toBe(`ACH-${year}-00002`);
   });

@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { CalendarService } from '../src/modules/calendar/calendar.service';
-import { createApp, ownerClient, resetDb, signup, uniqueEmail } from './helpers';
+import { createApp, ownerClient, resetDb, signup, uniqueEmail, TIERS } from './helpers';
 
 describe('Calendrier : rendez-vous, participants, rappels', () => {
   let app: INestApplication;
@@ -21,7 +21,7 @@ describe('Calendrier : rendez-vous, participants, rappels', () => {
     app = await createApp();
     owner = await signup(app);
     await owner.agent.post('/company/subscription/change').send({ planCode: 'premium', billingCycle: 'monthly' });
-    customer = (await owner.agent.post('/company/contacts').send({ kind: 'customer', name: 'Maquis Chez Tantie', phone: '+225 07 00 00 00 01' })).body.id;
+    customer = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'customer', name: 'Maquis Chez Tantie', phone: '+225 07 00 00 00 01' })).body.id;
     const roles = (await owner.agent.get('/company/roles')).body;
     const email = uniqueEmail('commercial');
     const inv = await owner.agent.post('/company/invitations').send({ email, roleIds: [roles.find((r: any) => r.key === 'sales_rep').id] });

@@ -4,10 +4,10 @@ import type { Response } from 'express';
 import { sql } from 'kysely';
 import { z } from 'zod';
 import { AllowWhenReadOnly, Permission, Tenant } from '../../common/decorators';
-import { conflict, notFound } from '../../common/errors';
+import { badRequest, conflict, notFound } from '../../common/errors';
 import { isUuid } from '../../common/ids';
 import { parseImage } from '../../common/images';
-import { nextNumber } from '../../common/numbering';
+import { nextNumber, peekNumber } from '../../common/numbering';
 import type { TenantInfo } from '../../common/request-context';
 import { parse } from '../../common/validation';
 import { DatabaseService, TenantTrx } from '../../db/database.service';
@@ -19,7 +19,6 @@ const ContactSchema = z.object({
   kind: z.enum(['customer', 'supplier', 'both'], { message: 'Choisissez client, fournisseur ou les deux' }),
   legalType: z.enum(['company', 'individual']).optional(),
   name: z.string().trim().min(2, { message: 'Le nom doit contenir au moins 2 caractères' }).max(160),
-  code: z.string().trim().max(30).regex(/^[A-Za-z0-9._-]*$/, { message: 'Le code ne contient que lettres, chiffres, points, tirets' }).transform((v) => v.toUpperCase() || null).nullable().optional(),
   taxId: opt(40), rccm: opt(60), phone: opt(40), address: opt(300), city: opt(80), notes: opt(2000),
   email: z.string().trim().toLowerCase().email({ message: 'Adresse e-mail invalide' }).nullable().optional().or(z.literal('').transform(() => null)),
   countryCode: z.string().trim().length(2).transform((v) => v.toUpperCase()).optional(),
@@ -27,7 +26,7 @@ const ContactSchema = z.object({
 }).strict();
 
 const COLUMNS = {
-  kind: 'kind', legalType: 'legal_type', name: 'name', code: 'code', taxId: 'tax_id', rccm: 'rccm', email: 'email', phone: 'phone',
+  kind: 'kind', legalType: 'legal_type', name: 'name', taxId: 'tax_id', rccm: 'rccm', email: 'email', phone: 'phone',
   address: 'address', city: 'city', notes: 'notes', countryCode: 'country_code', paymentTermsDays: 'payment_terms_days',
 } as const;
 
@@ -44,6 +43,22 @@ const ListQuery = z.object({
   kind: z.enum(['customer', 'supplier']).optional(),
   archived: z.enum(['false', 'true', 'all']).default('false'),
 });
+
+/** Champs obligatoires : une entreprise doit pouvoir être facturée (NCC, RCCM, délai), un particulier joint. */
+const REQUIRED = {
+  company: [['name', 'Raison sociale'], ['phone', 'Téléphone'], ['email', 'E-mail'], ['tax_id', 'NCC'], ['rccm', 'RCCM'], ['payment_terms_days', 'Délai de paiement']],
+  individual: [['name', 'Nom'], ['phone', 'Téléphone']],
+} as const;
+const FIELD = { name: 'name', phone: 'phone', email: 'email', tax_id: 'taxId', rccm: 'rccm', payment_terms_days: 'paymentTermsDays' } as const;
+
+function assertComplete(c: Record<string, unknown>) {
+  const type = c.legal_type === 'individual' ? 'individual' : 'company';
+  const missing = REQUIRED[type].filter(([col]) => c[col] === null || c[col] === undefined || c[col] === '');
+  if (missing.length) {
+    throw badRequest(`${type === 'company' ? 'Pour une entreprise' : 'Pour un particulier'}, renseignez : ${missing.map(([, l]) => l).join(', ')}.`,
+      missing.map(([col, l]) => ({ field: FIELD[col], message: `${l} obligatoire` })), 'contact_incomplete');
+  }
+}
 
 function toColumns(input: Record<string, unknown>) {
   const out: Record<string, unknown> = {};
@@ -89,14 +104,9 @@ export class ContactsController {
     return out;
   }
 
-  /** Code saisi (vérifié unique) ou prochain numéro de la séquence CLI-00001, FRS-00001… */
-  private async resolveCode(trx: TenantTrx, t: TenantInfo, kind: keyof typeof PREFIX, code: string | null | undefined, exceptId?: string) {
-    const taken = async (c: string) => !!(await trx.selectFrom('contact').select('id').where('code', '=', c)
-      .$if(!!exceptId, (qb) => qb.where('id', '!=', exceptId!)).executeTakeFirst());
-    if (code) {
-      if (await taken(code)) throw conflict(`Le code ${code} est déjà utilisé par un autre contact.`, 'contact_code_taken');
-      return code;
-    }
+  /** Code attribué automatiquement selon le type de tiers : CLI-00001, FRS-00001, TIE-00001… */
+  private async nextCode(trx: TenantTrx, t: TenantInfo, kind: keyof typeof PREFIX) {
+    const taken = async (c: string) => !!(await trx.selectFrom('contact').select('id').where('code', '=', c).executeTakeFirst());
     for (;;) {
       const next = await nextNumber(trx, t.companyId, `contact_${kind}`, PREFIX[kind]);
       if (!(await taken(next))) return next;
@@ -127,6 +137,14 @@ export class ContactsController {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="contacts-${new Date().toISOString().slice(0, 10)}.csv"`);
     res.send(toCsv(rows as Record<string, unknown>[]));
+  }
+
+  /** Code que recevra un nouveau contact de ce type (aperçu du formulaire, rien n'est réservé). */
+  @Permission('contacts.read') @AllowWhenReadOnly()
+  @Get('next-code')
+  nextCodePreview(@Tenant() t: TenantInfo, @Query('kind') kind: string) {
+    const k = parse(z.enum(['customer', 'supplier', 'both']), kind);
+    return this.db.tenant(t.ctx, async (trx) => ({ code: await peekNumber(trx, `contact_${k}`, PREFIX[k]) }));
   }
 
   @Permission('contacts.read') @AllowWhenReadOnly()
@@ -176,8 +194,9 @@ export class ContactsController {
   @Post()
   create(@Tenant() t: TenantInfo, @Body() body: unknown) {
     const input = parse(ContactSchema, body);
+    assertComplete({ ...toColumns(input), legal_type: input.legalType ?? 'company' });
     return this.db.tenant(t.ctx, async (trx) => {
-      const code = await this.resolveCode(trx, t, input.kind, input.code);
+      const code = await this.nextCode(trx, t, input.kind);
       const created = await trx.insertInto('contact').values({
         ...toColumns(input), code, company_id: t.companyId, created_by: t.ctx.userId,
       } as any).returning(SELECT).executeTakeFirstOrThrow();
@@ -196,7 +215,9 @@ export class ContactsController {
       if (!before) throw notFound('Contact');
       if (before.archived_at) throw conflict('Ce contact est archivé : restaurez-le avant de le modifier.', 'contact_archived');
       const patch = toColumns(input);
-      if (input.code !== undefined) patch.code = await this.resolveCode(trx, t, (input.kind ?? before.kind), input.code, id);
+      assertComplete({ ...before, ...patch });
+      // Nouveau type de tiers : nouveau code avec le bon préfixe (les pièces déjà émises gardent l'ancien).
+      if (input.kind && input.kind !== before.kind) patch.code = await this.nextCode(trx, t, input.kind);
       if (!Object.keys(patch).length) return trx.selectFrom('contact').select(SELECT).where('id', '=', id).executeTakeFirstOrThrow();
       const after = await trx.updateTable('contact').set(patch).where('id', '=', id).returning(SELECT).executeTakeFirstOrThrow();
       const changes = Object.fromEntries(Object.keys(patch).filter((c) => (before as any)[c] !== patch[c]).map((c) => [c, { from: (before as any)[c], to: patch[c] }]));

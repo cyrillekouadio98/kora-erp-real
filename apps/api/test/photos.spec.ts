@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { addDays, today } from '../src/modules/sales/sales.service';
-import { createApp, resetDb, signup } from './helpers';
+import { createApp, resetDb, signup, TIERS } from './helpers';
 
 // PNG 1×1 transparent
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
@@ -45,7 +45,7 @@ describe('Photos des employés et logos des contacts', () => {
   });
 
   it('enregistre le logo d’un contact et compte ses factures et ce qu’il doit', async () => {
-    const c = (await owner.agent.post('/company/contacts').send({ kind: 'both', name: 'Grossiste Adjamé' })).body;
+    const c = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'both', name: 'Grossiste Adjamé' })).body;
     const product = (await owner.agent.post('/company/products').send({ name: 'Service', salePrice: 10_000, vatRate: 0, type: 'service' })).body.id;
     const inv = (await owner.agent.post('/company/sales/documents').send({ type: 'invoice', contactId: c.id, lines: [{ productId: product, description: 'Service', quantity: 1, unitPrice: 10_000, vatRate: 0 }] })).body.id;
     await owner.agent.post(`/company/sales/documents/${inv}/validate`);

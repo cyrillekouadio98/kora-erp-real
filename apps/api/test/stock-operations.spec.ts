@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { today } from '../src/modules/sales/sales.service';
-import { createApp, resetDb, signup, uniqueEmail } from './helpers';
+import { createApp, resetDb, signup, uniqueEmail, TIERS } from './helpers';
 
 describe('Gestion des stocks : entrepôts, bons, inventaires, valorisation', () => {
   let app: INestApplication;
@@ -27,8 +27,8 @@ describe('Gestion des stocks : entrepôts, bons, inventaires, valorisation', () 
     app = await createApp();
     owner = await signup(app);
     oil = (await owner.agent.post('/company/products').send({ name: 'Huile végétale 5 L', salePrice: 6000, purchasePrice: 4000, vatRate: 18, unit: 'bidon' })).body.id;
-    customer = (await owner.agent.post('/company/contacts').send({ kind: 'customer', name: 'Maquis Chez Tantie' })).body.id;
-    supplier = (await owner.agent.post('/company/contacts').send({ kind: 'supplier', name: 'Grossiste Adjamé' })).body.id;
+    customer = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'customer', name: 'Maquis Chez Tantie' })).body.id;
+    supplier = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'supplier', name: 'Grossiste Adjamé' })).body.id;
     cash = (await owner.agent.get('/company/treasury/accounts')).body.find((a: any) => a.kind === 'cash').id;
   });
   afterAll(async () => { await app.close(); });

@@ -42,6 +42,9 @@ export async function createApp(extraControllers: Type<unknown>[] = []): Promise
 }
 
 let n = 0;
+/** Champs obligatoires d'un contact entreprise, à compléter ou remplacer dans chaque test. */
+export const TIERS = { phone: '+225 07 00 00 00 00', email: 'contact@tiers.ci', taxId: '1234567A', rccm: 'CI-ABJ-2026-B-0001', paymentTermsDays: 0 };
+
 export function uniqueEmail(prefix = 'user') { n += 1; return `${prefix}.${Date.now()}.${n}@test.ci`; }
 
 export async function signup(app: INestApplication, opts: { companyName?: string; email?: string } = {}) {

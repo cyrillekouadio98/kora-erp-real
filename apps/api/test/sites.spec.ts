@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { createApp, resetDb, signup, uniqueEmail } from './helpers';
+import { createApp, resetDb, signup, uniqueEmail, TIERS } from './helpers';
 
 describe('Multi-sites : magasins, succursales et transferts inter-sites', () => {
   let app: INestApplication;
@@ -16,7 +16,7 @@ describe('Multi-sites : magasins, succursales et transferts inter-sites', () => 
     owner = await signup(app);
     await owner.agent.post('/company/subscription/change').send({ planCode: 'premium', billingCycle: 'monthly' });
     oil = (await owner.agent.post('/company/products').send({ name: 'Huile végétale 5 L', salePrice: 6000, purchasePrice: 4000, vatRate: 18, unit: 'bidon' })).body.id;
-    customer = (await owner.agent.post('/company/contacts').send({ kind: 'customer', name: 'Maquis Chez Tantie' })).body.id;
+    customer = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'customer', name: 'Maquis Chez Tantie' })).body.id;
   });
   afterAll(async () => { await app.close(); });
 

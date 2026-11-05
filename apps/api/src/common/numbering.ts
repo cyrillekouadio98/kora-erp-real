@@ -13,3 +13,9 @@ export async function nextNumber(trx: TenantTrx, companyId: string, docType: str
     RETURNING (next_value - 1)::text AS n`.execute(trx);
   return `${prefix}-${year ? `${year}-` : ''}${r.rows[0].n.padStart(5, '0')}`;
 }
+
+/** Numéro que recevrait le prochain élément d'une séquence, sans le réserver (aperçu dans un formulaire). */
+export async function peekNumber(trx: TenantTrx, docType: string, prefix: string, year = 0): Promise<string> {
+  const r = await trx.selectFrom('numbering_sequence').select('next_value').where('doc_type', '=', docType).where('year', '=', year).executeTakeFirst();
+  return `${prefix}-${year ? `${year}-` : ''}${String(r?.next_value ?? 1).padStart(5, '0')}`;
+}

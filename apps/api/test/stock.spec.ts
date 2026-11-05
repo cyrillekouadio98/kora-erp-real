@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { today } from '../src/modules/sales/sales.service';
-import { createApp, ownerClient, resetDb, signup } from './helpers';
+import { createApp, ownerClient, resetDb, signup, TIERS } from './helpers';
 
 describe('Stocks valorisés au CMUP', () => {
   let app: INestApplication;
@@ -19,8 +19,8 @@ describe('Stocks valorisés au CMUP', () => {
     app = await createApp();
     owner = await signup(app);
     rice = (await owner.agent.post('/company/products').send({ name: 'Riz parfumé 25 kg', salePrice: 15000, vatRate: 9, unit: 'sac' })).body.id;
-    customer = (await owner.agent.post('/company/contacts').send({ kind: 'customer', name: 'Épicerie du quartier' })).body.id;
-    supplier = (await owner.agent.post('/company/contacts').send({ kind: 'supplier', name: 'Importateur de riz' })).body.id;
+    customer = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'customer', name: 'Épicerie du quartier' })).body.id;
+    supplier = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'supplier', name: 'Importateur de riz' })).body.id;
   });
   afterAll(async () => { await app.close(); });
 

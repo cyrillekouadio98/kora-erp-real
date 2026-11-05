@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { today } from '../src/modules/sales/sales.service';
-import { createApp, resetDb, signup } from './helpers';
+import { createApp, resetDb, signup, TIERS } from './helpers';
 
 /**
  * Exercice 2025 d'une petite entreprise : apport de 1 000 000, véhicule de 600 000 amorti de 120 000,
@@ -18,7 +18,7 @@ describe('Bilan, soldes de gestion et clôture d’exercice', () => {
     await resetDb();
     app = await createApp();
     owner = await signup(app);
-    const supplier = (await owner.agent.post('/company/contacts').send({ kind: 'supplier', name: 'Grossiste' })).body.id;
+    const supplier = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'supplier', name: 'Grossiste' })).body.id;
     await od('2025-01-10', 'Apport en capital', [['521000', 1_000_000, 0], ['101000', 0, 1_000_000]]);
     await od('2025-03-01', 'Achat véhicule de livraison', [['245000', 600_000, 0], ['521000', 0, 600_000]]);
     const bill = await owner.agent.post('/company/purchases/documents').send({ type: 'invoice', contactId: supplier, supplierRef: 'G-2025-01', issueDate: '2025-04-01',

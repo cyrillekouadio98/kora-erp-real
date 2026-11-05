@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { addDays, today } from '../src/modules/sales/sales.service';
-import { createApp, ownerClient, resetDb, signup, uniqueEmail } from './helpers';
+import { createApp, ownerClient, resetDb, signup, uniqueEmail, TIERS } from './helpers';
 
 describe('Trésorerie : caisse, banque, mobile money', () => {
   let app: INestApplication;
@@ -25,7 +25,7 @@ describe('Trésorerie : caisse, banque, mobile money', () => {
   });
 
   it('inscrit chaque encaissement et règlement sur le compte du mode de paiement', async () => {
-    const customer = (await owner.agent.post('/company/contacts').send({ kind: 'both', name: 'Partenaire' })).body.id;
+    const customer = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'both', name: 'Partenaire' })).body.id;
     const inv = await owner.agent.post('/company/sales/documents').send({ type: 'invoice', contactId: customer, lines: [{ description: 'Vente', quantity: 1, unitPrice: 100000, vatRate: 18 }] });
     await owner.agent.post(`/company/sales/documents/${inv.body.id}/validate`);
     await owner.agent.post(`/company/sales/documents/${inv.body.id}/payments`).send({ amount: 50000, method: 'cash' });
@@ -97,7 +97,7 @@ describe('Trésorerie : caisse, banque, mobile money', () => {
   });
 
   it("rembourse le trop-perçu d'un client après avoir", async () => {
-    const customer = (await owner.agent.post('/company/contacts').send({ kind: 'customer', name: 'Client remboursé' })).body.id;
+    const customer = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'customer', name: 'Client remboursé' })).body.id;
     const inv = await owner.agent.post('/company/sales/documents').send({ type: 'invoice', contactId: customer, lines: [{ description: 'Vente', quantity: 1, unitPrice: 50000, vatRate: 18 }] });
     await owner.agent.post(`/company/sales/documents/${inv.body.id}/validate`);
     await owner.agent.post(`/company/sales/documents/${inv.body.id}/payments`).send({ amount: 59000, method: 'bank_transfer' });

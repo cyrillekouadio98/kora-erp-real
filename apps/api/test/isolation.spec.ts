@@ -10,7 +10,7 @@ import { AppModule } from '../src/app.module';
 import { buildOpenApi } from '../src/bootstrap';
 import { META } from '../src/common/decorators';
 import { config } from '../src/config';
-import { createApp, ownerClient, platformUser, resetDb, signup } from './helpers';
+import { createApp, ownerClient, platformUser, resetDb, signup, TIERS } from './helpers';
 
 /** Routes liées au seul compte utilisateur (sans entreprise), revues une par une. */
 const ACCOUNT_ROUTES = new Set([
@@ -35,7 +35,7 @@ describe('Isolation des données entre entreprises', () => {
     const role = await B.agent.post('/company/roles').send({ name: 'Rôle secret Bêta', permissions: ['contacts.read'] });
     const inv = await B.agent.post('/company/invitations').send({ email: 'invite.beta@test.ci', roleIds: [role.body.id] });
     const members = await B.agent.get('/company/members');
-    const contact = await B.agent.post('/company/contacts').send({ kind: 'customer', name: 'Client secret Bêta', email: 'client.beta@test.ci' });
+    const contact = await B.agent.post('/company/contacts').send({ ...TIERS, kind: 'customer', name: 'Client secret Bêta', email: 'client.beta@test.ci' });
     const product = await B.agent.post('/company/products').send({ name: 'Article secret Bêta', salePrice: 1000, vatRate: 18 });
     const quote = await B.agent.post('/company/sales/documents').send({ type: 'quote', contactId: contact.body.id, lines: [{ productId: product.body.id, description: 'Ligne secrète Bêta', quantity: 1, unitPrice: 1000, vatRate: 18 }] });
     const invoice = await B.agent.post('/company/sales/documents').send({ type: 'invoice', contactId: contact.body.id, lines: [{ description: 'Ligne secrète Bêta', quantity: 1, unitPrice: 5000, vatRate: 18 }] });
@@ -43,7 +43,7 @@ describe('Isolation des données entre entreprises', () => {
     await B.agent.post(`/company/sales/documents/${invoice.body.id}/payments`).send({ amount: 1000, method: 'cash', reference: 'PAIEMENT-SECRET-BETA' });
     await B.agent.post(`/company/sales/documents/${invoice.body.id}/reminders`).send({ channel: 'phone', note: 'RELANCE-SECRETE-BETA' });
     const creditNote = await B.agent.post(`/company/sales/documents/${invoice.body.id}/credit-note`);
-    const supplier = await B.agent.post('/company/contacts').send({ kind: 'supplier', name: 'Fournisseur secret Bêta' });
+    const supplier = await B.agent.post('/company/contacts').send({ ...TIERS, kind: 'supplier', name: 'Fournisseur secret Bêta' });
     const order = await B.agent.post('/company/purchases/documents').send({ type: 'order', contactId: supplier.body.id, lines: [{ description: 'Achat secret Bêta', quantity: 1, unitPrice: 1000, vatRate: 18 }] });
     const bill = await B.agent.post('/company/purchases/documents').send({ type: 'invoice', contactId: supplier.body.id, supplierRef: 'REF-SECRETE-BETA', lines: [{ description: 'Achat secret Bêta', quantity: 1, unitPrice: 9000, vatRate: 18 }] });
     await B.agent.post(`/company/purchases/documents/${bill.body.id}/validate`);

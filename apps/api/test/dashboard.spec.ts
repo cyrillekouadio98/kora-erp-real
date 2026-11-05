@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { lastMonths } from '../src/modules/dashboard/dashboard.service';
 import { today } from '../src/modules/sales/sales.service';
-import { createApp, resetDb, signup, uniqueEmail } from './helpers';
+import { createApp, resetDb, signup, uniqueEmail, TIERS } from './helpers';
 
 describe('Tableau de bord', () => {
   let app: INestApplication;
@@ -18,9 +18,9 @@ describe('Tableau de bord', () => {
     await resetDb();
     app = await createApp();
     owner = await signup(app);
-    const customer = (await owner.agent.post('/company/contacts').send({ kind: 'customer', name: 'Grand Client' })).body.id;
-    const small = (await owner.agent.post('/company/contacts').send({ kind: 'customer', name: 'Petit Client' })).body.id;
-    const supplier = (await owner.agent.post('/company/contacts').send({ kind: 'supplier', name: 'Fournisseur' })).body.id;
+    const customer = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'customer', name: 'Grand Client' })).body.id;
+    const small = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'customer', name: 'Petit Client' })).body.id;
+    const supplier = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'supplier', name: 'Fournisseur' })).body.id;
     const svc = (await owner.agent.post('/company/products').send({ name: 'Maintenance', kind: 'service', salePrice: 50_000, vatRate: 18 })).body.id;
     await owner.agent.post('/company/products').send({ name: 'Article épuisé', salePrice: 1_000, vatRate: 18 });
     const sell = async (contactId: string, unitPrice: number, quantity = 1) => {

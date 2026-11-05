@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { addDays, today } from '../src/modules/sales/sales.service';
-import { createApp, resetDb, signup } from './helpers';
+import { createApp, resetDb, signup, TIERS } from './helpers';
 
 describe('Remise en brouillon après validation : factures clients, factures fournisseurs, paie', () => {
   let app: INestApplication;
@@ -16,8 +16,8 @@ describe('Remise en brouillon après validation : factures clients, factures fou
     owner = await signup(app);
     await owner.agent.post('/company/subscription/change').send({ planCode: 'premium', billingCycle: 'monthly' });
     oil = (await owner.agent.post('/company/products').send({ name: 'Huile végétale 5 L', salePrice: 6000, purchasePrice: 4000, vatRate: 18, unit: 'bidon' })).body.id;
-    customer = (await owner.agent.post('/company/contacts').send({ kind: 'customer', name: 'Maquis Chez Tantie' })).body.id;
-    supplier = (await owner.agent.post('/company/contacts').send({ kind: 'supplier', name: 'Grossiste Adjamé' })).body.id;
+    customer = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'customer', name: 'Maquis Chez Tantie' })).body.id;
+    supplier = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'supplier', name: 'Grossiste Adjamé' })).body.id;
     await owner.agent.post(`/company/stock/${oil}/opening`).send({ quantity: 10, unitCost: 4000 });
   });
   afterAll(async () => { await app.close(); });

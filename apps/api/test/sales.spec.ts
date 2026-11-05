@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { addDays, computeTotals, today } from '../src/modules/sales/sales.service';
-import { createApp, ownerClient, resetDb, signup, uniqueEmail } from './helpers';
+import { createApp, ownerClient, resetDb, signup, uniqueEmail, TIERS } from './helpers';
 
 async function invite(app: INestApplication, owner: Awaited<ReturnType<typeof signup>>, roleKey: string) {
   const roles = await owner.agent.get('/company/roles');
@@ -37,7 +37,7 @@ describe('Ventes : articles, devis, factures, encaissements', () => {
     await resetDb();
     app = await createApp();
     owner = await signup(app);
-    customerId = (await owner.agent.post('/company/contacts').send({ kind: 'customer', name: 'Société Ivoirienne de Négoce', paymentTermsDays: 30, taxId: '1234567A' })).body.id;
+    customerId = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'customer', name: 'Société Ivoirienne de Négoce', paymentTermsDays: 30, taxId: '1234567A' })).body.id;
   });
   afterAll(async () => { await app.close(); });
 
@@ -54,7 +54,7 @@ describe('Ventes : articles, devis, factures, encaissements', () => {
   });
 
   it('refuse un contact qui est uniquement fournisseur', async () => {
-    const supplier = await owner.agent.post('/company/contacts').send({ kind: 'supplier', name: 'Grossiste' });
+    const supplier = await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'supplier', name: 'Grossiste' });
     const r = await owner.agent.post('/company/sales/documents').send({ type: 'invoice', contactId: supplier.body.id, lines: [{ description: 'X', quantity: 1, unitPrice: 1, vatRate: 18 }] });
     expect(r.status).toBe(400);
     expect(r.body.error.code).toBe('not_a_customer');
@@ -145,7 +145,7 @@ describe('Avoirs et relances clients', () => {
     await resetDb();
     app = await createApp();
     owner = await signup(app);
-    customerId = (await owner.agent.post('/company/contacts').send({ kind: 'customer', name: 'Hôtel du Plateau', phone: '+225 07 00 00 00 01', paymentTermsDays: 15 })).body.id;
+    customerId = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'customer', name: 'Hôtel du Plateau', phone: '+225 07 00 00 00 01', paymentTermsDays: 15 })).body.id;
   });
   afterAll(async () => { await app.close(); });
 
@@ -180,7 +180,7 @@ describe('Avoirs et relances clients', () => {
   it("refuse un avoir sur un brouillon et un changement de client sur l'avoir", async () => {
     const draft = await owner.agent.post('/company/sales/documents').send({ type: 'invoice', contactId: customerId, lines: line(1000) });
     expect((await owner.agent.post(`/company/sales/documents/${draft.body.id}/credit-note`)).status).toBe(409);
-    const other = await owner.agent.post('/company/contacts').send({ kind: 'customer', name: 'Autre client' });
+    const other = await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'customer', name: 'Autre client' });
     const inv = await issueInvoice(1000);
     const cn = await owner.agent.post(`/company/sales/documents/${inv.id}/credit-note`);
     expect((await owner.agent.patch(`/company/sales/documents/${cn.body.id}`).send({ contactId: other.body.id })).status).toBe(400);
@@ -230,7 +230,7 @@ describe('Devis → bon de commande client → facture, sans ressaisie', () => {
     await resetDb();
     app = await createApp();
     owner = await signup(app);
-    customerId = (await owner.agent.post('/company/contacts').send({ kind: 'customer', name: 'Quincaillerie du Plateau' })).body.id;
+    customerId = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'customer', name: 'Quincaillerie du Plateau' })).body.id;
     productId = (await owner.agent.post('/company/products').send({ name: 'Sac de ciment 50 kg', salePrice: 15000, vatRate: 18, unit: 'sac' })).body.id;
     await owner.agent.post(`/company/stock/${productId}/opening`).send({ quantity: 100, unitCost: 12000 });
   });

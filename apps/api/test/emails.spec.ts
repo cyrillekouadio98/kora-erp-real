@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { MailService } from '../src/modules/mail/mail.service';
-import { createApp, ownerClient, resetDb, signup, uniqueEmail } from './helpers';
+import { createApp, ownerClient, resetDb, signup, uniqueEmail, TIERS } from './helpers';
 
 describe('E-mails : file d’envoi, invitations, mot de passe oublié, documents, relances', () => {
   let app: INestApplication;
@@ -61,7 +61,7 @@ describe('E-mails : file d’envoi, invitations, mot de passe oublié, documents
   });
 
   it("envoie une facture au client avec un lien de consultation qui n'expose que le document", async () => {
-    const customer = (await owner.agent.post('/company/contacts').send({ kind: 'customer', name: 'Chantier Cocody', email: 'compta@chantier.ci' })).body.id;
+    const customer = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'customer', name: 'Chantier Cocody', email: 'compta@chantier.ci' })).body.id;
     const inv = await owner.agent.post('/company/sales/documents').send({ type: 'invoice', contactId: customer, lines: [{ description: 'Peinture 20 L', quantity: 2, unitPrice: 25000, vatRate: 18 }] });
     expect((await owner.agent.post(`/company/sales/documents/${inv.body.id}/send`).send({})).body.error.code).toBe('document_draft');
     await owner.agent.post(`/company/sales/documents/${inv.body.id}/validate`);
@@ -84,7 +84,7 @@ describe('E-mails : file d’envoi, invitations, mot de passe oublié, documents
   });
 
   it('relance par e-mail et inscrit la relance dans l’historique', async () => {
-    const noMail = (await owner.agent.post('/company/contacts').send({ kind: 'customer', name: 'Client sans e-mail' })).body.id;
+    const noMail = (await owner.agent.post('/company/contacts').send({ kind: 'customer', legalType: 'individual', name: 'Client sans e-mail', phone: '+225 07 00 00 00 00' })).body.id;
     const inv = await owner.agent.post('/company/sales/documents').send({ type: 'invoice', contactId: noMail, lines: [{ description: 'Vis', quantity: 1, unitPrice: 1000, vatRate: 18 }] });
     await owner.agent.post(`/company/sales/documents/${inv.body.id}/validate`);
     const refused = await owner.agent.post(`/company/sales/documents/${inv.body.id}/reminders`).send({ channel: 'email', sendEmail: true, message: 'Bonjour' });
@@ -99,7 +99,7 @@ describe('E-mails : file d’envoi, invitations, mot de passe oublié, documents
 
   it('réessaie un envoi en échec, puis le marque en échec et permet de le renvoyer', async () => {
     failing = true;
-    await owner.agent.post('/company/contacts').send({ kind: 'customer', name: 'x' });
+    await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'customer', name: 'x' });
     const roles = await owner.agent.get('/company/roles');
     await owner.agent.post('/company/invitations').send({ email: uniqueEmail('echec'), roleIds: [roles.body.find((r: any) => r.key === 'auditor').id] });
     const c = await ownerClient();

@@ -6,8 +6,10 @@ import { money } from '@/lib/format';
 import { Alert, Field, hue, Pill, shrinkImage, useAction } from '@/components/ui';
 
 const KIND: Record<string, [string, 'ok' | 'warn' | 'mute']> = { customer: ['Client', 'ok'], supplier: ['Fournisseur', 'warn'], both: ['Client et fournisseur', 'mute'] };
-const EMPTY = { kind: 'customer', legalType: 'company', name: '', code: '', taxId: '', rccm: '', email: '', phone: '', address: '', city: '', countryCode: 'CI', paymentTermsDays: 0, notes: '' };
+const EMPTY = { kind: 'customer', legalType: 'company', name: '', taxId: '', rccm: '', email: '', phone: '', address: '', city: '', countryCode: 'CI', paymentTermsDays: '' as number | '', notes: '' };
 const FIELDS = Object.keys(EMPTY) as (keyof typeof EMPTY)[];
+/** Champs obligatoires selon la forme : une entreprise doit pouvoir être facturée, un particulier joint. */
+const REQUIRED: Record<string, string[]> = { company: ['name', 'phone', 'email', 'taxId', 'rccm', 'paymentTermsDays'], individual: ['name', 'phone'] };
 const hueVar = (text: string) => ({ '--h': hue(text) } as React.CSSProperties);
 
 /** Logo de l'entreprise ou photo du particulier ; à défaut, un immeuble ou les initiales. */
@@ -65,13 +67,20 @@ export default function ContactsPage() {
   useEffect(() => { const h = setTimeout(load, 250); return () => clearTimeout(h); }, [load]);
 
   const save = () => run(async () => {
-    const body = Object.fromEntries(FIELDS.map((k) => [k, edit[k]]));
+    // Délai non renseigné (particulier) : comptant par défaut, côté serveur.
+    const body = Object.fromEntries(FIELDS.filter((k) => !(k === 'paymentTermsDays' && edit[k] === '')).map((k) => [k, edit[k]]));
     const saved = edit.id ? await api(`/company/contacts/${edit.id}`, { method: 'PATCH', body }) : await api('/company/contacts', { body });
     if (logo !== undefined) await api(`/company/contacts/${saved.id}/logo`, { method: 'PUT', body: { logo } });
     setEdit(null); await load();
   });
   const toggleArchive = (c: any) => run(async () => { await api(`/company/contacts/${c.id}/${c.archivedAt ? 'restore' : 'archive'}`, { body: {} }); await load(); });
-  const open = (c: any) => { setLogo(undefined); setEdit(c.id ? Object.fromEntries(FIELDS.map((k) => [k, c[k] ?? EMPTY[k]]).concat([['id', c.id], ['logo', c.logo]])) : c); };
+  const open = (c: any) => { setLogo(undefined); setEdit(c.id ? Object.fromEntries(FIELDS.map((k) => [k, c[k] ?? EMPTY[k]]).concat([['id', c.id], ['logo', c.logo], ['code', c.code], ['initialKind', c.kind]])) : c); };
+  // Code attribué automatiquement selon le type de tiers : aperçu du prochain numéro pour un nouveau contact ou un changement de type.
+  const [nextCode, setNextCode] = useState('');
+  const codeKind = edit && (!edit.id || edit.kind !== edit.initialKind) ? edit.kind : null;
+  useEffect(() => { setNextCode(''); if (codeKind) api(`/company/contacts/next-code?kind=${codeKind}`).then((r) => setNextCode(r.code), () => {}); }, [codeKind]);
+  const need = (k: string) => !!edit && REQUIRED[edit.legalType].includes(k);
+  const label = (k: string, text: string) => (need(k) ? `${text} *` : text);
   const editable = writable && can('contacts.update');
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setEdit({ ...edit, [k]: e.target.value });
 
@@ -147,17 +156,20 @@ export default function ContactsPage() {
               <label className="field">Forme
                 <select className="input" value={edit.legalType} onChange={set('legalType')}><option value="company">Entreprise</option><option value="individual">Particulier</option></select>
               </label>
-              <Field label="Nom ou raison sociale" required minLength={2} value={edit.name} onChange={set('name')} />
-              <Field label="Code (laisser vide : automatique)" value={edit.code} onChange={set('code')} placeholder={edit.kind === 'supplier' ? 'FRS-00001' : edit.kind === 'both' ? 'TIE-00001' : 'CLI-00001'} />
-              <Field label="Téléphone" type="tel" value={edit.phone} onChange={set('phone')} placeholder="+225 07 00 00 00 00" />
-              <Field label="E-mail" type="email" value={edit.email} onChange={set('email')} />
-              <Field label="N° compte contribuable (NCC)" value={edit.taxId} onChange={set('taxId')} />
-              <Field label="RCCM" value={edit.rccm} onChange={set('rccm')} placeholder="CI-ABJ-…" />
+              <Field label={label('name', edit.legalType === 'company' ? 'Raison sociale' : 'Nom et prénoms')} required minLength={2} value={edit.name} onChange={set('name')} />
+              <label className="field">Code (automatique)
+                <span className="input contact-code">{codeKind ? (nextCode || '…') : edit.code}
+                  <span className="small muted">{codeKind ? (edit.id ? ` remplace ${edit.code} à l'enregistrement` : ' attribué à l’enregistrement') : ''}</span></span></label>
+              <Field label={label('phone', 'Téléphone')} required={need('phone')} type="tel" value={edit.phone} onChange={set('phone')} placeholder="+225 07 00 00 00 00" />
+              <Field label={label('email', 'E-mail')} required={need('email')} type="email" value={edit.email} onChange={set('email')} />
+              <Field label={label('taxId', 'N° compte contribuable (NCC)')} required={need('taxId')} value={edit.taxId} onChange={set('taxId')} />
+              <Field label={label('rccm', 'RCCM')} required={need('rccm')} value={edit.rccm} onChange={set('rccm')} placeholder="CI-ABJ-…" />
               <Field label="Adresse" value={edit.address} onChange={set('address')} />
               <Field label="Ville" value={edit.city} onChange={set('city')} />
               <Field label="Pays (code ISO)" maxLength={2} value={edit.countryCode} onChange={set('countryCode')} />
-              <Field label="Délai de paiement (jours, 0 = comptant)" type="number" min={0} max={365} value={edit.paymentTermsDays} onChange={set('paymentTermsDays')} />
+              <Field label={label('paymentTermsDays', 'Délai de paiement (jours, 0 = comptant)')} required={need('paymentTermsDays')} type="number" min={0} max={365} value={edit.paymentTermsDays} onChange={set('paymentTermsDays')} />
             </div>
+            <p className="small muted" style={{ margin: 0 }}>* obligatoire {edit.legalType === 'company' ? 'pour une entreprise' : 'pour un particulier'}</p>
             <label className="field">Notes<textarea className="input" rows={3} value={edit.notes} onChange={set('notes')} /></label>
             <div className="row"><button className="btn primary" disabled={busy}>Enregistrer</button><button type="button" className="btn" onClick={() => setEdit(null)}>Annuler</button>
               {edit.id && can('calendar.create') && <a className="btn" href={`/app/calendrier?nouveau=1&contact=${edit.id}`}>Planifier un rendez-vous</a>}

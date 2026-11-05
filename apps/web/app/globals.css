@@ -548,3 +548,7 @@ button.vg-card { cursor: pointer; } button.vg-card:hover { border-color: var(--a
   .prep-row, .form .prep-row { grid-template-columns: 1fr 1fr; }
   .prep-row .prep-wide, .prep-row .prep-span4 { grid-column: span 2; }
 }
+
+/* Contacts : code attribué automatiquement (lecture seule) */
+.contact-code { display: flex; align-items: center; gap: 4px; background: var(--surface-2); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.contact-code .small { font-family: inherit; }
