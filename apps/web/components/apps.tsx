@@ -93,6 +93,11 @@ const ICONS: Record<string, React.ReactNode> = {
     <circle cx="24" cy="24" r="18" fill={C} /><circle cx="24" cy="24" r="13" stroke={W} strokeWidth="10" fill="none" strokeDasharray="10.4 10" strokeDashoffset="5.2" opacity=".9" />
     <circle cx="24" cy="24" r="7" fill={W} />
   </>,
+  manual: <>
+    <path d="M24 12c-5-4-12-5-18-4v30c6-1 13 0 18 4z" fill={B} /><path d="M24 12c5-4 12-5 18-4v30c-6-1-13 0-18 4z" fill={T} />
+    <path d="M10 16c4-.4 7 .2 10 1.6M10 22c4-.4 7 .2 10 1.6M10 28c4-.4 7 .2 10 1.6" stroke={W} strokeWidth="2.2" fill="none" strokeLinecap="round" opacity=".7" />
+    <circle cx="36" cy="34" r="8" fill={Y} /><path d="M33.4 32a2.8 2.8 0 1 1 3.6 2.7c-.7.3-1 .8-1 1.5" stroke={N} strokeWidth="2" fill="none" strokeLinecap="round" /><circle cx="36" cy="38.6" r="1.2" fill={N} />
+  </>,
   security: <>
     <path d="M24 4l16 6v12c0 10-7 18-16 22C15 40 8 32 8 22V10z" fill={G} /><path d="M24 4l16 6v12c0 10-7 18-16 22z" fill={T} opacity=".8" />
     <path d="M17 24l5 5 9-10" stroke={W} strokeWidth="3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
@@ -147,6 +152,7 @@ export const APPS: App[] = [
   { key: 'audit', label: "Journal d'audit", href: '/app/journal', perm: 'audit.read' },
   { key: 'support', label: 'Support', href: '/app/support', perm: 'settings.admin' },
   { key: 'security', label: 'Ma sécurité', href: '/app/securite' },
+  { key: 'manual', label: 'Manuel', href: '/app/manuel' },
 ];
 
 const under = (path: string, href: string) => path === href || path.startsWith(`${href}/`);

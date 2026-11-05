@@ -552,3 +552,20 @@ button.vg-card { cursor: pointer; } button.vg-card:hover { border-color: var(--a
 /* Contacts : code attribué automatiquement (lecture seule) */
 .contact-code { display: flex; align-items: center; gap: 4px; background: var(--surface-2); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .contact-code .small { font-family: inherit; }
+
+/* Manuel de procédures : sommaire collant à gauche, sections en cartes */
+.manual { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 16px; align-items: start; }
+.manual-toc { position: sticky; top: 76px; display: grid; gap: 10px; max-height: calc(100vh - 92px); overflow: auto; }
+.manual-toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.manual-toc a { display: block; padding: 5px 8px; border-radius: 6px; color: var(--ink); text-decoration: none; font-size: 14px; }
+.manual-toc a:hover { background: var(--surface-2); }
+.manual-body { display: grid; gap: 16px; min-width: 0; }
+.manual-section { line-height: 1.55; scroll-margin-top: 76px; }
+.manual-section h2 { margin: 0 0 10px; font-size: 20px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.manual-section h3 { margin: 22px 0 6px; font-size: 16px; scroll-margin-top: 76px; }
+.manual-section p { margin: 8px 0; }
+.manual-section ol, .manual-section ul { margin: 8px 0; padding-left: 22px; display: grid; gap: 4px; }
+.manual-section .table-wrap { margin: 10px 0; }
+.manual-section td { vertical-align: top; }
+@media (max-width: 860px) { .manual { grid-template-columns: minmax(0, 1fr); } .manual-toc { position: static; max-height: none; } }
+@media print { .manual { display: block; } .manual-section { break-inside: auto; margin-bottom: 18px; } .manual-section h3 { break-after: avoid; } }
