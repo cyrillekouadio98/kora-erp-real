@@ -10,6 +10,16 @@ types.setTypeParser(1082, (v) => v);
 
 export type Trx = Transaction<DB>;
 
+/**
+ * Connexions inactives rendues avant que la base ne les coupe (une base hébergée se met en veille) ;
+ * une connexion coupée malgré tout est signalée sans arrêter l'API, et la suivante est rouverte.
+ */
+function pool(connectionString: string, max: number) {
+  const p = new Pool({ connectionString, max, idleTimeoutMillis: 30_000 });
+  p.on('error', (e) => console.error('Connexion PostgreSQL perdue :', e.message));
+  return p;
+}
+
 /** Contexte d'une requête liée à une entreprise. Seul AccessGuard le construit. */
 export interface TenantContext {
   companyId: string;
@@ -32,8 +42,8 @@ export class DatabaseService implements OnModuleDestroy {
   readonly platformDb: Kysely<DB>;
 
   constructor() {
-    this.app = new Kysely<DB>({ dialect: new PostgresDialect({ pool: new Pool({ connectionString: config.db.appUrl, max: 20 }) }) });
-    this.platformDb = new Kysely<DB>({ dialect: new PostgresDialect({ pool: new Pool({ connectionString: config.db.platformUrl, max: 5 }) }) });
+    this.app = new Kysely<DB>({ dialect: new PostgresDialect({ pool: pool(config.db.appUrl, 20) }) });
+    this.platformDb = new Kysely<DB>({ dialect: new PostgresDialect({ pool: pool(config.db.platformUrl, 5) }) });
   }
 
   /** Transaction isolée sur une entreprise : la base filtre toutes les lignes par app.company_id. */

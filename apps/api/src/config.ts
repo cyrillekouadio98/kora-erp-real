@@ -48,5 +48,20 @@ export const config = {
     billingIntervalMs: Number(process.env.BILLING_INTERVAL_MS ?? 10 * 60 * 1000),
     enabled: process.env.JOBS_ENABLED !== 'false',
   },
+  /** Nombre de proxys devant l'API (Vercel puis l'hébergeur : 2), pour lire la vraie adresse IP du visiteur. */
+  trustProxy: Number(process.env.TRUST_PROXY ?? 1),
   get isProd() { return this.env === 'production'; },
 };
+
+// En production, aucun secret de développement : l'API refuse de démarrer plutôt que de tourner avec les valeurs du dépôt.
+if (config.isProd) {
+  const devValues = [
+    ['ENCRYPTION_KEY', config.security.encryptionKey, 'ZGV2LW9ubHktMzItYnl0ZXMta2V5LWNoYW5nZS1tZSE='],
+    ['PAYMENT_SANDBOX_SECRET', config.payments.sandboxSecret, 'sandbox-secret-dev'],
+    ['DATABASE_OWNER_URL', config.db.ownerUrl, 'kora_owner_dev'],
+    ['DATABASE_APP_URL', config.db.appUrl, 'kora_app_dev'],
+    ['DATABASE_PLATFORM_URL', config.db.platformUrl, 'kora_platform_dev'],
+    ['WEB_URL', config.webUrl, 'localhost'],
+  ].filter(([, value, dev]) => value.includes(dev)).map(([name]) => name);
+  if (devValues.length) throw new Error(`Valeurs de développement interdites en production : ${devValues.join(', ')}`);
+}

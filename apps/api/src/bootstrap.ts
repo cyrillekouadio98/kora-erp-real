@@ -33,7 +33,7 @@ export async function createApp(): Promise<INestApplication> {
   const app = await NestFactory.create(AppModule, { rawBody: true, logger: config.env === 'test' ? ['error'] : undefined });
   const express = app.getHttpAdapter().getInstance();
   express.disable('x-powered-by');
-  express.set('trust proxy', 1);
+  express.set('trust proxy', config.trustProxy);
   app.use(securityHeaders, cookieParser(), originCheck);
   app.enableCors({ origin: config.webUrl, credentials: true });
   app.enableShutdownHooks();

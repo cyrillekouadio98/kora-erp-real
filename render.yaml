@@ -1,0 +1,41 @@
+# API N'Ora ERP sur Render (offre gratuite, pour la phase de test). Voir docs/DEPLOIEMENT.md.
+# Les variables marquées sync: false sont demandées à la création du service ; elles ne sont jamais écrites ici.
+services:
+  - type: web
+    name: nora-api
+    runtime: node
+    region: frankfurt
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build -w apps/api
+    # Migrations et données de référence à chaque démarrage : chaque étape ne fait rien si elle est déjà faite.
+    startCommand: npm run db:migrate:prod -w apps/api && npm run db:seed:prod -w apps/api && npm start -w apps/api
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      # Visiteur → Vercel → proxy de Render → API
+      - key: TRUST_PROXY
+        value: "2"
+      - key: WEB_URL
+        sync: false
+      - key: DATABASE_OWNER_URL
+        sync: false
+      - key: DATABASE_APP_URL
+        sync: false
+      - key: DATABASE_PLATFORM_URL
+        sync: false
+      # 32 octets en base64 : openssl rand -base64 32
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: PAYMENT_SANDBOX_SECRET
+        generateValue: true
+      - key: SEED_SUPERADMIN_EMAIL
+        sync: false
+      - key: SEED_SUPERADMIN_PASSWORD
+        sync: false
+      - key: SMTP_URL
+        sync: false
+      - key: MAIL_FROM
+        sync: false
