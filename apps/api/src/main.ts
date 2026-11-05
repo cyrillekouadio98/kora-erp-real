@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import '@nestjs/core';
 import { SwaggerModule } from '@nestjs/swagger';
 import { buildOpenApi, createApp } from './bootstrap';
 import { config } from './config';
