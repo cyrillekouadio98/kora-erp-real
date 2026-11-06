@@ -1,4 +1,6 @@
 import 'reflect-metadata';
+// Vercel ne reconnaît le point d'entrée NestJS que s'il importe directement @nestjs/core.
+import '@nestjs/core';
 import { SwaggerModule } from '@nestjs/swagger';
 import { buildOpenApi, createApp } from './bootstrap';
 import { config } from './config';

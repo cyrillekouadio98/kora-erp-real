@@ -32,10 +32,12 @@ if (supabase) admin.searchParams.set('sslmode', 'no-verify');
 const DB = schemaMode ? admin.pathname.slice(1) || 'postgres' : 'kora';
 const SCHEMA = 'kora';
 
+// Pas de NOSUPERUSER : c'est déjà la valeur par défaut, et l'administrateur d'un hébergeur (Supabase) n'est pas
+// superutilisateur, donc PostgreSQL lui refuse de mentionner cet attribut dans un ALTER ROLE (relance du script).
 const ROLES = [
   { name: 'kora_owner', attrs: 'LOGIN BYPASSRLS', env: 'DATABASE_OWNER_URL', port: null },
-  { name: 'kora_app', attrs: 'LOGIN NOSUPERUSER NOBYPASSRLS', env: 'DATABASE_APP_URL', port: pooler ? '6543' : null },
-  { name: 'kora_platform', attrs: 'LOGIN NOSUPERUSER NOBYPASSRLS', env: 'DATABASE_PLATFORM_URL', port: pooler ? '6543' : null },
+  { name: 'kora_app', attrs: 'LOGIN NOBYPASSRLS', env: 'DATABASE_APP_URL', port: pooler ? '6543' : null },
+  { name: 'kora_platform', attrs: 'LOGIN NOBYPASSRLS', env: 'DATABASE_PLATFORM_URL', port: pooler ? '6543' : null },
 ];
 const urlFor = (role, password, port) => {
   const u = new URL(admin.toString());
@@ -82,6 +84,19 @@ if (!schemaMode) {
   const u = new URL(admin.toString()); u.pathname = `/${DB}`;
   const d = await connect(u.toString());
   try { await d.query('REVOKE ALL ON SCHEMA public FROM PUBLIC; ALTER SCHEMA public OWNER TO kora_owner;'); } finally { await d.end(); }
+}
+
+// Le pooler de Supabase garde un moment l'ancien mot de passe d'un rôle en mémoire : on attend que chaque rôle
+// puisse se connecter avec son nouveau mot de passe avant de lancer les migrations.
+for (const r of ROLES) {
+  const url = new URL(out[r.env]);
+  for (let attempt = 1; ; attempt++) {
+    try { const t = await connect(url.toString()); await t.end(); break; } catch (e) {
+      if (e.code !== '28P01' || attempt === 12) throw e;
+      if (attempt === 1) console.log(`Connexion de ${r.name} pas encore acceptée par l'hébergeur, nouvelle tentative…`);
+      await new Promise((ok) => setTimeout(ok, 5000));
+    }
+  }
 }
 
 if (!args.includes('--sans-migrations')) {
