@@ -54,6 +54,24 @@ describe('Rapport de gestion', () => {
     expect((await report()).body.totals).toMatchObject({ salesHt: 120000, cogs: 80000, grossMargin: 40000 });
   });
 
+  it('rapports stocks, clients et fournisseurs sur les mêmes opérations', async () => {
+    const q = { from: today(), to: today() };
+    const stock = (await owner.agent.get('/company/reports/stock').query(q)).body;
+    // 100 sacs à 10 000, 10 vendus puis 2 repris par avoir
+    expect(stock.totals).toMatchObject({ valueStart: 0, valueEnd: 920000, cogs: 80000, valueIn: 1020000, valueOut: 100000, out: 0 });
+    expect(stock.products[0]).toMatchObject({ name: 'Riz 25 kg', qtyStart: 0, qtyIn: 102, qtyOut: 10, qtyEnd: 92, sold: 8, valueEnd: 920000, status: 'ok' });
+    expect(stock.flows).toEqual(expect.arrayContaining([{ key: 'opening', in: 1000000, out: 0 }, { key: 'sale', in: 0, out: 100000 }]));
+    expect(stock.trend).toEqual([{ key: today(), value: 920000 }]);
+
+    const customers = (await owner.agent.get('/company/reports/customers').query(q)).body;
+    expect(customers.totals).toMatchObject({ salesHt: 120000, active: 1, newCustomers: 1, invoices: 1, averageBasket: 120000, collected: 163500, due: 0, topShare: 100 });
+    expect(customers.customers[0]).toMatchObject({ name: 'Supérette Yopougon', salesHt: 120000, collected: 163500, isNew: true });
+
+    const suppliers = (await owner.agent.get('/company/reports/suppliers').query(q)).body;
+    expect(suppliers.totals).toMatchObject({ purchasesHt: 50000, active: 1, due: 59000, overdue: 0, dueSoon: 59000, paid: 0 });
+    expect(suppliers.schedule.find((x: any) => x.key === 'week').amount).toBe(59000);
+  });
+
   it('compare à la période précédente, refuse une période invalide, et suit les droits', async () => {
     const week = await report(addDays(today(), -6), today());
     expect(week.body.previous).toEqual({ from: addDays(today(), -13), to: addDays(today(), -7) });

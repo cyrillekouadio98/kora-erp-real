@@ -8,6 +8,8 @@
   --series-1: #2a78d6; --series-2: #eb6834; --series-1-wash: rgba(42, 120, 214, .10); --chart-grid: #e1e0d9; --chart-axis: #c3c2b7;
   /* Modes de paiement : palette Okabe-Ito (lisible par les daltoniens), une couleur fixe par mode */
   --pay-cash: #0072b2; --pay-mobile: #e69f00; --pay-transfer: #009e73; --pay-cheque: #cc79a7; --pay-card: #56b4e9;
+  /* Ancienneté des créances et échéances des dettes : gris-bleu (rien d'exigible), puis une teinte chaude qui fonce avec l'urgence */
+  --age-0: #9fb3c4; --age-1: #f0c060; --age-2: #e48c34; --age-3: #c9581f; --age-4: #93290f;
   --font: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
   color-scheme: light;
 }
@@ -581,6 +583,9 @@ button.vg-card { cursor: pointer; } button.vg-card:hover { border-color: var(--a
 .doc-logo { display: block; max-width: 200px; max-height: 72px; object-fit: contain; margin-bottom: 8px; }
 
 /* Rapport de gestion */
+.report-tabs { align-self: start; width: fit-content; max-width: 100%; overflow-x: auto; }
+.report td.n { white-space: nowrap; }
+.report-tabs button { padding: 8px 16px; font-size: 15px; }
 .report-range { align-items: flex-end; gap: 12px; flex-wrap: wrap; }
 .report-range label.field { width: 170px; }
 .report-kpis .kpi { display: grid; gap: 4px; align-content: start; }

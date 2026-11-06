@@ -728,6 +728,16 @@ Le rapport de gestion répond à une question : l'entreprise gagne-t-elle de l'a
 3. Analyser les ventes par jour (par mois au-delà de deux mois), les encaissements par mode de paiement, le compte de résultat, les dépenses par poste et les articles les plus vendus.
 4. **Exporter (CSV)** pour un tableur, ou **Imprimer / PDF**.
 
+Trois autres onglets reprennent la même période :
+
+| Onglet | Ce qu'il montre |
+| --- | --- |
+| Stocks | Valeur du stock au début et à la fin, coût des ventes, rotation, couverture en jours, sorties par nature (ventes, casse, consommation…), situation de chaque article (rupture, stock bas, sans vente) |
+| Clients | Ventes par client et leur évolution, nouveaux clients, panier moyen, encaissements, délai moyen de paiement, reste à encaisser et balance âgée (non échu, 1 à 30 jours de retard…) |
+| Fournisseurs | Achats par fournisseur, règlements, reste à payer, retards et échéancier (en retard, dans les 7 jours, dans les 30 jours). Formules avec le module Achats |
+
+Les montants restant dus (clients et fournisseurs) sont toujours ceux du jour, quelle que soit la période choisie.
+
 | Indicateur | Calcul |
 | --- | --- |
 | Chiffre d'affaires | Factures émises moins avoirs, à leur date d'émission |
