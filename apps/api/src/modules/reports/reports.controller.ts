@@ -11,7 +11,7 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'Date invalid
 
 /** Période demandée : du … au …, dans l'ordre, sur un an au plus. */
 function period(query: unknown) {
-  const f = parse(z.object({ from: isoDate, to: isoDate }), query);
+  const f = parse(z.object({ from: isoDate, to: isoDate }).passthrough(), query);
   if (f.from > f.to) throw badRequest('La date de début est postérieure à la date de fin.', undefined, 'bad_period');
   if (Date.parse(f.to) - Date.parse(f.from) > 366 * 86_400_000) throw badRequest('Choisissez une période d’un an au plus.', undefined, 'period_too_long');
   return f;
@@ -44,6 +44,17 @@ export class ReportsController {
   customers(@Tenant() t: TenantInfo, @Query() query: unknown) {
     const f = period(query);
     return this.reports.customers(t, f.from, f.to);
+  }
+
+  /** Trésorerie : vue d'ensemble ou un type de compte (caisse, banque, mobile money). */
+  @Permission('reports.read') @AllowWhenReadOnly()
+  @Get('treasury')
+  treasury(@Tenant() t: TenantInfo, @Query() query: unknown) {
+    const f = period(query);
+    const { kind } = parse(z.object({ kind: z.enum(['all', 'cash', 'bank', 'mobile_money']).default('all') }), query);
+    if (!t.entitlements.modules.includes('cash')) throw paymentRequired("Le module Trésorerie n'est pas inclus dans votre formule.", 'module_not_in_plan', { module: 'cash' });
+    if (kind === 'bank' && !t.entitlements.modules.includes('bank')) throw paymentRequired("Le module Banque n'est pas inclus dans votre formule.", 'module_not_in_plan', { module: 'bank' });
+    return this.reports.treasury(t, f.from, f.to, kind === 'all' ? null : kind);
   }
 
   /** Fournisseurs : achats par fournisseur, règlements, dettes et échéancier (module Achats). */

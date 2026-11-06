@@ -1,7 +1,7 @@
 'use client';
 import { ChartCard, Donut, fcfa, LineChart, monthLong, monthTick, RankedBars } from './charts';
 import { Pill } from './ui';
-import { date, EXPENSE_CATEGORIES, ISSUE_REASONS, PAYMENT_METHODS, qty, RECEIPT_REASONS } from '@/lib/format';
+import { date, EXPENSE_CATEGORIES, ISSUE_REASONS, MOVEMENT_CATEGORIES, PAYMENT_METHODS, qty, RECEIPT_REASONS } from '@/lib/format';
 
 /** Rapports du module Rapports : gestion, stocks, clients, fournisseurs. Chacun reçoit la réponse de l'API et sait l'exporter. */
 
@@ -44,6 +44,12 @@ function Delta({ cur, prev, good = 'up' }: { cur: number; prev: number; good?: '
   if (p === null) return <span className="delta flat">{cur === 0 ? 'Comme la période précédente' : 'Période précédente : 0 FCFA'}</span>;
   const tone = good === 'none' || Math.abs(p) < 0.5 ? 'flat' : (p > 0) === (good === 'up') ? 'up' : 'down';
   return <span className={`delta ${tone}`}>{p > 0 ? '▲' : p < 0 ? '▼' : '='} {Math.abs(p).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} % <span className="muted">vs {fcfa(prev)}</span></span>;
+}
+
+/** Montant au début de la période et variation depuis (pour un solde ou une valeur de stock, sans jugement). */
+function Since({ amount, on, cur }: { amount: number; on: string; cur: number }) {
+  const d = cur - amount;
+  return <span className="delta flat">au {date(on)} : {fcfa(amount)}{d ? ` (${d > 0 ? '+' : ''}${fcfa(d)})` : ''}</span>;
 }
 
 const Empty = ({ children }: { children: React.ReactNode }) => <p className="muted small" style={{ margin: 0 }}>{children}</p>;
@@ -160,7 +166,7 @@ export function StockReport({ r }: { r: any }) {
   return <>
     <div className="kpis report-kpis">
       <div className="card kpi"><div className="l">Valeur du stock</div><div className="v">{fcfa(t.valueEnd)}</div>
-        <div className="small muted">au {date(r.to)}, au coût moyen</div><Delta cur={t.valueEnd} prev={t.valueStart} good="none" /></div>
+        <div className="small muted">au {date(r.to)}, au coût moyen</div><Since amount={t.valueStart} on={r.from} cur={t.valueEnd} /></div>
       <div className="card kpi"><div className="l">Coût des ventes</div><div className="v">{fcfa(t.cogs)}</div>
         <div className="small muted">{t.turnover === null ? 'Rotation : —' : `Rotation : ${t.turnover.toLocaleString('fr-FR')} fois sur la période`}</div></div>
       <div className="card kpi"><div className="l">Couverture</div><div className="v">{t.coverDays === null ? '—' : `${t.coverDays.toLocaleString('fr-FR')} jours`}</div>
@@ -312,5 +318,90 @@ export function SuppliersReport({ r }: { r: any }) {
       </table></div> : <Empty>Aucun fournisseur sur la période.</Empty>}
     </section>
     <p className="small muted" style={{ margin: 0 }}>Achats : factures fournisseurs validées, hors taxes. Reste à payer et échéances : situation à ce jour, quelle que soit la période.</p>
+  </>;
+}
+
+// ------------------------------------------------------------------ trésorerie
+
+export const TREASURY_KINDS: Record<string, string> = { all: "Vue d'ensemble", cash: 'Caisse', bank: 'Banque', mobile_money: 'Mobile money' };
+const KIND_LABEL: Record<string, string> = { cash: 'Caisse', bank: 'Banque', mobile_money: 'Mobile money' };
+/** Même couleur par type de compte que pour les modes de paiement correspondants. */
+const KIND_COLOR: Record<string, string> = { cash: 'var(--pay-cash)', bank: 'var(--pay-transfer)', mobile_money: 'var(--pay-mobile)' };
+const flow = (key: string) => ({ opening: "Soldes d'ouverture", transfer_in: 'Virements reçus', transfer_out: 'Virements émis', ...MOVEMENT_CATEGORIES } as Record<string, string>)[key] ?? key;
+const OUT_COLORS = ['var(--pay-cash)', 'var(--pay-mobile)', 'var(--pay-transfer)', 'var(--pay-cheque)'];
+
+export function treasuryCsv(r: any): Row[] {
+  const t = r.totals;
+  return [['Indicateur', 'Montant'], ['Solde au début', t.start], ['Entrées', t.in], ['Sorties', t.out], ['Solde à la fin', t.end],
+    ['Entrées période précédente', t.previousIn], ['Sorties période précédente', t.previousOut], ['Point bas', t.low?.balance ?? ''], ['Date du point bas', t.low?.date ?? ''], [],
+    ['Entrées par origine', 'Montant'], ...r.inflows.map((f: any) => [flow(f.key), f.amount]), [],
+    ['Sorties par destination', 'Montant'], ...r.outflows.map((f: any) => [flow(f.key), f.amount]), [],
+    ['Compte', 'Type', 'Site', 'Solde début', 'Entrées', 'Sorties', 'Solde fin'],
+    ...r.accounts.map((a: any) => [a.name, KIND_LABEL[a.kind], a.site, a.start, a.in, a.out, a.end])];
+}
+
+/** Rapport de trésorerie : d'où vient l'argent, où il part, et ce qu'il reste sur chaque compte. */
+export function TreasuryReport({ r }: { r: any }) {
+  const t = r.totals;
+  const byDay = r.unit === 'day';
+  const overview = !r.kind;
+  // Anneau : répartition du solde par type de compte (vue d'ensemble), sinon les 4 premières sorties.
+  const donut = overview
+    ? r.byKind.filter((k: any) => k.balance > 0).map((k: any) => ({ key: k.kind, label: KIND_LABEL[k.kind], value: k.balance, color: KIND_COLOR[k.kind] }))
+    : [...r.outflows.slice(0, 4).map((f: any, i: number) => ({ key: f.key, label: flow(f.key), value: f.amount, color: OUT_COLORS[i] })),
+      ...(r.outflows.length > 4 ? [{ key: 'other', label: 'Autres sorties', value: r.outflows.slice(4).reduce((s: number, f: any) => s + f.amount, 0), color: 'var(--muted)' }] : [])];
+  const net = t.in - t.out;
+  return <>
+    <div className="kpis report-kpis">
+      <div className={`card kpi result ${t.end < 0 ? 'neg' : ''}`}><div className="l">Solde {overview ? 'de trésorerie' : KIND_LABEL[r.kind].toLowerCase()}</div><div className="v">{fcfa(t.end)}</div>
+        <div className="small muted">au {date(r.to)} · {t.accounts} compte{t.accounts > 1 ? 's' : ''}</div><Since amount={t.start} on={r.from} cur={t.end} /></div>
+      <div className="card kpi"><div className="l">Entrées</div><div className="v">{fcfa(t.in)}</div>
+        <div className="small muted">{overview ? 'virements entre comptes exclus' : 'virements reçus compris'}</div><Delta cur={t.in} prev={t.previousIn} /></div>
+      <div className="card kpi"><div className="l">Sorties</div><div className="v">{fcfa(t.out)}</div>
+        <div className="small muted">flux net {net >= 0 ? '+' : ''}{fcfa(net)}</div><Delta cur={t.out} prev={t.previousOut} good="down" /></div>
+      {r.kind === 'cash'
+        ? <div className={`card kpi result ${t.cashDifference < 0 ? 'neg' : ''}`}><div className="l">Écarts de caisse</div><div className="v">{t.cashDifference > 0 ? '+' : ''}{fcfa(t.cashDifference)}</div>
+          <div className="small muted">{t.cashCounts ? `sur ${t.cashCounts} arrêté${t.cashCounts > 1 ? 's' : ''} de caisse` : 'aucun arrêté de caisse sur la période'}</div></div>
+        : <div className={`card kpi result ${t.low && t.low.balance < 0 ? 'neg' : ''}`}><div className="l">Point bas</div><div className="v">{t.low ? fcfa(t.low.balance) : '—'}</div>
+          <div className="small muted">{t.low ? `le ${date(t.low.date)}, solde le plus faible` : ''}</div></div>}
+    </div>
+
+    <div className="report-grid">
+      <ChartCard title="Solde" subtitle={byDay ? 'En fin de journée' : 'En fin de mois'}
+        table={{ head: [byDay ? 'Jour' : 'Mois', 'Solde'], rows: r.trend.map((x: any) => [byDay ? dayLong(x.key) : monthLong(x.key), fcfa(x.balance)]) }}>
+        <LineChart categories={r.trend.map((x: any) => x.key)} values={r.trend.map((x: any) => x.balance)} color="var(--series-1)" label="Solde" height={240}
+          tick={byDay ? (c: string) => dayTick(c) : monthTick} long={byDay ? dayLong : monthLong} />
+      </ChartCard>
+      <ChartCard title={overview ? 'Répartition du solde' : 'Sorties'} subtitle={overview ? `Par type de compte, au ${date(r.to)}` : 'Par destination'}
+        table={{ head: [overview ? 'Type' : 'Destination', 'Montant'], rows: donut.map((d: any) => [d.label, fcfa(d.value)]) }}>
+        {donut.length ? <Donut label={overview ? 'Répartition du solde' : 'Sorties'} items={donut} /> : <Empty>{overview ? 'Aucun solde positif.' : 'Aucune sortie sur la période.'}</Empty>}
+      </ChartCard>
+    </div>
+
+    <div className="dash-grid">
+      <section className="card"><header><h2>Entrées par origine</h2></header>
+        {r.inflows.length ? <RankedBars items={r.inflows.map((f: any) => ({ label: flow(f.key), value: f.amount }))} /> : <Empty>Aucune entrée sur la période.</Empty>}
+      </section>
+      <section className="card"><header><h2>Sorties par destination</h2></header>
+        {r.outflows.length ? <RankedBars items={r.outflows.map((f: any) => ({ label: flow(f.key), value: f.amount }))} /> : <Empty>Aucune sortie sur la période.</Empty>}
+      </section>
+    </div>
+
+    <section className="card">
+      <header><h2>Détail par compte</h2><span className="small muted">solde au début + entrées − sorties = solde à la fin</span></header>
+      {r.accounts.length ? <div className="table-wrap"><table>
+        <thead><tr><th>Compte</th>{overview && <th>Type</th>}<th>Site</th><th className="n">Solde début</th><th className="n">Entrées</th><th className="n">Sorties</th><th className="n">Solde fin</th></tr></thead>
+        <tbody>{r.accounts.map((a: any) => (
+          <tr key={a.id}><td><b>{a.name}</b>{a.archived && <> <Pill>Archivé</Pill></>}</td>{overview && <td>{KIND_LABEL[a.kind]}</td>}<td className="small">{a.site}</td>
+            <td className="n">{fcfa(a.start)}</td><td className="n">{a.in ? fcfa(a.in) : '—'}</td><td className="n">{a.out ? fcfa(a.out) : '—'}</td>
+            <td className="n"><b style={a.end < 0 ? { color: 'var(--crit)' } : undefined}>{fcfa(a.end)}</b></td></tr>))}
+          <tr className="total"><td colSpan={overview ? 3 : 2}><b>Total</b></td><td className="n"><b>{fcfa(t.start)}</b></td>
+            <td className="n"><b>{fcfa(r.accounts.reduce((s: number, a: any) => s + a.in, 0))}</b></td><td className="n"><b>{fcfa(r.accounts.reduce((s: number, a: any) => s + a.out, 0))}</b></td><td className="n"><b>{fcfa(t.end)}</b></td></tr></tbody>
+      </table></div> : <Empty>Aucun compte de ce type.</Empty>}
+    </section>
+    <p className="small muted" style={{ margin: 0 }}>
+      {overview ? 'Les virements entre vos comptes ne comptent ni en entrée ni en sortie dans les totaux ; ils restent visibles compte par compte. ' : 'Les virements avec vos autres comptes figurent en « Virements reçus » et « Virements émis ». '}
+      Un mouvement contre-passé s&apos;annule avec sa contre-passation. Un compte ouvert pendant la période entre avec son solde d&apos;ouverture.
+    </p>
   </>;
 }

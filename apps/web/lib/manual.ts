@@ -728,10 +728,11 @@ Le rapport de gestion répond à une question : l'entreprise gagne-t-elle de l'a
 3. Analyser les ventes par jour (par mois au-delà de deux mois), les encaissements par mode de paiement, le compte de résultat, les dépenses par poste et les articles les plus vendus.
 4. **Exporter (CSV)** pour un tableur, ou **Imprimer / PDF**.
 
-Trois autres onglets reprennent la même période :
+Quatre autres onglets reprennent la même période :
 
 | Onglet | Ce qu'il montre |
 | --- | --- |
+| Trésorerie | Vue d'ensemble, Caisse, Banque ou Mobile money : solde au début et à la fin, entrées par origine, sorties par destination, point bas, écarts de caisse, détail par compte. Les virements entre vos comptes ne comptent pas dans la vue d'ensemble |
 | Stocks | Valeur du stock au début et à la fin, coût des ventes, rotation, couverture en jours, sorties par nature (ventes, casse, consommation…), situation de chaque article (rupture, stock bas, sans vente) |
 | Clients | Ventes par client et leur évolution, nouveaux clients, panier moyen, encaissements, délai moyen de paiement, reste à encaisser et balance âgée (non échu, 1 à 30 jours de retard…) |
 | Fournisseurs | Achats par fournisseur, règlements, reste à payer, retards et échéancier (en retard, dans les 7 jours, dans les 30 jours). Formules avec le module Achats |

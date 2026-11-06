@@ -236,6 +236,87 @@ export class ReportsService {
     });
   }
 
+  /**
+   * Rapport de trésorerie : soldes au début et à la fin, entrées et sorties par origine, point bas, solde jour par jour
+   * et détail par compte. kind restreint à un type de compte ; les virements entre comptes du périmètre s'annulent.
+   * Une contre-passation annule son mouvement dans les totaux par origine (sommes nettes par catégorie).
+   */
+  async treasury(t: TenantInfo, from: string, to: string, kind: 'cash' | 'bank' | 'mobile_money' | null) {
+    const days = span(from, to);
+    const previous = { from: shift(from, -days), to: shift(from, -1) };
+    return this.db.tenant(t.ctx, async (trx) => {
+      const accounts = await inScope(trx.selectFrom('treasury_account as a').innerJoin('site as s', (j) => j.onRef('s.id', '=', 'a.site_id').onRef('s.company_id', '=', 'a.company_id'))
+        .select(['a.id', 'a.kind', 'a.name', 'a.opening_balance', 'a.opening_date', 'a.archived_at', 's.name as site'])
+        .where('a.opening_date', '<=', to).$if(!!kind, (q) => q.where('a.kind', '=', kind!)), t, 'a.site_id').orderBy('a.kind').orderBy('a.name').execute();
+      const ids = accounts.map((a) => a.id);
+      const moves = ids.length ? await trx.selectFrom('treasury_movement').select(['account_id', 'date', 'direction', 'amount', 'category', 'source_type', 'transfer_id'])
+        .where('account_id', 'in', ids).where('date', '<=', to).execute() : [];
+      // Virement interne au périmètre : ses deux jambes y figurent, il ne compte ni en entrée ni en sortie.
+      const legs = new Map<string, number>();
+      for (const m of moves) if (m.transfer_id) legs.set(m.transfer_id, (legs.get(m.transfer_id) ?? 0) + 1);
+      const internal = (m: { transfer_id: string | null }) => !!m.transfer_id && legs.get(m.transfer_id) === 2;
+      const keyOf = (m: { category: string; direction: string }) => (m.category === 'transfer' ? (m.direction === 'in' ? 'transfer_in' : 'transfer_out') : m.category);
+
+      const flowsOf = (a: string, b: string) => {
+        const net = new Map<string, number>();
+        for (const acc of accounts) if (acc.opening_date >= a && acc.opening_date <= b && Number(acc.opening_balance)) net.set('opening', (net.get('opening') ?? 0) + Number(acc.opening_balance));
+        for (const m of moves) {
+          if (m.date < a || m.date > b || internal(m)) continue;
+          const acc = accounts.find((x) => x.id === m.account_id)!;
+          if (m.date < acc.opening_date) continue;
+          net.set(keyOf(m), (net.get(keyOf(m)) ?? 0) + (m.direction === 'in' ? 1 : -1) * Number(m.amount));
+        }
+        const list = [...net].map(([key, v]) => ({ key, amount: round(v) })).filter((x) => x.amount !== 0);
+        return {
+          inflows: list.filter((x) => x.amount > 0).sort((x, y) => y.amount - x.amount),
+          outflows: list.filter((x) => x.amount < 0).map((x) => ({ key: x.key, amount: -x.amount })).sort((x, y) => y.amount - x.amount),
+        };
+      };
+      const sum = (l: { amount: number }[]) => l.reduce((s, x) => s + x.amount, 0);
+
+      // Soldes par compte : solde d'ouverture à sa date, puis mouvements à partir de cette date.
+      const balanceAt = (acc: (typeof accounts)[number], d: string) => acc.opening_date > d ? 0
+        : Number(acc.opening_balance) + moves.filter((m) => m.account_id === acc.id && m.date >= acc.opening_date && m.date <= d).reduce((s, m) => s + (m.direction === 'in' ? 1 : -1) * Number(m.amount), 0);
+      const before = shift(from, -1);
+      const rows = accounts.map((acc) => {
+        const start = balanceAt(acc, before), end = balanceAt(acc, to);
+        const period = moves.filter((m) => m.account_id === acc.id && m.date >= from && m.date <= to && m.date >= acc.opening_date);
+        const opening = acc.opening_date >= from ? Number(acc.opening_balance) : 0;
+        return {
+          id: acc.id, kind: acc.kind, name: acc.name, site: acc.site, archived: !!acc.archived_at,
+          start: round(start), in: round(opening + period.filter((m) => m.direction === 'in').reduce((s, m) => s + Number(m.amount), 0)),
+          out: round(period.filter((m) => m.direction === 'out').reduce((s, m) => s + Number(m.amount), 0)), end: round(end),
+        };
+      }).filter((r) => r.start || r.in || r.out || r.end || !r.archived);
+
+      // Solde total jour par jour (par mois au-delà de deux mois) et point bas de la période.
+      const unit = days > 62 ? 'month' : 'day';
+      const trend: { key: string; balance: number }[] = [];
+      let low: { date: string; balance: number } | null = null;
+      // Point bas : à partir de l'ouverture du premier compte (avant, il n'y a pas de trésorerie à suivre).
+      const opened = accounts.reduce((m, a) => (a.opening_date < m ? a.opening_date : m), to);
+      for (let d = from; d <= to; d = shift(d, 1)) {
+        const b = round(accounts.reduce((s, acc) => s + balanceAt(acc, d), 0));
+        if (d >= opened && (!low || b < low.balance)) low = { date: d, balance: b };
+        const key = unit === 'day' ? d : d.slice(0, 7);
+        if (trend.length && trend[trend.length - 1].key === key) trend[trend.length - 1].balance = b; else trend.push({ key, balance: b });
+      }
+      const cur = flowsOf(from, to), prev = flowsOf(previous.from, previous.to);
+      const counts = moves.filter((m) => m.source_type === 'cash_count' && m.date >= from && m.date <= to);
+      return {
+        from, to, previous, kind, unit,
+        totals: {
+          start: round(sum(rows.map((r) => ({ amount: r.start })))), end: round(sum(rows.map((r) => ({ amount: r.end })))),
+          in: sum(cur.inflows), out: sum(cur.outflows), previousIn: sum(prev.inflows), previousOut: sum(prev.outflows),
+          low, accounts: rows.length,
+          cashCounts: counts.length, cashDifference: round(counts.reduce((s, m) => s + (m.direction === 'in' ? 1 : -1) * Number(m.amount), 0)),
+        },
+        byKind: (['cash', 'bank', 'mobile_money'] as const).map((k) => ({ kind: k, balance: round(rows.filter((r) => r.kind === k).reduce((s, r) => s + r.end, 0)) })).filter((x) => x.balance !== 0),
+        inflows: cur.inflows, outflows: cur.outflows, trend, accounts: rows,
+      };
+    });
+  }
+
   private async period(trx: TenantTrx, t: TenantInfo, from: string, to: string, payroll: boolean) {
     const sales = await inScope(trx.selectFrom('sales_document').where('type', 'in', ['invoice', 'credit_note']).where('status', 'not in', ['draft', 'cancelled'])
       .where('issue_date', '>=', from).where('issue_date', '<=', to)

@@ -583,8 +583,8 @@ button.vg-card { cursor: pointer; } button.vg-card:hover { border-color: var(--a
 .doc-logo { display: block; max-width: 200px; max-height: 72px; object-fit: contain; margin-bottom: 8px; }
 
 /* Rapport de gestion */
-.report-tabs { align-self: start; width: fit-content; max-width: 100%; overflow-x: auto; }
-.report td.n { white-space: nowrap; }
+.report-tabs, .report-subtabs { align-self: start; width: fit-content; max-width: 100%; overflow-x: auto; }
+.report-body td.n { white-space: nowrap; }
 .report-tabs button { padding: 8px 16px; font-size: 15px; }
 .report-range { align-items: flex-end; gap: 12px; flex-wrap: wrap; }
 .report-range label.field { width: 170px; }

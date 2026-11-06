@@ -72,6 +72,28 @@ describe('Rapport de gestion', () => {
     expect(suppliers.schedule.find((x: any) => x.key === 'week').amount).toBe(59000);
   });
 
+  it('rapport de trésorerie : vue d’ensemble et par type de compte, virements internes neutres', async () => {
+    const q = { from: today(), to: today() };
+    const acc: Record<string, string> = {};
+    for (const a of (await owner.agent.get('/company/treasury/accounts')).body) acc[a.kind] = a.id;
+    await owner.agent.post('/company/treasury/transfers').send({ fromAccountId: acc.cash, toAccountId: acc.bank, amount: 50000, label: 'Dépôt des espèces' });
+
+    const all = (await owner.agent.get('/company/reports/treasury').query(q)).body;
+    // Caisse ouverte à 500 000 ; 163 500 encaissés (100 000 en mobile money) ; 30 000 de carburant, 20 000 retirés, 10 000 de recette
+    expect(all.totals).toMatchObject({ start: 0, end: 623500, in: 673500, out: 50000 });
+    expect(all.inflows).toEqual([{ key: 'opening', amount: 500000 }, { key: 'customer_payment', amount: 163500 }, { key: 'other_income', amount: 10000 }]);
+    expect(all.outflows).toEqual([{ key: 'fuel', amount: 30000 }, { key: 'owner_withdrawal', amount: 20000 }]); // le dépôt en banque n'y figure pas
+    expect(all.byKind).toEqual(expect.arrayContaining([{ kind: 'cash', balance: 473500 }, { kind: 'bank', balance: 50000 }, { kind: 'mobile_money', balance: 100000 }]));
+
+    const cash = (await owner.agent.get('/company/reports/treasury').query({ ...q, kind: 'cash' })).body;
+    expect(cash.totals).toMatchObject({ end: 473500, out: 100000 });
+    expect(cash.outflows).toContainEqual({ key: 'transfer_out', amount: 50000 });
+    expect(cash.accounts.map((a: any) => a.kind)).toEqual(['cash']);
+    const row = cash.accounts[0];
+    expect(row.start + row.in - row.out).toBe(row.end);
+    expect((await owner.agent.get('/company/reports/treasury').query({ ...q, kind: 'bank' })).body.inflows).toEqual([{ key: 'transfer_in', amount: 50000 }]);
+  });
+
   it('compare à la période précédente, refuse une période invalide, et suit les droits', async () => {
     const week = await report(addDays(today(), -6), today());
     expect(week.body.previous).toEqual({ from: addDays(today(), -13), to: addDays(today(), -7) });
