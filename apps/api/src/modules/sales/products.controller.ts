@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { AllowWhenReadOnly, Permission, Tenant } from '../../common/decorators';
 import { conflict, notFound } from '../../common/errors';
 import { isUuid } from '../../common/ids';
-import { nextNumber } from '../../common/numbering';
+import { nextNumber, peekNumber } from '../../common/numbering';
 import type { TenantInfo } from '../../common/request-context';
 import { parse } from '../../common/validation';
 import { DatabaseService, TenantTrx } from '../../db/database.service';
@@ -17,7 +17,6 @@ const money = z.coerce.number().min(0, { message: 'Le montant ne peut pas être 
 const ProductSchema = z.object({
   kind: z.enum(['good', 'service']).optional(),
   name: z.string().trim().min(2, { message: 'Le nom doit contenir au moins 2 caractères' }).max(160),
-  code: z.string().trim().max(30).regex(/^[A-Za-z0-9._-]*$/, { message: 'Le code ne contient que lettres, chiffres, points, tirets' }).transform((v) => v.toUpperCase() || null).nullable().optional(),
   description: z.string().trim().max(2000).transform((v) => v || null).nullable().optional(),
   unit: z.string().trim().min(1).max(20).optional(),
   salePrice: money,
@@ -25,7 +24,7 @@ const ProductSchema = z.object({
   vatRate: z.coerce.number().refine((v) => VAT_RATES.includes(v), { message: 'Taux de TVA : 18 %, 9 % ou 0 %' }),
 }).strict();
 
-const COLUMNS = { kind: 'kind', name: 'name', code: 'code', description: 'description', unit: 'unit', salePrice: 'sale_price', purchasePrice: 'purchase_price', vatRate: 'vat_rate' } as const;
+const COLUMNS = { kind: 'kind', name: 'name', description: 'description', unit: 'unit', salePrice: 'sale_price', purchasePrice: 'purchase_price', vatRate: 'vat_rate' } as const;
 const SELECT = ['id', 'code', 'kind', 'name', 'description', 'unit', 'sale_price as salePrice', 'purchase_price as purchasePrice', 'vat_rate as vatRate', 'archived_at as archivedAt',
   'track_stock as trackStock', 'stock_qty as stockQty'] as const;
 
@@ -37,17 +36,20 @@ const toNumbers = <T extends { salePrice: string; purchasePrice: string | null; 
 export class ProductsController {
   constructor(private readonly db: DatabaseService, private readonly audit: AuditService) {}
 
-  private async resolveCode(trx: TenantTrx, t: TenantInfo, code: string | null | undefined, exceptId?: string) {
-    const taken = async (c: string) => !!(await trx.selectFrom('product').select('id').where('code', '=', c)
-      .$if(!!exceptId, (qb) => qb.where('id', '!=', exceptId!)).executeTakeFirst());
-    if (code) {
-      if (await taken(code)) throw conflict(`Le code ${code} est déjà utilisé par un autre article.`, 'product_code_taken');
-      return code;
-    }
+  /** Code d'un nouvel article, toujours attribué par N° de séquence (ART-00001…) ; un code déjà pris (ancienne saisie manuelle) est sauté. */
+  private async nextCode(trx: TenantTrx, t: TenantInfo) {
+    const taken = async (c: string) => !!(await trx.selectFrom('product').select('id').where('code', '=', c).executeTakeFirst());
     for (;;) {
       const next = await nextNumber(trx, t.companyId, 'product', 'ART');
       if (!(await taken(next))) return next;
     }
+  }
+
+  /** Code que recevra le prochain article (aperçu du formulaire, rien n'est réservé). */
+  @Permission('products.read') @AllowWhenReadOnly()
+  @Get('next-code')
+  nextCodePreview(@Tenant() t: TenantInfo) {
+    return this.db.tenant(t.ctx, async (trx) => ({ code: await peekNumber(trx, 'product', 'ART') }));
   }
 
   @Permission('products.read') @AllowWhenReadOnly()
@@ -72,7 +74,7 @@ export class ProductsController {
   create(@Tenant() t: TenantInfo, @Body() body: unknown) {
     const input = parse(ProductSchema, body);
     return this.db.tenant(t.ctx, async (trx) => {
-      const code = await this.resolveCode(trx, t, input.code);
+      const code = await this.nextCode(trx, t);
       const values: Record<string, unknown> = {};
       for (const [k, col] of Object.entries(COLUMNS)) if ((input as any)[k] !== undefined) values[col] = (input as any)[k];
       // Les biens sont suivis en stock dès leur création ; les services ne le sont jamais.
@@ -93,7 +95,6 @@ export class ProductsController {
       if (before.archived_at) throw conflict('Cet article est archivé : restaurez-le avant de le modifier.', 'product_archived');
       const patch: Record<string, unknown> = {};
       for (const [k, col] of Object.entries(COLUMNS)) if ((input as any)[k] !== undefined) patch[col] = (input as any)[k];
-      if (input.code !== undefined) patch.code = await this.resolveCode(trx, t, input.code, id);
       // Un bien est suivi en stock, un service jamais : changer de type n'est possible qu'à stock vide.
       if (input.kind && input.kind !== before.kind) {
         if (Number(before.stock_qty) !== 0) throw conflict(`« ${before.name} » a encore ${Number(before.stock_qty).toLocaleString('fr-FR')} en stock : soldez-le par un inventaire avant de changer son type.`, 'stock_not_empty');

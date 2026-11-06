@@ -224,7 +224,7 @@ Les ventes et les achats facturés mettent le stock à jour automatiquement. Le 
 *Chemin : Articles › Nouvel article.*
 
 1. Choisir le type : **Bien (marchandise)**, suivi en stock, ou **Service**, jamais stocké.
-2. Saisir la désignation, le prix de vente HT, le taux de TVA (0 % si exonéré) et, si connu, le prix d'achat HT. Laisser le code vide pour qu'il soit automatique.
+2. Saisir la désignation, le prix de vente HT, le taux de TVA (0 % si exonéré) et, si connu, le prix d'achat HT. Le code (ART-00001, ART-00002…) est attribué automatiquement à l'enregistrement et ne se modifie pas.
 3. Pour un bien, indiquer le **seuil d'alerte** : en dessous, Kora propose de commander.
 4. Enregistrer.
 

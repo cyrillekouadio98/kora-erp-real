@@ -42,6 +42,7 @@ describe('Ventes : articles, devis, factures, encaissements', () => {
   afterAll(async () => { await app.close(); });
 
   it('gère le catalogue des articles avec un code automatique et un taux de TVA ivoirien', async () => {
+    expect((await owner.agent.get('/company/products/next-code')).body.code).toBe('ART-00001');
     const p = await owner.agent.post('/company/products').send({ name: 'Sac de ciment 50 kg', salePrice: 15000, vatRate: 18, unit: 'sac' });
     expect(p.status).toBe(201);
     expect(p.body).toMatchObject({ code: 'ART-00001', salePrice: 15000, vatRate: 18, kind: 'good', unit: 'sac' });
@@ -50,6 +51,10 @@ describe('Ventes : articles, devis, factures, encaissements', () => {
     // Un bien ne se vend que s'il est en stock : stock initial de 200 sacs à 12 000 FCFA.
     expect((await owner.agent.post(`/company/stock/${productId}/opening`).send({ quantity: 200, unitCost: 12000 })).status).toBe(200);
     expect((await owner.agent.post('/company/products').send({ name: 'Taux exotique', salePrice: 10, vatRate: 5 })).status).toBe(400);
+    // Le code ne se saisit pas, ni à la création ni en modification
+    expect((await owner.agent.post('/company/products').send({ name: 'Code imposé', code: 'MON-CODE', salePrice: 10, vatRate: 18 })).status).toBe(400);
+    expect((await owner.agent.patch(`/company/products/${productId}`).send({ code: 'AUTRE' })).status).toBe(400);
+    expect((await owner.agent.get('/company/products/next-code')).body.code).toBe('ART-00002');
     expect((await owner.agent.get('/company/products').query({ q: 'ciment' })).body).toHaveLength(1);
   });
 

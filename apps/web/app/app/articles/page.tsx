@@ -6,7 +6,7 @@ import { money, VAT_RATES } from '@/lib/format';
 import { useSession } from '@/components/session';
 import { Alert, Field, Pill, useAction } from '@/components/ui';
 
-const EMPTY = { kind: 'good', name: '', code: '', description: '', unit: 'unité', salePrice: 0, purchasePrice: '', vatRate: 18 };
+const EMPTY = { kind: 'good', name: '', description: '', unit: 'unité', salePrice: 0, purchasePrice: '', vatRate: 18 };
 const FIELDS = Object.keys(EMPTY) as (keyof typeof EMPTY)[];
 
 export default function ProductsPage() {
@@ -16,11 +16,15 @@ export default function ProductsPage() {
   const [q, setQ] = useState('');
   const [archived, setArchived] = useState('false');
   const [edit, setEdit] = useState<any>(null);
+  const [nextCode, setNextCode] = useState('');
   const { busy, error, run } = useAction();
   const params = new URLSearchParams({ archived, ...(q.trim() ? { q: q.trim() } : {}) }).toString();
 
   const load = useCallback(() => run(async () => setRows(await api(`/company/products?${params}`))), [params]); // eslint-disable-line
   useEffect(() => { const h = setTimeout(load, 250); return () => clearTimeout(h); }, [load]);
+  // Nouvel article : aperçu du code qu'il recevra (attribué à l'enregistrement).
+  const creating = !!edit && !edit.id;
+  useEffect(() => { if (creating) { setNextCode(''); api('/company/products/next-code').then((r) => setNextCode(r.code), () => {}); } }, [creating]);
 
   const save = () => run(async () => {
     const body: any = Object.fromEntries(FIELDS.map((k) => [k, edit[k]]));
@@ -57,7 +61,7 @@ export default function ProductsPage() {
               <td className="n" style={{ whiteSpace: 'nowrap' }}>{money(p.salePrice * (1 + p.vatRate / 100))}</td>
               <td className="n" style={{ whiteSpace: 'nowrap' }}>{p.trackStock ? <Link href="/app/stocks">{p.stockQty.toLocaleString('fr-FR')} {p.unit}</Link> : <span className="muted">—</span>}</td>
               <td className="n"><div className="row" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
-                {writable && can('products.update') && !p.archivedAt && <button className="btn sm" onClick={() => setEdit({ ...Object.fromEntries(FIELDS.map((k) => [k, p[k] ?? EMPTY[k]])), id: p.id })}>Modifier</button>}
+                {writable && can('products.update') && !p.archivedAt && <button className="btn sm" onClick={() => setEdit({ ...Object.fromEntries(FIELDS.map((k) => [k, p[k] ?? EMPTY[k]])), id: p.id, code: p.code })}>Modifier</button>}
                 {writable && can('products.cancel') && <button className={`btn sm${p.archivedAt ? '' : ' danger'}`} disabled={busy} onClick={() => toggleArchive(p)}>{p.archivedAt ? 'Restaurer' : 'Archiver'}</button>}
               </div></td>
             </tr>
@@ -78,7 +82,8 @@ export default function ProductsPage() {
               <label className="field">Type
                 <select className="input" value={edit.kind} onChange={set('kind')}><option value="good">Bien (marchandise)</option><option value="service">Service</option></select>
               </label>
-              <Field label="Code (laisser vide : automatique)" value={edit.code} onChange={set('code')} placeholder="ART-00001" />
+              <label className="field">Code (automatique)
+                <span className="input contact-code">{edit.id ? edit.code : (nextCode || '…')}{!edit.id && <span className="small muted"> attribué à l&apos;enregistrement</span>}</span></label>
               <Field label="Unité" value={edit.unit} onChange={set('unit')} placeholder="unité, sac, kg, heure…" />
               <Field label="Prix de vente HT (FCFA)" type="number" min={0} step="any" required value={edit.salePrice} onChange={set('salePrice')} />
               <label className="field">TVA
