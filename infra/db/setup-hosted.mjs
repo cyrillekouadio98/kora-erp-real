@@ -87,7 +87,9 @@ if (!schemaMode) {
 if (!args.includes('--sans-migrations')) {
   for (const task of ['db:migrate', 'db:seed']) {
     console.log(`\n→ npm run ${task}`);
-    const r = spawnSync('npm', ['run', task, '-w', 'apps/api'], { stdio: 'inherit', env: { ...process.env, ...out, NODE_ENV: 'development' } });
+    // Compte de la console : seulement celui donné à la commande, jamais celui du .env de développement.
+    const seed = { SEED_SUPERADMIN_EMAIL: process.env.SEED_SUPERADMIN_EMAIL ?? '', SEED_SUPERADMIN_PASSWORD: process.env.SEED_SUPERADMIN_PASSWORD ?? '' };
+    const r = spawnSync('npm', ['run', task, '-w', 'apps/api'], { stdio: 'inherit', env: { ...process.env, ...out, ...seed, NODE_ENV: 'development' } });
     if (r.status !== 0) { console.error(`\nÉchec de ${task}.`); process.exit(1); }
   }
 }
