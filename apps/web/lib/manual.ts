@@ -102,10 +102,11 @@ L'administration revient au propriétaire, ou à un utilisateur qui a le droit �
 
 *Chemin : Entreprise.*
 
-1. Compléter la raison sociale, la forme juridique, le NCC, le régime fiscal, l'adresse, le téléphone et l'e-mail de contact.
-2. Cliquer sur **Enregistrer**.
+1. Dans **Logo**, cliquer sur **Ajouter le logo** et choisir l'image (PNG à fond transparent de préférence). Il est enregistré aussitôt.
+2. Compléter la raison sociale, la forme juridique, le NCC, le régime fiscal, l'adresse, le téléphone et l'e-mail de contact.
+3. Cliquer sur **Enregistrer**.
 
-Ces informations figurent sur les devis, factures et bulletins. Les informations fiscales (NCC, régime) ne se modifient qu'avec la permission sensible « paramètres fiscaux ». Chaque modification est inscrite au journal d'audit.
+Le logo et ces informations figurent sur les devis, factures et bulletins. Les informations fiscales (NCC, régime) ne se modifient qu'avec la permission sensible « paramètres fiscaux ». Chaque modification est inscrite au journal d'audit.
 
 ### 3.2 Créer et gérer les sites
 
@@ -725,7 +726,7 @@ Cette section concerne uniquement l'équipe de l'éditeur. La console affiche le
 *Chemin : Console › Préparer une entreprise › Nouvelle entreprise.*
 
 1. **Créer** : raison sociale, forme juridique, ville, formule et rythme de facturation (mensuel ou annuel). Le site principal, une caisse, un compte bancaire et un compte mobile money sont créés d'office.
-2. **Fiche de l'entreprise** : NCC, régime fiscal, adresse, téléphone, e-mail. Elle figure sur les devis et factures.
+2. **Fiche de l'entreprise** : logo, NCC, régime fiscal, adresse, téléphone, e-mail. Elle figure sur les devis et factures ; le client pourra changer le logo après la remise.
 3. **Formule** : ajuster la formule, le rythme et la durée de l'essai. L'essai démarre le jour de la remise, pas le jour de la préparation.
 4. **Sites** : ajouter les magasins, succursales et dépôts ; chacun reçoit son entrepôt et sa caisse.
 5. **Trésorerie** : compléter les caisses, banques (RIB) et comptes mobile money, chacun rattaché à un site.

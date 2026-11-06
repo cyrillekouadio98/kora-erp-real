@@ -126,7 +126,7 @@ export default function SalesDocumentPage() {
         : (
           <article className="card doc">
             <header className="doc-head">
-              <div><div className="doc-company">{company?.name}</div>
+              <div>{company?.logo && <img className="doc-logo" src={`/api${company.logo}`} alt="" />}<div className="doc-company">{company?.name}</div>
                 <div className="small muted">{[company?.address, company?.city].filter(Boolean).join(', ')}{company?.phone ? ` · ${company.phone}` : ''}</div>
                 <div className="small muted">{[company?.rccm && `RCCM ${company.rccm}`, company?.tax_id && `NCC ${company.tax_id}`, company?.tax_regime].filter(Boolean).join(' · ')}</div></div>
               <div style={{ textAlign: 'right' }}><div className="doc-title">{DOC_LABEL[type]}</div>

@@ -42,6 +42,47 @@ export function Avatar({ e, src = e.photo && `/api${e.photo}` }: { e: any; src?:
   return <div className="vg-photo vg-initials" style={{ '--h': hue(e.fullName ?? e.name ?? `${e.firstName} ${e.lastName}`) } as React.CSSProperties} aria-hidden>{`${(e.firstName ?? '')[0] ?? ''}${(e.lastName ?? '')[0] ?? ''}`.toUpperCase()}</div>;
 }
 
+/**
+ * Réduit un logo à 600 × 240 px au plus, proportions gardées. PNG pour garder la transparence ;
+ * JPEG sur fond blanc si le PNG reste trop lourd (photo).
+ */
+export function shrinkLogo(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, 600 / img.width, 240 / img.height);
+      const canvas = Object.assign(document.createElement('canvas'), { width: Math.round(img.width * scale), height: Math.round(img.height * scale) });
+      const g = canvas.getContext('2d')!;
+      g.drawImage(img, 0, 0, canvas.width, canvas.height);
+      let url = canvas.toDataURL('image/png');
+      if (url.length > 400_000) { g.globalCompositeOperation = 'destination-over'; g.fillStyle = '#fff'; g.fillRect(0, 0, canvas.width, canvas.height); url = canvas.toDataURL('image/jpeg', 0.9); }
+      URL.revokeObjectURL(img.src); resolve(url);
+    };
+    img.onerror = () => reject(new Error('Image illisible : choisissez un logo JPEG, PNG ou WebP.'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+/** Logo de l'entreprise : aperçu, puis ajouter, changer ou retirer ; onChange reçoit la data URL réduite, ou null. */
+export function LogoField({ src, disabled, onChange }: { src: string | null; disabled?: boolean; onChange: (logo: string | null) => void | Promise<void> }) {
+  const { busy, error, run } = useAction();
+  return (
+    <div className="logo-field">
+      <div className="logo-preview">{src ? <img src={src} alt="Logo de l'entreprise" /> : <span className="small muted">Aucun logo</span>}</div>
+      <div style={{ display: 'grid', gap: 8 }}>
+        {!disabled && <div className="row">
+          <label className={`btn sm${busy ? ' disabled' : ''}`}>{src ? 'Changer le logo' : 'Ajouter le logo'}
+            <input type="file" accept="image/jpeg,image/png,image/webp" hidden disabled={busy}
+              onChange={(ev) => { const f = ev.target.files?.[0]; if (f) run(async () => onChange(await shrinkLogo(f))); ev.target.value = ''; }} /></label>
+          {src && <button type="button" className="btn sm" disabled={busy} onClick={() => run(async () => onChange(null))}>Retirer</button>}
+        </div>}
+        <p className="small muted" style={{ margin: 0 }}>Repris en tête des devis, factures, bons de commande et bulletins. PNG à fond transparent de préférence.</p>
+        <Alert>{error}</Alert>
+      </div>
+    </div>
+  );
+}
+
 /** Réduit l'image choisie à une vignette carrée de 320 px (JPEG), centrée. */
 export function shrinkImage(file: File): Promise<string> {
   return new Promise((resolve, reject) => {

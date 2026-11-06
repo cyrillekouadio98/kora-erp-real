@@ -36,6 +36,8 @@ describe('Console : préparation d’une entreprise pour un client', () => {
 
   it('paramètre la fiche, la formule, les sites, la trésorerie et les utilisateurs', async () => {
     await sales.agent.patch(`/platform/setup/${id}/company`).send({ rccm: 'CI-ABJ-2026-B-1234', taxId: '2612345A', address: 'Rue du Commerce' });
+    const logo = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+    expect((await sales.agent.put(`/platform/setup/${id}/logo`).send({ logo })).body.logo).toBe(logo);
     await sales.agent.patch(`/platform/setup/${id}/subscription`).send({ planCode: 'business', billingCycle: 'monthly', trialDays: 30 });
     const site = await sales.agent.post(`/platform/setup/${id}/sites`).send({ name: 'Boutique Cocody', city: 'Abidjan' });
     expect(site.body.sites.map((s: any) => s.name)).toContain('Boutique Cocody');

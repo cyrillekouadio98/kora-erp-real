@@ -8,6 +8,7 @@ import type { TenantInfo } from '../../common/request-context';
 import { DatabaseService, TenantTrx } from '../../db/database.service';
 import type { LeaveType } from '../../db/schema';
 import { AuditService } from '../audit/audit.service';
+import { logoUrl } from '../companies/company-logo';
 import { MailService } from '../mail/mail.service';
 import { DEFAULT_PAYROLL_PARAMS, PayslipLine, slipFigures } from '../payroll/payroll.calc';
 import { fullMonths, workingDays } from './workdays';
@@ -259,7 +260,7 @@ export class LeaveService {
       const p = await trx.selectFrom('payslip as p').innerJoin('payroll_run as r', (j) => j.onRef('r.id', '=', 'p.run_id').onRef('r.company_id', '=', 'p.company_id'))
         .selectAll('p').select('r.period').where('p.id', '=', id).where('p.employee_id', '=', e.id).where('r.status', '=', 'validated').executeTakeFirst();
       if (!p) throw notFound('Bulletin');
-      const company = await trx.selectFrom('company').select(['name', 'address', 'city', 'tax_id', 'rccm', 'phone', 'email']).where('id', '=', t.companyId).executeTakeFirstOrThrow();
+      const company = { ...await trx.selectFrom('company').select(['name', 'address', 'city', 'tax_id', 'rccm', 'phone', 'email']).where('id', '=', t.companyId).executeTakeFirstOrThrow(), logo: await logoUrl(trx) };
       return { company, period: p.period, slip: { id: p.id, employee: p.employee, lines: p.lines, totals: p.totals, gross: Number(p.gross), taxable: Number(p.taxable), net: Number(p.net),
         employerCost: Number(p.employer_cost), paidAt: p.paid_at, ...(await this.payslipExtras(trx, e.id, p.period, p.run_id)) } };
     });

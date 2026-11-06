@@ -10,6 +10,7 @@ import { DatabaseService, setTenantContext, TenantTrx } from '../../db/database.
 import type { PaymentMethod, ReminderChannel, SalesDocStatus, SalesDocType } from '../../db/schema';
 import { AuditService } from '../audit/audit.service';
 import { AccountingService } from '../accounting/accounting.service';
+import { logoDataUrl } from '../companies/company-logo';
 import { MailService } from '../mail/mail.service';
 import { StockService } from '../stock/stock.service';
 import { TreasuryService } from '../treasury/treasury.service';
@@ -489,8 +490,8 @@ export class SalesService {
       const share = await tt.selectFrom('document_share').selectAll().where('id', '=', shareId).executeTakeFirst();
       if (!share || !safeEqual(share.token_hash, sha256(secret)) || new Date(share.expires_at) < new Date()) throw notFound('Document');
       await tt.updateTable('document_share').set({ views: share.views + 1, last_viewed_at: new Date() }).where('id', '=', shareId).execute();
-      const company = await tt.selectFrom('company').select(['name', 'address', 'city', 'phone', 'email', 'rccm', 'tax_id as taxId', 'tax_regime as taxRegime'])
-        .where('id', '=', companyId).executeTakeFirstOrThrow();
+      const company = { ...await tt.selectFrom('company').select(['name', 'address', 'city', 'phone', 'email', 'rccm', 'tax_id as taxId', 'tax_regime as taxRegime'])
+        .where('id', '=', companyId).executeTakeFirstOrThrow(), logo: await logoDataUrl(tt) };
       const v = await this.view(tt, share.document_id);
       // Seul ce qui figure sur le document imprimé est montré : ni relances, ni historique interne.
       return {

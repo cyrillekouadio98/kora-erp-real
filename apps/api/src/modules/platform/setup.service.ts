@@ -8,6 +8,7 @@ import type { AuthInfo, TenantInfo } from '../../common/request-context';
 import { DatabaseService, setTenantContext, TenantTrx } from '../../db/database.service';
 import { AuditService } from '../audit/audit.service';
 import { EntitlementService } from '../billing/entitlement.service';
+import { logoDataUrl, saveLogo } from '../companies/company-logo';
 import { NewCompany, ProvisioningService } from '../companies/provisioning.service';
 import { MailService } from '../mail/mail.service';
 import { DEFAULT_ROLES } from '../rbac/permissions';
@@ -124,7 +125,7 @@ export class SetupService {
         { key: 'users', label: 'Collaborateurs', done: quota === null || seats <= quota, hint: quota === null ? `${users.length} prévu(s)` : `${seats} / ${quota} utilisateurs de la formule` },
       ];
       return {
-        ...base, company, roles,
+        ...base, company, logo: await logoDataUrl(trx), roles,
         sites: sites.map((x) => ({ id: x.id, code: x.code, name: x.name, city: x.city, address: x.address, phone: x.phone, isDefault: x.is_default })),
         accounts: accounts.map((a) => ({ id: a.id, kind: a.kind, name: a.name, bankName: a.bank_name, accountNumber: a.account_number, siteId: a.site_id })),
         checklist, canHandOver: checklist.every((i) => !i.required || i.done) && (quota === null || seats <= quota),
@@ -141,6 +142,13 @@ export class SetupService {
       await trx.updateTable('company').set(patch).where('id', '=', id).execute();
       await this.audit.tenant(trx, t.ctx, { action: 'company.updated', entityType: 'company', entityId: id, data: { fields: Object.keys(patch) } });
     });
+    return this.get(id);
+  }
+
+  /** Logo de l'entreprise préparée ; null le retire. */
+  async updateLogo(auth: AuthInfo, id: string, logo: string | null, ip?: string | null) {
+    const t = await this.tenantFor(auth, id, ip);
+    await this.db.tenant(t.ctx, (trx) => saveLogo(trx, this.audit, t.ctx, logo));
     return this.get(id);
   }
 

@@ -21,7 +21,7 @@ function PublicDocument() {
       <div className="row no-print" style={{ justifyContent: 'flex-end' }}><button className="btn" onClick={() => window.print()}>Imprimer / enregistrer en PDF</button></div>
       <article className="card doc">
         <header className="doc-head">
-          <div><div className="doc-company">{c.name}</div>
+          <div>{c.logo && <img className="doc-logo" src={c.logo} alt="" />}<div className="doc-company">{c.name}</div>
             <div className="small muted">{[c.address, c.city].filter(Boolean).join(', ')}{c.phone ? ` · ${c.phone}` : ''}{c.email ? ` · ${c.email}` : ''}</div>
             <div className="small muted">{[c.rccm && `RCCM ${c.rccm}`, c.taxId && `NCC ${c.taxId}`, c.taxRegime].filter(Boolean).join(' · ')}</div></div>
           <div style={{ textAlign: 'right' }}><div className="doc-title">{DOC_LABEL[doc.type as 'invoice']}</div><div><b>{doc.number}</b></div>

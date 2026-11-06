@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { Auth, PlatformRoles } from '../../common/decorators';
 import { AuthInfo, clientIp, KoraRequest } from '../../common/request-context';
 import { email, parse } from '../../common/validation';
+import { parseLogo } from '../companies/company-logo';
 import { SetupService } from './setup.service';
 
 const opt = (max: number) => z.string().trim().max(max).transform((v) => v || null).nullable().optional();
@@ -45,6 +46,11 @@ export class SetupController {
   @Patch(':id/company')
   company(@Auth() auth: AuthInfo, @Param('id') id: string, @Body() body: unknown, @Req() req: KoraRequest) {
     return this.setup.updateCompany(auth, id, parse(CompanySchema.partial(), body), clientIp(req));
+  }
+
+  @Put(':id/logo')
+  logo(@Auth() auth: AuthInfo, @Param('id') id: string, @Body() body: unknown, @Req() req: KoraRequest) {
+    return this.setup.updateLogo(auth, id, parseLogo(body), clientIp(req));
   }
 
   @Patch(':id/subscription')

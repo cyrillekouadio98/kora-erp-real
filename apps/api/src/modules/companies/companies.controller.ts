@@ -1,12 +1,14 @@
-import { Body, Controller, Get, Patch, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Put, Req, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { z } from 'zod';
 import { AllowWhenReadOnly, Auth, Permission, Tenant } from '../../common/decorators';
-import { forbidden } from '../../common/errors';
+import { forbidden, notFound } from '../../common/errors';
 import { AuthInfo, clientIp, KoraRequest, TenantInfo } from '../../common/request-context';
 import { parse } from '../../common/validation';
 import { DatabaseService } from '../../db/database.service';
 import { AuditService } from '../audit/audit.service';
+import { logoUrl, parseLogo, saveLogo } from './company-logo';
 import { ProvisioningService } from './provisioning.service';
 
 const opt = (max: number) => z.string().trim().max(max).nullable().optional();
@@ -36,7 +38,7 @@ export class CompaniesController {
   @Get('company/context')
   async context(@Tenant() t: TenantInfo) {
     const { company, sites } = await this.db.tenant(t.ctx, async (trx) => ({
-      company: await trx.selectFrom('company').select(['id', 'name', 'logo_key', 'currency', 'country_code', 'status']).where('id', '=', t.companyId).executeTakeFirstOrThrow(),
+      company: { ...await trx.selectFrom('company').select(['id', 'name', 'currency', 'country_code', 'status']).where('id', '=', t.companyId).executeTakeFirstOrThrow(), logo: await logoUrl(trx) },
       sites: await trx.selectFrom('site').select(['id', 'code', 'name', 'is_default as isDefault']).where('archived_at', 'is', null).orderBy('is_default', 'desc').orderBy('code').execute(),
     }));
     return {
@@ -50,7 +52,25 @@ export class CompaniesController {
   @Permission(null) @AllowWhenReadOnly()
   @Get('company')
   get(@Tenant() t: TenantInfo) {
-    return this.db.tenant(t.ctx, (trx) => trx.selectFrom('company').selectAll().where('id', '=', t.companyId).executeTakeFirstOrThrow());
+    return this.db.tenant(t.ctx, async (trx) => ({ ...await trx.selectFrom('company').selectAll().where('id', '=', t.companyId).executeTakeFirstOrThrow(), logo: await logoUrl(trx) }));
+  }
+
+  @Permission(null) @AllowWhenReadOnly()
+  @Get('company/logo')
+  async logo(@Tenant() t: TenantInfo, @Res() res: Response) {
+    const l = await this.db.tenant(t.ctx, (trx) => trx.selectFrom('company_logo').select(['mime', 'data']).executeTakeFirst());
+    if (!l) throw notFound('Logo');
+    res.setHeader('Content-Type', l.mime);
+    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+    res.send(l.data);
+  }
+
+  /** Logo de l'entreprise, repris sur ses documents ; null le retire. */
+  @Permission('settings.admin')
+  @Put('company/logo')
+  setLogo(@Tenant() t: TenantInfo, @Body() body: unknown) {
+    const logo = parseLogo(body);
+    return this.db.tenant(t.ctx, async (trx) => { await saveLogo(trx, this.audit, t.ctx, logo); return { logo: await logoUrl(trx) }; });
   }
 
   @Permission('settings.admin')

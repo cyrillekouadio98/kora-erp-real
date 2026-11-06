@@ -70,7 +70,7 @@ export function Payslip({ slip, period, company, onClose }: { slip: any; period:
   return (
     <div className="print-area fiche">
       <header className="fiche-head">
-        <div className="fiche-company">{company?.name}</div>
+        <div>{company?.logo && <img className="doc-logo" src={`/api${company.logo}`} alt="" />}<div className="fiche-company">{company?.name}</div></div>
         <div className="fiche-contact">
           {where && <div>{where}</div>}
           {company?.email && <div><b>Email :</b> {company.email}</div>}

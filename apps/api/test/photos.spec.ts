@@ -66,4 +66,21 @@ describe('Photos des employés et logos des contacts', () => {
     expect((await owner.agent.put(`/company/contacts/${c.id}/logo`).send({ logo: 'data:image/gif;base64,R0lGOD==' })).body.error.code).toBe('invalid_photo');
     expect((await owner.agent.put(`/company/contacts/${c.id}/logo`).send({ logo: null })).body.logo).toBeNull();
   });
+
+  it("enregistre le logo de l'entreprise, visible de ses seuls membres et tracé au journal", async () => {
+    expect((await owner.agent.get('/company/context')).body.company.logo).toBeNull();
+    const put = await owner.agent.put('/company/logo').send({ logo: `data:image/png;base64,${PNG}` });
+    expect(put.body.logo).toMatch(/^\/company\/logo\?v=\d+$/);
+    expect((await owner.agent.get('/company/context')).body.company.logo).toBe(put.body.logo);
+    expect((await owner.agent.get('/company')).body.logo).toBe(put.body.logo);
+    const img = await owner.agent.get('/company/logo');
+    expect(img.headers['content-type']).toBe('image/png');
+    expect(Buffer.from(img.body).toString('base64')).toBe(PNG);
+    expect((await other.agent.get('/company/logo')).status).toBe(404); // l'autre entreprise n'en a pas et ne voit pas celui-ci
+    expect((await owner.agent.put('/company/logo').send({ logo: 'data:image/svg+xml;base64,PHN2Zz4=' })).body.error.code).toBe('invalid_photo');
+    const audit = (await owner.agent.get('/company/audit')).body;
+    expect((audit.items ?? audit).map((e: any) => e.action)).toContain('company.logo_updated');
+    expect((await owner.agent.put('/company/logo').send({ logo: null })).body.logo).toBeNull();
+    expect((await owner.agent.get('/company/logo')).status).toBe(404);
+  });
 });

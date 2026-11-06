@@ -61,6 +61,7 @@ describe('E-mails : file d’envoi, invitations, mot de passe oublié, documents
   });
 
   it("envoie une facture au client avec un lien de consultation qui n'expose que le document", async () => {
+    await owner.agent.put('/company/logo').send({ logo: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=' });
     const customer = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'customer', name: 'Chantier Cocody', email: 'compta@chantier.ci' })).body.id;
     const inv = await owner.agent.post('/company/sales/documents').send({ type: 'invoice', contactId: customer, lines: [{ description: 'Peinture 20 L', quantity: 2, unitPrice: 25000, vatRate: 18 }] });
     expect((await owner.agent.post(`/company/sales/documents/${inv.body.id}/send`).send({})).body.error.code).toBe('document_draft');
@@ -77,6 +78,7 @@ describe('E-mails : file d’envoi, invitations, mot de passe oublié, documents
     const token = decodeURIComponent(linkIn(m.text, '/document')!);
     const pub = await request(app.getHttpServer()).get('/public/document').query({ token });
     expect(pub.body).toMatchObject({ type: 'invoice', totalTtc: 59000, company: { name: 'Quincaillerie Moderne' }, customer: { name: 'Chantier Cocody' } });
+    expect(pub.body.company.logo).toMatch(/^data:image\/png;base64,/); // le logo figure sur le document, sans session
     expect(JSON.stringify(pub.body)).not.toContain('Note interne confidentielle');
     expect((await request(app.getHttpServer()).get('/public/document').query({ token: token.slice(0, -2) + 'xx' })).status).toBe(404);
     const c = await ownerClient();

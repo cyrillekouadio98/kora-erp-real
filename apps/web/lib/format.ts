@@ -13,7 +13,7 @@ export const SUB_STATUS: Record<string, [string, 'ok' | 'warn' | 'crit' | 'mute'
 };
 
 export const ACTION_LABELS: Record<string, string> = {
-  'company.created': 'Entreprise créée', 'company.updated': 'Fiche entreprise modifiée', 'company.suspended': 'Entreprise suspendue par l’éditeur',
+  'company.created': 'Entreprise créée', 'company.updated': 'Fiche entreprise modifiée', 'company.logo_updated': 'Logo de l’entreprise modifié', 'company.logo_removed': 'Logo de l’entreprise retiré', 'company.suspended': 'Entreprise suspendue par l’éditeur',
   'company.reactivated': 'Entreprise réactivée par l’éditeur', 'session.company_selected': 'Entreprise sélectionnée',
   'role.created': 'Rôle créé', 'role.updated': 'Rôle modifié', 'role.deleted': 'Rôle supprimé',
   'member.updated': 'Accès d’un utilisateur modifié', 'invitation.created': 'Invitation envoyée', 'invitation.revoked': 'Invitation annulée',

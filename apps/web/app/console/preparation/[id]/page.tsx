@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { date, money, SETUP_STATUS } from '@/lib/format';
-import { Alert, Field, Pill, useAction } from '@/components/ui';
+import { Alert, Field, LogoField, Pill, useAction } from '@/components/ui';
 
 const COMPANY: [string, string, string?][] = [
   ['name', 'Raison sociale'], ['legalForm', 'Forme juridique', 'SARL, SA, SAS…'], ['rccm', 'RCCM'], ['taxId', 'Numéro de compte contribuable (NCC)'],
@@ -86,6 +86,9 @@ export default function PreparationPage() {
           })}</div>
           <Alert kind="ok">{notice}</Alert><Alert>{error}</Alert>
 
+          {tab === 'company' && <section className="card form"><header><h2>Logo</h2><span className="small muted">Le client pourra le changer après la remise</span></header>
+            <LogoField src={s.logo} onChange={async (logo) => { show(await api(`/platform/setup/${id}/logo`, { method: 'PUT', body: { logo } })); setNotice(logo ? 'Logo enregistré.' : 'Logo retiré.'); }} />
+          </section>}
           {tab === 'company' && <form className="card form" onSubmit={(e) => { e.preventDefault(); save('/company', company, 'Fiche enregistrée.'); }}>
             <header><h2>Fiche de l&apos;entreprise</h2><span className="small muted">Elle figure sur les devis et les factures</span></header>
             <div className="grid2">{COMPANY.map(([k, label, ph]) => <Field key={k} label={label} placeholder={ph} required={k === 'name'} type={k === 'email' ? 'email' : 'text'} value={company[k] ?? ''} onChange={(e) => setCompany({ ...company, [k]: e.target.value })} />)}</div>
