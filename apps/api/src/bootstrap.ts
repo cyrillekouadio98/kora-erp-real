@@ -25,7 +25,7 @@ function securityHeaders(_req: Request, res: Response, next: NextFunction) {
 }
 
 export function buildOpenApi(app: INestApplication) {
-  const doc = new DocumentBuilder().setTitle("N'Ora ERP — API").setDescription('API du socle SaaS multi-entreprises').setVersion('0.1.0').addCookieAuth(config.session.cookieName).build();
+  const doc = new DocumentBuilder().setTitle('Kora ERP — API').setDescription('API du socle SaaS multi-entreprises').setVersion('0.1.0').addCookieAuth(config.session.cookieName).build();
   return SwaggerModule.createDocument(app, doc);
 }
 

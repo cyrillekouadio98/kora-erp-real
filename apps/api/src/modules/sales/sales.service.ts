@@ -509,7 +509,7 @@ export class SalesService {
       if (d.type !== 'invoice' || !OPEN_INVOICE.includes(d.status)) throw conflict('Seule une facture émise et non soldée peut être relancée.', 'invalid_state');
       if (r.promisedOn && r.promisedOn < today()) throw badRequest('La date de paiement promise ne peut pas être passée.', undefined, 'past_date');
       if (r.sendEmail) {
-        // Relance envoyée par N'Ora : le message préparé part avec un lien vers la facture.
+        // Relance envoyée par Kora : le message préparé part avec un lien vers la facture.
         const contact = await trx.selectFrom('contact').select(['name', 'email']).where('id', '=', d.contact_id).executeTakeFirstOrThrow();
         const to = r.to ?? contact.email;
         if (!to) throw badRequest(`Aucune adresse e-mail pour ${contact.name} : indiquez-en une ou complétez sa fiche.`, undefined, 'no_email');

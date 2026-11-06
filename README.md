@@ -1,4 +1,4 @@
-# N'Ora ERP
+# Kora ERP
 
 ERP SaaS multi-entreprises pour les PME d'Afrique de l'Ouest : gestion commerciale, comptabilité SYSCOHADA révisé, trésorerie, ressources humaines et paie. Marché initial : Côte d'Ivoire.
 
@@ -131,7 +131,7 @@ scripts/dev.mjs        lancement de tout l'environnement en une commande
 ## Décisions encore ouvertes
 
 - Prestataire de paiement réel (agrégateur mobile money + carte) : l'interface `PaymentProvider` est prête, seul le prestataire de test est branché.
-- Fournisseur d'envoi des e-mails (Brevo, Mailjet, Amazon SES…) et domaine expéditeur (SPF, DKIM) : N'Ora est prêt, il suffit de renseigner `SMTP_URL` et `MAIL_FROM`.
+- Fournisseur d'envoi des e-mails (Brevo, Mailjet, Amazon SES…) et domaine expéditeur (SPF, DKIM) : Kora est prêt, il suffit de renseigner `SMTP_URL` et `MAIL_FROM`.
 - Hébergement et formalités ARTCI pour les données personnelles.
 - Facture normalisée électronique de la DGI : à intégrer au module ventes (phase 3) dès réception des spécifications.
 - Prix des formules : les montants de `apps/api/src/modules/billing/entitlements.ts` sont des exemples à valider.

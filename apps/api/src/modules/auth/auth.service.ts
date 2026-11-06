@@ -91,7 +91,7 @@ export class AuthService {
       if (auth.mfaEnabled) throw conflict('La double authentification est déjà activée.');
       const secret = authenticator.generateSecret();
       await trx.updateTable('user_account').set({ totp_secret_enc: encrypt(secret) }).where('id', '=', auth.userId).execute();
-      return { secret, otpauthUrl: authenticator.keyuri(auth.email, "N'Ora ERP", secret) };
+      return { secret, otpauthUrl: authenticator.keyuri(auth.email, 'Kora ERP', secret) };
     });
   }
 
@@ -163,8 +163,8 @@ export class AuthService {
       const secret = randomToken(32);
       await trx.insertInto('password_reset').values({ user_id: u.id, token_hash: sha256(secret), expires_at: new Date(Date.now() + 3600_000), ip: ip ?? null, used_at: null }).execute();
       await this.mail.enqueue(trx, {
-        companyId: null, to: email, kind: 'password_reset', subject: "Réinitialisation de votre mot de passe N'Ora ERP",
-        paragraphs: [`Bonjour ${u.full_name},`, "Une réinitialisation du mot de passe de votre compte N'Ora ERP a été demandée. Le lien ci-dessous est valable une heure et ne peut servir qu'une fois.",
+        companyId: null, to: email, kind: 'password_reset', subject: 'Réinitialisation de votre mot de passe Kora ERP',
+        paragraphs: [`Bonjour ${u.full_name},`, "Une réinitialisation du mot de passe de votre compte Kora ERP a été demandée. Le lien ci-dessous est valable une heure et ne peut servir qu'une fois.",
           "Si vous n'êtes pas à l'origine de cette demande, ignorez ce message : votre mot de passe reste inchangé."],
         action: { label: 'Choisir un nouveau mot de passe', url: `${config.webUrl}/mot-de-passe?token=${secret}` },
       });

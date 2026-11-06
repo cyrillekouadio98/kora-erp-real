@@ -5,7 +5,7 @@ import { api, errorMessage } from '@/lib/api';
 import { date, DOC_LABEL, money, paymentStamp } from '@/lib/format';
 import { PaidRows } from '@/components/ui';
 
-/** Document consulté par son destinataire (lien reçu par e-mail), sans compte N'Ora. */
+/** Document consulté par son destinataire (lien reçu par e-mail), sans compte Kora. */
 function PublicDocument() {
   const token = useSearchParams().get('token') ?? '';
   const [doc, setDoc] = useState<any>(null);
@@ -49,7 +49,7 @@ function PublicDocument() {
         </div>
         {doc.notes && <p className="small" style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{doc.notes}</p>}
       </article>
-      <p className="small muted no-print" style={{ textAlign: 'center' }}>Document transmis par {c.name} avec N'Ora ERP.</p>
+      <p className="small muted no-print" style={{ textAlign: 'center' }}>Document transmis par {c.name} avec Kora ERP.</p>
     </main>
   );
 }

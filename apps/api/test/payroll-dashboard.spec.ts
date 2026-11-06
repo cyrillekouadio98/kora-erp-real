@@ -86,7 +86,7 @@ describe('Pilotage de la paie : tableau de bord, contrats, prestations, fiches, 
     expect(s).toMatchObject({ suggestedNotice: 2, noticeMonths: 2 });
     expect(s.lines.find((l: any) => l.code === 'PRE').amount).toBe(avg * 2);
     expect(s.lines.find((l: any) => l.code === 'CP').amount).toBe(Math.round((avg / 26) * s.leave.available));
-    // Jours de congés corrigés à la main (congés pris avant N'Ora)
+    // Jours de congés corrigés à la main (congés pris avant Kora)
     const fixed = (await settle({ employeeId: senior, endDate: today(), reason: 'dismissal', leaveDays: 12.5 })).body;
     expect(fixed).toMatchObject({ leaveDays: 12.5 });
     expect(fixed.lines.find((l: any) => l.code === 'CP').amount).toBe(Math.round((avg / 26) * 12.5));

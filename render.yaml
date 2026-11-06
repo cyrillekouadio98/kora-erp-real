@@ -1,4 +1,4 @@
-# API N'Ora ERP sur Render (offre gratuite, pour la phase de test). Voir docs/DEPLOIEMENT.md.
+# API Kora ERP sur Render (offre gratuite, pour la phase de test). Voir docs/DEPLOIEMENT.md.
 # Les variables marquées sync: false sont demandées à la création du service ; elles ne sont jamais écrites ici.
 services:
   - type: web

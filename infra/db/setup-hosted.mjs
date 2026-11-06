@@ -1,5 +1,5 @@
 /*
- * Prépare une base PostgreSQL hébergée (Neon, Supabase…) pour N'Ora ERP, à lancer une fois depuis votre poste :
+ * Prépare une base PostgreSQL hébergée (Neon, Supabase…) pour Kora ERP, à lancer une fois depuis votre poste :
  *   node infra/db/setup-hosted.mjs "postgres://ADMIN:MOTDEPASSE@HOTE/neondb?sslmode=require"
  * L'adresse est celle du rôle administrateur fourni par l'hébergeur. Le script crée les rôles kora_owner (migrations),
  * kora_app (API, soumis à la RLS) et kora_platform (console), la base kora, puis affiche les trois adresses de connexion

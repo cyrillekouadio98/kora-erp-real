@@ -240,11 +240,11 @@ export class SetupService {
     const ownerRole = await trx.selectFrom('role').select('id').where('key', '=', 'owner').executeTakeFirstOrThrow();
     const inv = await this.invite(trx, t, { email: owner.email, roleIds: [ownerRole.id], siteIds: null, isOwner: true });
     await this.mail.enqueue(trx, {
-      companyId: t.companyId, to: owner.email, kind: 'invitation', entityId: inv.id, fromName: "N'Ora ERP", createdBy: t.ctx.userId,
-      subject: `Votre espace ${company.name} est prêt sur N'Ora ERP`,
+      companyId: t.companyId, to: owner.email, kind: 'invitation', entityId: inv.id, fromName: 'Kora ERP', createdBy: t.ctx.userId,
+      subject: `Votre espace ${company.name} est prêt sur Kora ERP`,
       paragraphs: [
         `Bonjour ${owner.name ?? ''},`.replace(' ,', ','),
-        `Notre équipe a préparé l'espace de ${company.name} sur N'Ora ERP (formule ${planName}) : fiche de l'entreprise, sites, comptes de trésorerie et accès de vos collaborateurs.`,
+        `Notre équipe a préparé l'espace de ${company.name} sur Kora ERP (formule ${planName}) : fiche de l'entreprise, sites, comptes de trésorerie et accès de vos collaborateurs.`,
         "Vous en êtes le propriétaire : acceptez l'invitation pour choisir votre mot de passe et prendre la main. Vous pourrez tout modifier ensuite.",
         `Cette invitation est valable ${HANDOVER_INVITE_DAYS} jours.`,
       ],
@@ -271,8 +271,8 @@ export class SetupService {
         const inv = await this.invite(trx, t, { email: u.email, roleIds: [role.id], siteIds: u.siteIds?.length ? u.siteIds : null, isOwner: false });
         await this.mail.enqueue(trx, {
           companyId: id, to: u.email, kind: 'invitation', entityId: inv.id, fromName: company.name, replyTo: company.email, createdBy: auth.userId,
-          subject: `${company.name} vous invite sur N'Ora ERP`,
-          paragraphs: [`Bonjour ${u.name},`, `${company.name} vous invite à rejoindre son espace sur N'Ora ERP, avec le rôle : ${role.name}.`, `Cette invitation est valable ${HANDOVER_INVITE_DAYS} jours.`],
+          subject: `${company.name} vous invite sur Kora ERP`,
+          paragraphs: [`Bonjour ${u.name},`, `${company.name} vous invite à rejoindre son espace sur Kora ERP, avec le rôle : ${role.name}.`, `Cette invitation est valable ${HANDOVER_INVITE_DAYS} jours.`],
           action: { label: "Accepter l'invitation", url: inv.inviteUrl },
         });
         users.push({ email: u.email, inviteUrl: inv.inviteUrl });

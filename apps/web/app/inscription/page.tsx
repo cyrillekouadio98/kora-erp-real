@@ -14,7 +14,7 @@ export default function SignupPage() {
   return (
     <main className="auth">
       <form className="card form" onSubmit={(e) => { e.preventDefault(); run(async () => { await api('/auth/signup', { body: f }); router.replace('/app'); }); }}>
-        <div><div className="brand">N'Ora<span> ERP</span></div><p className="muted small">Créez votre entreprise : 14 jours d'essai gratuit, sans moyen de paiement.</p></div>
+        <div><div className="brand">Kora<span> ERP</span></div><p className="muted small">Créez votre entreprise : 14 jours d'essai gratuit, sans moyen de paiement.</p></div>
         <Alert>{error}</Alert>
         <Field label="Nom de l'entreprise" required value={f.companyName} onChange={set('companyName')} placeholder="Ex. Boutique Awa SARL" />
         <Field label="Votre nom complet" required autoComplete="name" value={f.fullName} onChange={set('fullName')} />

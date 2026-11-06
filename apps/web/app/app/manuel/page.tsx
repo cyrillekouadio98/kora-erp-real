@@ -8,7 +8,7 @@ import { MANUAL, MANUAL_UPDATED } from '@/lib/manual';
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
-/** Manuel de procédures : sommaire, recherche et impression ; la partie éditeur n'est montrée qu'à l'équipe N'Ora. */
+/** Manuel de procédures : sommaire, recherche et impression ; la partie éditeur n'est montrée qu'à l'équipe Kora. */
 export default function ManualPage() {
   const { me, ctx } = useSession();
   const [q, setQ] = useState('');
@@ -20,7 +20,7 @@ export default function ManualPage() {
   return (
     <>
       <div className="page-head no-print">
-        <div><h1>Manuel de procédures</h1><p className="small muted" style={{ margin: 0 }}>Qui fait quoi dans N'Ora, étape par étape · mis à jour le {date(MANUAL_UPDATED)}</p></div>
+        <div><h1>Manuel de procédures</h1><p className="small muted" style={{ margin: 0 }}>Qui fait quoi dans Kora, étape par étape · mis à jour le {date(MANUAL_UPDATED)}</p></div>
         <button className="btn" onClick={() => window.print()}>Imprimer / PDF</button>
       </div>
       <div className="manual">
@@ -32,7 +32,7 @@ export default function ManualPage() {
         <div className="manual-body">
           {shown.map((s) => (
             <section key={s.id} id={s.id} className="card manual-section">
-              <h2>{s.title} {outside(s.module) && <Pill>Hors de votre formule</Pill>} {s.platformOnly && <Pill tone="warn">Équipe N'Ora</Pill>}</h2>
+              <h2>{s.title} {outside(s.module) && <Pill>Hors de votre formule</Pill>} {s.platformOnly && <Pill tone="warn">Équipe Kora</Pill>}</h2>
               <Markdown text={s.body} idPrefix={s.id} />
             </section>
           ))}

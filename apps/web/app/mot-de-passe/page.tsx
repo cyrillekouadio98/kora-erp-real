@@ -18,7 +18,7 @@ function ResetPassword() {
         if (password !== confirm) return setError('Les deux mots de passe ne sont pas identiques.');
         run(async () => { await api('/auth/password-reset/confirm', { body: { token, password } }); setDone(true); });
       }}>
-        <div><div className="brand">N'Ora<span> ERP</span></div><p className="muted small">Nouveau mot de passe</p></div>
+        <div><div className="brand">Kora<span> ERP</span></div><p className="muted small">Nouveau mot de passe</p></div>
         <Alert>{error}</Alert>
         {done ? <>
           <Alert kind="ok">Votre mot de passe a été changé. Par sécurité, toutes vos sessions ouvertes ont été fermées.</Alert>

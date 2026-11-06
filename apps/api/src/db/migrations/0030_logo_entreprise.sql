@@ -1,5 +1,5 @@
 -- =====================================================================
--- N'Ora ERP — Migration 0030 : logo de l'entreprise
+-- Kora ERP — Migration 0030 : logo de l'entreprise
 -- Image réduite par le navigateur (proportions gardées), rangée à part comme les logos des contacts ;
 -- elle figure sur les devis, factures, bons de commande et bulletins.
 -- =====================================================================

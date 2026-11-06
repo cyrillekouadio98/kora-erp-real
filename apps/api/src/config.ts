@@ -39,9 +39,9 @@ export const config = {
     sandboxSecret: req('PAYMENT_SANDBOX_SECRET', 'sandbox-secret-dev'),
   },
   mail: {
-    /** smtp://utilisateur:motdepasse@serveur:587 — sans valeur, les e-mails restent dans N'Ora (mode développement). */
+    /** smtp://utilisateur:motdepasse@serveur:587 — sans valeur, les e-mails restent dans Kora (mode développement). */
     smtpUrl: process.env.SMTP_URL || null,
-    from: process.env.MAIL_FROM ?? "N'Ora ERP <no-reply@kora.local>",
+    from: process.env.MAIL_FROM ?? 'Kora ERP <no-reply@kora.local>',
     intervalMs: Number(process.env.MAIL_INTERVAL_MS ?? 15_000),
   },
   jobs: {

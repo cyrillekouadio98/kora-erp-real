@@ -116,7 +116,7 @@ export class StockController {
     return this.stock.setSettings(t, productId, parse(z.object({ minStock: quantity.nullable().optional(), trackStock: z.boolean().optional() }).strict(), body));
   }
 
-  /** Stock initial (avant l'utilisation de N'Ora) d'un article sans mouvement. */
+  /** Stock initial (avant l'utilisation de Kora) d'un article sans mouvement. */
   @Permission('stock.admin') @HttpCode(200)
   @Post(':productId/opening')
   opening(@Tenant() t: TenantInfo, @Param('productId') productId: string, @Body() body: unknown) {

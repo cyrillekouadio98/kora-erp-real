@@ -257,7 +257,7 @@ export class PayrollInsightsService {
       const suggestedNotice = ['dismissal', 'mutual'].includes(f.reason) ? (years < 6 ? 1 : years < 11 ? 2 : years < 16 ? 3 : 4) : 0;
       const noticeMonths = f.noticeMonths ?? suggestedNotice;
       if (noticeMonths > 0) lines.push({ code: 'PRE', label: 'Indemnité compensatrice de préavis', basis: `${String(noticeMonths).replace('.', ',')} mois non effectué(s)`, amount: round(average * noticeMonths), taxable: true });
-      // Jours à indemniser : le solde du module Congés, sauf correction (report d'ouverture absent, congés pris hors N'Ora…).
+      // Jours à indemniser : le solde du module Congés, sauf correction (report d'ouverture absent, congés pris hors Kora…).
       const balance = await this.leave.balance(trx, e, end);
       const leaveDays = f.leaveDays ?? Math.max(0, balance.available);
       if (leaveDays > 0) lines.push({ code: 'CP', label: 'Indemnité compensatrice de congés payés', basis: `${String(leaveDays).replace('.', ',')} jour(s) acquis non pris × salaire journalier moyen (1/26 du mois)`, amount: round(daily * leaveDays), taxable: true });

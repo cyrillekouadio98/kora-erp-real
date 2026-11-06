@@ -1,5 +1,5 @@
 -- =====================================================================
--- N'Ora ERP — Migration 0031 : module Rapports
+-- Kora ERP — Migration 0031 : module Rapports
 -- Permissions reports.read et reports.export ajoutées aux rôles standard existants
 -- qui pilotent ou contrôlent (les nouvelles entreprises les reçoivent à leur création).
 -- =====================================================================

@@ -65,7 +65,7 @@ describe('Console : préparation d’une entreprise pour un client', () => {
     expect(h.body.status).toBe('handed_over');
     expect(h.body.sites).toBeUndefined(); // la console ne voit plus le contenu
     expect(h.body.links.users).toHaveLength(2);
-    expect((await mails()).map((m: any) => m.subject).sort()).toEqual(["Boulangerie du Plateau vous invite sur N'Ora ERP", "Boulangerie du Plateau vous invite sur N'Ora ERP", "Votre espace Boulangerie du Plateau est prêt sur N'Ora ERP"]);
+    expect((await mails()).map((m: any) => m.subject).sort()).toEqual(['Boulangerie du Plateau vous invite sur Kora ERP', 'Boulangerie du Plateau vous invite sur Kora ERP', 'Votre espace Boulangerie du Plateau est prêt sur Kora ERP']);
     expect((await sales.agent.patch(`/platform/setup/${id}/company`).send({ city: 'Bouaké' })).body.error.code).toBe('setup_handed_over');
     expect((await sales.agent.post(`/platform/setup/${id}/hand-over`)).body.error.code).toBe('setup_handed_over');
 

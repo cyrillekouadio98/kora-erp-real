@@ -11,7 +11,7 @@ function inline(text: string): React.ReactNode {
 const cells = (row: string) => row.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
 
 /**
- * Markdown simple (### titres, paragraphes, listes à puces ou numérotées, tableaux) pour les textes rédigés dans N'Ora.
+ * Markdown simple (### titres, paragraphes, listes à puces ou numérotées, tableaux) pour les textes rédigés dans Kora.
  * idPrefix : préfixe des ancres des titres, pour le sommaire.
  */
 export function Markdown({ text, idPrefix }: { text: string; idPrefix?: string }) {

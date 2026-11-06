@@ -1,4 +1,4 @@
--- Création des rôles et de la base N'Ora ERP (exécuté une seule fois par un superutilisateur).
+-- Création des rôles et de la base Kora ERP (exécuté une seule fois par un superutilisateur).
 -- En production, remplacez les mots de passe par des secrets issus du coffre.
 DO $$
 BEGIN

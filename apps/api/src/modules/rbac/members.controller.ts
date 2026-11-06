@@ -167,10 +167,10 @@ export class MembersController {
     const roles = await trx.selectFrom('role').select('name').where('id', 'in', input.roleIds).execute();
     await this.mail.enqueue(trx, {
       companyId: t.companyId, to: input.email, kind: 'invitation', entityId: inv.id, fromName: company.name, replyTo: inviter.email, createdBy: t.ctx.userId,
-      subject: `${inviter.full_name} vous invite à rejoindre ${company.name} sur N'Ora ERP`,
+      subject: `${inviter.full_name} vous invite à rejoindre ${company.name} sur Kora ERP`,
       paragraphs: [
         'Bonjour,',
-        `${inviter.full_name} vous invite à rejoindre l'espace de ${company.name} sur N'Ora ERP, avec le rôle : ${roles.map((r) => r.name).join(', ')}.`,
+        `${inviter.full_name} vous invite à rejoindre l'espace de ${company.name} sur Kora ERP, avec le rôle : ${roles.map((r) => r.name).join(', ')}.`,
         `Cette invitation est valable ${INVITE_DAYS} jours. Si vous n'attendiez pas ce message, ignorez-le simplement.`,
       ],
       action: { label: "Accepter l'invitation", url: inviteUrl },

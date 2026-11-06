@@ -30,7 +30,7 @@ const icsDate = (d: Date) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{
 const icsText = (s: string) => s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
 
 /**
- * Calendrier : rendez-vous de l'entreprise, avec leurs participants (utilisateurs N'Ora) et, au besoin, le client
+ * Calendrier : rendez-vous de l'entreprise, avec leurs participants (utilisateurs Kora) et, au besoin, le client
  * ou le fournisseur concerné. Les participants sont prévenus par e-mail ; un rappel part avant le rendez-vous.
  */
 @Injectable()
@@ -226,7 +226,7 @@ export class CalendarService implements OnApplicationBootstrap, OnModuleDestroy 
     const start = new Date(a.start), end = new Date(a.end);
     const day = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
     const lines = [
-      'BEGIN:VCALENDAR', 'VERSION:2.0', "PRODID:-//N'Ora ERP//Calendrier//FR", 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'BEGIN:VEVENT',
+      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Kora ERP//Calendrier//FR', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'BEGIN:VEVENT',
       `UID:${a.id}@kora-erp`, `DTSTAMP:${icsDate(new Date())}`,
       ...(a.allDay ? [`DTSTART;VALUE=DATE:${day(start)}`, `DTEND;VALUE=DATE:${day(new Date(end.getTime() + 86400_000))}`] : [`DTSTART:${icsDate(start)}`, `DTEND:${icsDate(end)}`]),
       `SUMMARY:${icsText(a.title)}`, ...(a.location ? [`LOCATION:${icsText(a.location)}`] : []),

@@ -110,7 +110,7 @@ export class LeaveService {
       await this.mail.enqueue(trx, {
         companyId: t.companyId, to: a.email, kind: 'leave_request', fromName: company.name, createdBy: t.ctx.userId,
         subject: `Demande de congé — ${e.first_name} ${e.last_name}`,
-        paragraphs: [`${e.first_name} ${e.last_name} demande : ${LEAVE_TYPES[l.type].toLowerCase()} du ${frDate(l.startDate)} au ${frDate(l.endDate)} (${l.days} jour(s) ouvrable(s)).`, "Vous pouvez la valider ou la refuser dans N'Ora."],
+        paragraphs: [`${e.first_name} ${e.last_name} demande : ${LEAVE_TYPES[l.type].toLowerCase()} du ${frDate(l.startDate)} au ${frDate(l.endDate)} (${l.days} jour(s) ouvrable(s)).`, 'Vous pouvez la valider ou la refuser dans Kora.'],
         action: { label: 'Voir les demandes de congé', url: `${config.webUrl}/app/conges` },
       });
     }

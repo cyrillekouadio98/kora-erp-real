@@ -7,6 +7,6 @@ async function main() {
   const app = await createApp();
   if (!config.isProd) SwaggerModule.setup('docs', app, buildOpenApi(app));
   await app.listen(config.port);
-  console.log(`API N'Ora ERP prête sur http://localhost:${config.port} (documentation : /docs)`);
+  console.log(`API Kora ERP prête sur http://localhost:${config.port} (documentation : /docs)`);
 }
 main();

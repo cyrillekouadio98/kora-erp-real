@@ -1,4 +1,4 @@
-# Déployer N'Ora ERP pour la phase de test (gratuit)
+# Déployer Kora ERP pour la phase de test (gratuit)
 
 | Partie | Hébergeur | Offre |
 | --- | --- | --- |
@@ -57,7 +57,7 @@ Comptez 30 à 45 minutes. Le code doit être sur GitHub (branche `featureBranch`
 Sans `SMTP_URL`, aucun e-mail ne part : les invitations restent copiables à l'écran, mais « mot de passe oublié » ne fonctionne pas. Pour les tests, un compte gratuit [Brevo](https://www.brevo.com) suffit :
 
 - `SMTP_URL` = `smtp://IDENTIFIANT:CLE_SMTP@smtp-relay.brevo.com:587`
-- `MAIL_FROM` = `"N'Ora ERP <adresse-verifiee@votre-domaine>"` (une adresse validée chez Brevo)
+- `MAIL_FROM` = `"Kora ERP <adresse-verifiee@votre-domaine>"` (une adresse validée chez Brevo)
 
 ## 5. Première connexion
 

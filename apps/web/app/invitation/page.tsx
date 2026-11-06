@@ -19,7 +19,7 @@ function Invitation() {
   return (
     <main className="auth">
       <form className="card form" onSubmit={(e) => { e.preventDefault(); run(async () => { await api('/invitations/accept', { body: { token, fullName: fullName || undefined, password } }); router.replace('/app'); }); }}>
-        <div className="brand">N'Ora<span> ERP</span></div>
+        <div className="brand">Kora<span> ERP</span></div>
         <Alert>{error}</Alert>
         {info && (
           <>

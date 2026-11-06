@@ -61,6 +61,6 @@ for (const script of ['db:migrate', 'db:seed']) {
   if (r.status !== 0) { console.error(`Échec de « npm run ${script} ».`); shutdown(1); }
 }
 
-await start('api', 33, npm, ['run', 'dev:api'], "API N'Ora ERP prête");
+await start('api', 33, npm, ['run', 'dev:api'], 'API Kora ERP prête');
 await start('web', 35, npm, ['run', 'dev:web'], 'Ready');
-console.log('\n  \x1b[1mN\'Ora ERP est prêt :\x1b[0m http://localhost:3000   (API : http://localhost:3001/docs)\n  Ctrl+C pour tout arrêter.\n');
+console.log('\n  \x1b[1mKora ERP est prêt :\x1b[0m http://localhost:3000   (API : http://localhost:3001/docs)\n  Ctrl+C pour tout arrêter.\n');

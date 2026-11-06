@@ -39,7 +39,7 @@ export class LeaveController {
   @Get('leave/balances')
   balances(@Tenant() t: TenantInfo) { return this.leave.balances(t); }
 
-  /** Report du solde de congés au démarrage dans N'Ora (jours encore dus à l'employé). */
+  /** Report du solde de congés au démarrage dans Kora (jours encore dus à l'employé). */
   @Permission('leave.admin')
   @Patch('leave/balances/:employeeId')
   setOpening(@Tenant() t: TenantInfo, @Param('employeeId') employeeId: string, @Body() body: unknown) {

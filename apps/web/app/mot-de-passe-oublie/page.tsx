@@ -11,7 +11,7 @@ export default function ForgotPasswordPage() {
   return (
     <main className="auth">
       <form className="card form" onSubmit={(e) => { e.preventDefault(); run(async () => { await api('/auth/password-reset', { body: { email } }); setDone(true); }); }}>
-        <div><div className="brand">N'Ora<span> ERP</span></div><p className="muted small">Mot de passe oublié</p></div>
+        <div><div className="brand">Kora<span> ERP</span></div><p className="muted small">Mot de passe oublié</p></div>
         <Alert>{error}</Alert>
         {done ? (
           <Alert kind="ok">Si un compte existe pour <b>{email}</b>, un e-mail vient d'être envoyé avec un lien valable une heure. Pensez à vérifier vos courriers indésirables.</Alert>
