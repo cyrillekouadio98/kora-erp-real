@@ -47,7 +47,7 @@ export default function RolesPage() {
               <div className="h" style={{ justifyContent: 'flex-start' }}>Module</div>{ACTION_KEYS.map((a) => <div key={a} className="h">{catalog.actions[a]}</div>)}
               {catalog.modules.map((m: any) => [
                 <div key={m.key}>{m.label}{!ctx?.entitlements.modules.includes(m.entitlement) && <span className="small muted">&nbsp;(hors formule)</span>}</div>,
-                ...ACTION_KEYS.map((a) => <div key={`${m.key}.${a}`} className="c"><input type="checkbox" aria-label={`${m.label} ${catalog.actions[a]}`} checked={edit.permissions.includes(`${m.key}.${a}`)} onChange={() => toggle(`${m.key}.${a}`)} /></div>),
+                ...ACTION_KEYS.map((a) => <div key={`${m.key}.${a}`} className="c">{(m.actions ?? ACTION_KEYS).includes(a) && <input type="checkbox" aria-label={`${m.label} ${catalog.actions[a]}`} checked={edit.permissions.includes(`${m.key}.${a}`)} onChange={() => toggle(`${m.key}.${a}`)} />}</div>),
               ])}
             </div></div>
             {[['Administration', catalog.core, false], ['Permissions sensibles (propriétaire uniquement)', catalog.sensitive, true], ['Espace personnel', catalog.self, false]].map(([title, perms, sensitive]: any) => (

@@ -8,7 +8,7 @@ import type { TenantInfo } from '../../common/request-context';
 import { parse } from '../../common/validation';
 import { DatabaseService } from '../../db/database.service';
 import { AuditService } from '../audit/audit.service';
-import { ACTIONS, BUSINESS_MODULES, CORE_PERMISSIONS, isSensitive, PERMISSION_KEYS, SELF_PERMISSIONS, SENSITIVE_PERMISSIONS } from './permissions';
+import { ACTIONS, BUSINESS_MODULES, moduleActions, CORE_PERMISSIONS, isSensitive, PERMISSION_KEYS, SELF_PERMISSIONS, SENSITIVE_PERMISSIONS } from './permissions';
 
 const RoleSchema = z.object({
   name: z.string().trim().min(2).max(80),
@@ -35,7 +35,7 @@ export class RolesController {
   catalog() {
     return {
       actions: ACTIONS,
-      modules: Object.entries(BUSINESS_MODULES).map(([key, m]) => ({ key, label: m.label, entitlement: m.entitlement })),
+      modules: Object.entries(BUSINESS_MODULES).map(([key, m]) => ({ key, label: m.label, entitlement: m.entitlement, actions: moduleActions(key) })),
       core: CORE_PERMISSIONS, sensitive: SENSITIVE_PERMISSIONS, self: SELF_PERMISSIONS,
     };
   }

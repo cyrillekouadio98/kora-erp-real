@@ -159,7 +159,8 @@ export function LineChart({ categories, values, color, label, height = 200, tick
   const line = known.map((p, k) => `${k ? 'L' : 'M'}${x(p.i)},${y(p.v)}`).join(' ');
   const area = known.length ? `${line} L${x(known[known.length - 1].i)},${y(0)} L${x(known[0].i)},${y(0)} Z` : '';
   const last = known[known.length - 1];
-  const every = plotW / categories.length < 34 ? 2 : 1;
+  const band = plotW / categories.length;
+  const every = band < 22 ? 3 : band < 34 ? 2 : 1;
   const onMove = (e: React.MouseEvent<SVGRectElement>) => {
     const px = e.clientX - (e.currentTarget.ownerSVGElement!.getBoundingClientRect().left);
     const i = Math.round(((px - m.left) / plotW) * (categories.length - 1));
@@ -170,7 +171,8 @@ export function LineChart({ categories, values, color, label, height = 200, tick
       <svg width={width} height={height} role="img" aria-label={label}>
         {steps.map((s) => <g key={s}><line x1={m.left} x2={width - m.right} y1={y(s)} y2={y(s)} stroke={s === 0 ? 'var(--chart-axis)' : 'var(--chart-grid)'} strokeWidth={1} />
           <text x={m.left - 6} y={y(s) + 4} textAnchor="end">{axisLabel(s)}</text></g>)}
-        {categories.map((c, i) => i % every === 0 && <text key={c} x={x(i)} y={height - 6} textAnchor="middle">{tick(c, i === 0)}</text>)}
+        {/* Premier et dernier libellés calés sur les bords, pour ne pas être coupés */}
+        {categories.map((c, i) => i % every === 0 && <text key={c} x={x(i)} y={height - 6} textAnchor={categories.length > 1 && i === 0 ? 'start' : categories.length > 1 && i === categories.length - 1 ? 'end' : 'middle'}>{tick(c, i === 0)}</text>)}
         <path d={area} fill={color} opacity={0.1} />
         <path d={line} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
         {hover !== null && <line x1={x(hover)} x2={x(hover)} y1={m.top} y2={m.top + plotH} stroke="var(--chart-axis)" strokeWidth={1} />}
@@ -199,6 +201,47 @@ export function RankedBars({ items }: { items: { label: string; value: number; d
           <div className="track"><div className="bar" style={{ width: `${(i.value / max) * 100}%` }} /></div>
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * Anneau des parts d'un total (5 parts au plus), 2 px d'écart entre les parts ; chaque part garde sa couleur
+ * quel que soit son rang. La légende porte libellé, montant et pourcentage : la couleur n'est jamais seule.
+ */
+export function Donut({ items, label, format = fcfa }: { items: { key: string; label: string; value: number; color: string }[]; label: string; format?: (n: number) => string }) {
+  const [hover, setHover] = useState<string | null>(null);
+  const total = items.reduce((s, i) => s + i.value, 0);
+  const size = 180, r = 78, w = 22, c = size / 2;
+  let angle = -Math.PI / 2;
+  const gap = items.length > 1 ? 2 / r : 0;
+  const arcs = items.map((i) => {
+    const a = (i.value / total) * Math.PI * 2;
+    const start = angle + gap / 2, end = angle + a - gap / 2;
+    angle += a;
+    const big = end - start > Math.PI ? 1 : 0;
+    const p = (t: number, rr: number) => `${c + rr * Math.cos(t)},${c + rr * Math.sin(t)}`;
+    const d = items.length === 1
+      ? `M${c},${c - r} A${r},${r} 0 1 1 ${c - 0.01},${c - r} L${c - 0.01},${c - r + w} A${r - w},${r - w} 0 1 0 ${c},${c - r + w} Z`
+      : `M${p(start, r)} A${r},${r} 0 ${big} 1 ${p(end, r)} L${p(end, r - w)} A${r - w},${r - w} 0 ${big} 0 ${p(start, r - w)} Z`;
+    return { ...i, d };
+  });
+  const shown = items.find((i) => i.key === hover);
+  return (
+    <div className="donut">
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${label} : ${items.map((i) => `${i.label} ${format(i.value)}`).join(', ')}`}>
+        {arcs.map((a) => <path key={a.key} d={a.d} fill={a.color} opacity={hover && hover !== a.key ? 0.35 : 1}
+          onMouseEnter={() => setHover(a.key)} onMouseLeave={() => setHover(null)} />)}
+        <text x={c} y={c - 4} textAnchor="middle" className="donut-total">{shown ? `${Math.round((shown.value / total) * 100)} %` : compact.format(total)}</text>
+        <text x={c} y={c + 14} textAnchor="middle" className="donut-sub">{shown ? shown.label : 'FCFA'}</text>
+      </svg>
+      <ul className="donut-legend">
+        {items.map((i) => (
+          <li key={i.key} onMouseEnter={() => setHover(i.key)} onMouseLeave={() => setHover(null)} className={hover === i.key ? 'on' : undefined}>
+            <span className="sw" style={{ background: i.color }} /><span>{i.label}</span>
+            <b>{format(i.value)}</b><span className="muted small">{Math.round((i.value / total) * 100)} %</span>
+          </li>))}
+      </ul>
     </div>
   );
 }

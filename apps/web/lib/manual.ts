@@ -718,10 +718,31 @@ Pour résilier, utiliser la résiliation à l'échéance ; tant que l'échéance
 `,
   },
   {
-    id: 'console', title: "14. Console éditeur (équipe N'Ora)", platformOnly: true, body: `
+    id: 'rapports', title: '14. Rapport de gestion', module: 'sales', body: `
+Le rapport de gestion répond à une question : l'entreprise gagne-t-elle de l'argent sur la période ? Il est calculé sur les opérations elles-mêmes, sans attendre la comptabilité, et compare chaque chiffre à la période précédente de même durée.
+
+*Qui : propriétaire, directeur, comptable, responsable financier, auditeur. Chemin : Rapports.*
+
+1. Choisir la période (**Ce mois**, **Mois dernier**, **3 derniers mois**, **Cette année**) ou saisir les dates.
+2. Lire les quatre indicateurs : chiffre d'affaires TTC, marge brute, dépenses, résultat ; sous chacun, l'évolution par rapport à la période précédente.
+3. Analyser les ventes par jour (par mois au-delà de deux mois), les encaissements par mode de paiement, le compte de résultat, les dépenses par poste et les articles les plus vendus.
+4. **Exporter (CSV)** pour un tableur, ou **Imprimer / PDF**.
+
+| Indicateur | Calcul |
+| --- | --- |
+| Chiffre d'affaires | Factures émises moins avoirs, à leur date d'émission |
+| Marge brute | Ventes HT moins coût des marchandises vendues (au coût moyen) |
+| Dépenses | Dépenses de trésorerie (hors retraits de l'exploitant), achats facturés hors marchandises stockées, pertes de stock, écarts d'inventaire et de caisse, charges de personnel des paies validées |
+| Résultat | Marge brute − dépenses + autres recettes, avant impôt |
+
+Les achats de marchandises comptent au moment de leur vente, par le coût des marchandises vendues. Les charges de personnel ne figurent que pour les personnes autorisées à voir les salaires. Avec un site choisi dans l'en-tête, le rapport ne porte que sur ce site. Les états comptables officiels restent dans Comptabilité (section 9).
+`,
+  },
+  {
+    id: 'console', title: "15. Console éditeur (équipe N'Ora)", platformOnly: true, body: `
 Cette section concerne uniquement l'équipe de l'éditeur. La console affiche les informations commerciales des clients (formule, abonnement, utilisateurs), jamais leurs données métier. La double authentification y est exigée en production.
 
-### 14.1 Préparer une entreprise pour un client
+### 15.1 Préparer une entreprise pour un client
 
 *Chemin : Console › Préparer une entreprise › Nouvelle entreprise.*
 
@@ -734,7 +755,7 @@ Cette section concerne uniquement l'équipe de l'éditeur. La console affiche le
 
 Le panneau **Avancement** indique ce qui reste à faire. N'Ora refuse la remise si la formule ne couvre pas tous les utilisateurs prévus.
 
-### 14.2 Remettre l'entreprise au client
+### 15.2 Remettre l'entreprise au client
 
 1. Cliquer sur **Remettre au client**.
 2. Les invitations partent par e-mail : invitation de propriétaire pour le client, invitations pour les collaborateurs. Les liens peuvent aussi être copiés et transmis autrement.
@@ -742,7 +763,7 @@ Le panneau **Avancement** indique ce qui reste à faire. N'Ora refuse la remise 
 
 Après la remise, l'entreprise appartient au client : la console ne la modifie plus et n'en voit plus le contenu.
 
-### 14.3 Aider un client après la remise
+### 15.3 Aider un client après la remise
 
 1. Dans *Clients et indicateurs*, cliquer sur **Demander un accès** et saisir le motif (visible par le client).
 2. Attendre que le propriétaire l'accepte (12.4). L'accès est limité dans le temps et chaque consultation est inscrite dans son journal d'audit.

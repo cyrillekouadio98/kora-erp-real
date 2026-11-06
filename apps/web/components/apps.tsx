@@ -93,6 +93,11 @@ const ICONS: Record<string, React.ReactNode> = {
     <circle cx="24" cy="24" r="18" fill={C} /><circle cx="24" cy="24" r="13" stroke={W} strokeWidth="10" fill="none" strokeDasharray="10.4 10" strokeDashoffset="5.2" opacity=".9" />
     <circle cx="24" cy="24" r="7" fill={W} />
   </>,
+  reports: <>
+    <rect x="6" y="6" width="36" height="36" rx="5" fill={W} stroke={N} strokeWidth="3" />
+    <rect x="12" y="26" width="6" height="10" rx="1.5" fill={T} /><rect x="21" y="20" width="6" height="16" rx="1.5" fill={B} /><rect x="30" y="14" width="6" height="22" rx="1.5" fill={O} />
+    <path d="M12 20l9-6 9 3 7-6" stroke={P} strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+  </>,
   manual: <>
     <path d="M24 12c-5-4-12-5-18-4v30c6-1 13 0 18 4z" fill={B} /><path d="M24 12c5-4 12-5 18-4v30c-6-1-13 0-18 4z" fill={T} />
     <path d="M10 16c4-.4 7 .2 10 1.6M10 22c4-.4 7 .2 10 1.6M10 28c4-.4 7 .2 10 1.6" stroke={W} strokeWidth="2.2" fill="none" strokeLinecap="round" opacity=".7" />
@@ -123,6 +128,7 @@ export const APPS: App[] = [
     { href: '/app/tresorerie', label: "Vue d'ensemble" }, { href: '/app/tresorerie/caisse', label: 'Caisse' },
     { href: '/app/tresorerie/banque', label: 'Banque', module: 'bank' }, { href: '/app/tresorerie/mobile-money', label: 'Mobile money' },
   ] },
+  { key: 'reports', label: 'Rapports', href: '/app/rapports', perm: 'reports.read' },
   { key: 'accounting', label: 'Comptabilité', href: '/app/comptabilite', perm: 'accounting.read', module: 'accounting' },
   { key: 'stock', label: 'Stocks', href: '/app/stocks', perm: 'stock.read', pages: [
     { href: '/app/stocks', label: "Vue d'ensemble" }, { href: '/app/stocks/operations', label: 'Entrées et sorties' },
