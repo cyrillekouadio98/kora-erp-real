@@ -42,8 +42,8 @@ export class DatabaseService implements OnModuleDestroy {
   readonly platformDb: Kysely<DB>;
 
   constructor() {
-    this.app = new Kysely<DB>({ dialect: new PostgresDialect({ pool: pool(config.db.appUrl, 20) }) });
-    this.platformDb = new Kysely<DB>({ dialect: new PostgresDialect({ pool: pool(config.db.platformUrl, 5) }) });
+    this.app = new Kysely<DB>({ dialect: new PostgresDialect({ pool: pool(config.db.appUrl, config.dbPoolMax) }) });
+    this.platformDb = new Kysely<DB>({ dialect: new PostgresDialect({ pool: pool(config.db.platformUrl, Math.max(2, Math.ceil(config.dbPoolMax / 4))) }) });
   }
 
   /** Transaction isolée sur une entreprise : la base filtre toutes les lignes par app.company_id. */

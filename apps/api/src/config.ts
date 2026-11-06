@@ -47,9 +47,13 @@ export const config = {
   jobs: {
     billingIntervalMs: Number(process.env.BILLING_INTERVAL_MS ?? 10 * 60 * 1000),
     enabled: process.env.JOBS_ENABLED !== 'false',
+    /** Secret de POST /jobs/tick (tâches déclenchées par un planificateur externe) ; absent, la route n'existe pas. */
+    cronSecret: process.env.CRON_SECRET || null,
   },
   /** Nombre de proxys devant l'API (Vercel puis l'hébergeur : 2), pour lire la vraie adresse IP du visiteur. */
   trustProxy: Number(process.env.TRUST_PROXY ?? 1),
+  /** Connexions par rôle et par instance : réduire sur un hébergement sans serveur (Vercel), où les instances se multiplient. */
+  dbPoolMax: Number(process.env.DB_POOL_MAX ?? 20),
   get isProd() { return this.env === 'production'; },
 };
 

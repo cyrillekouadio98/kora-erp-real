@@ -36,6 +36,7 @@ import { LeaveController } from './modules/leave/leave.controller';
 import { LeaveService } from './modules/leave/leave.service';
 import { DashboardController } from './modules/dashboard/dashboard.controller';
 import { DashboardService } from './modules/dashboard/dashboard.service';
+import { JobsController } from './modules/jobs/jobs.controller';
 import { ReportsController } from './modules/reports/reports.controller';
 import { ReportsService } from './modules/reports/reports.service';
 import { ContactsController } from './modules/contacts/contacts.controller';
@@ -64,7 +65,7 @@ import { PlatformSupportController, SupportAccessController } from './modules/su
   controllers: [
     HealthController, AuthController, CompaniesController, MembersController, RolesController, BillingController, WebhooksController,
     DevController, AuditController, SupportAccessController, PlatformSupportController, PlatformController, SetupController, ExportController,
-    ContactsController, ProductsController, SalesController, PurchasesController, TreasuryController, AccountingController, StockController, PayrollController, PublicDocumentsController, EmailsController, LeaveController, DashboardController, ReportsController, SitesController, CalendarController, EvaluationsController,
+    ContactsController, ProductsController, SalesController, PurchasesController, TreasuryController, AccountingController, StockController, PayrollController, PublicDocumentsController, EmailsController, LeaveController, DashboardController, JobsController, ReportsController, SitesController, CalendarController, EvaluationsController,
   ],
   providers: [
     AuditService, SessionService, AuthService, ProvisioningService, EntitlementService, QuotaService, BillingService, BillingScheduler, SalesService, PurchasesService, TreasuryService, AccountingService, FinancialService, StockService, PayrollService, PayrollInsightsService, MailService, LeaveService, DashboardService, ReportsService, CalendarService, EvaluationsService, SitesService, SetupService,

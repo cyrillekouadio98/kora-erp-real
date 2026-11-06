@@ -104,7 +104,7 @@ npm test
 
 ## Déployer
 
-Phase de test gratuite (Vercel, Render, Neon) : suivez [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md). En production, l'API refuse de démarrer si un secret garde sa valeur de développement.
+Phase de test gratuite (base sur Supabase, API et interface sur Vercel, tâches de fond lancées par Supabase) : suivez [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md). En production, l'API refuse de démarrer si un secret garde sa valeur de développement.
 
 ## Organisation du code
 

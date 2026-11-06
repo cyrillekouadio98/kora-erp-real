@@ -1,76 +1,106 @@
-# Déployer Kora ERP pour la phase de test (gratuit)
+# Déployer Kora ERP sur Supabase et Vercel (phase de test)
 
-| Partie | Hébergeur | Offre |
+| Partie | Hébergeur | Où |
 | --- | --- | --- |
-| Interface (Next.js) | Vercel | Hobby, gratuite |
-| API et tâches de fond (NestJS) | Render | Free |
-| Base de données (PostgreSQL) | Neon | Free |
+| Base de données (PostgreSQL) | Supabase, offre Free | Schéma `kora` de la base `postgres` |
+| API (NestJS) | Vercel, projet n° 1 | Dossier `apps/api` |
+| Interface (Next.js) | Vercel, projet n° 2 | Dossier `apps/web` |
+| Tâches de fond (e-mails, rappels, abonnements) | Supabase `pg_cron`, chaque minute | Appelle l'API |
 
-L'offre Hobby de Vercel est réservée aux usages non commerciaux : elle convient aux tests, pas à la vente aux clients. Pour la mise en service réelle, passez à Vercel Pro et à une offre payante de Render (les serveurs gratuits se mettent en veille).
+Vercel éteint l'API entre deux requêtes : les tâches de fond ne tournent donc pas en continu. Supabase appelle chaque minute l'adresse `/jobs/tick` de l'API, qui envoie les e-mails en attente et les rappels, et lance toutes les 10 minutes le cycle des abonnements.
 
-Comptez 30 à 45 minutes. Le code doit être sur GitHub (branche `featureBranch`).
+L'offre Hobby de Vercel est réservée aux usages non commerciaux : elle convient aux tests. Pour la vente aux clients, passez à Vercel Pro.
 
-## 1. Base de données sur Neon
+Comptez 45 minutes. Le code doit être sur GitHub (branche `featureBranch`). Gardez un fichier texte ouvert pour noter les valeurs au fil des étapes.
 
-1. Créez un compte sur [neon.com](https://neon.com), puis un projet : nom `nora`, région **AWS Europe Central (Frankfurt)**, PostgreSQL 16 ou plus récent.
-2. Dans **Connect**, copiez l'adresse de connexion du rôle administrateur (`neondb_owner`), avec `?sslmode=require` à la fin.
-3. Sur votre ordinateur, à la racine du projet :
+## 1. Base de données sur Supabase
+
+1. Créez un compte sur [supabase.com](https://supabase.com), puis un projet : nom `kora`, région **Central EU (Frankfurt)**, un mot de passe de base solide (notez-le).
+2. **Project Settings › Data API** : laissez le schéma exposé à `public` seulement. Les tables de Kora seront dans le schéma `kora`, que l'API publique de Supabase ne sert pas.
+3. Bouton **Connect** en haut du tableau de bord, onglet **Session pooler** : copiez l'adresse. Elle ressemble à `postgresql://postgres.abcdefgh:[YOUR-PASSWORD]@aws-0-eu-central-1.pooler.supabase.com:5432/postgres` ; remplacez `[YOUR-PASSWORD]` par le mot de passe de l'étape 1.
+4. Sur votre ordinateur, à la racine du projet, choisissez le compte de la console éditeur puis lancez :
 
    ```bash
-   node infra/db/setup-hosted.mjs "postgres://neondb_owner:MOTDEPASSE@ep-xxx.eu-central-1.aws.neon.tech/neondb?sslmode=require"
+   SEED_SUPERADMIN_EMAIL=vous@exemple.ci SEED_SUPERADMIN_PASSWORD='UnMotDePasseSolide-2026' \
+     node infra/db/setup-hosted.mjs "postgresql://postgres.abcdefgh:MOTDEPASSE@aws-0-eu-central-1.pooler.supabase.com:5432/postgres"
    ```
 
-   Le script crée les rôles `kora_owner`, `kora_app`, `kora_platform` et la base `kora`, puis affiche trois lignes `DATABASE_…_URL=…`. Gardez-les : elles servent à l'étape 2 et contiennent des mots de passe.
+   Le script crée les rôles `kora_owner`, `kora_app`, `kora_platform` et le schéma `kora`, applique toutes les migrations, crée les formules et votre compte, puis affiche trois lignes `DATABASE_…_URL=…`. Notez-les : elles contiennent des mots de passe.
 
-   S'il affiche « kora_owner n'a pas l'attribut BYPASSRLS », arrêtez-vous et signalez-le : les migrations ne passeraient pas.
+   S'il s'arrête sur « kora_owner n'a pas l'attribut BYPASSRLS », envoyez le message : il faudra adapter la création des rôles.
 
-## 2. API sur Render
+## 2. API sur Vercel (projet n° 1)
 
-1. Créez un compte sur [render.com](https://render.com) et reliez votre compte GitHub.
-2. **New › Blueprint**, choisissez le dépôt et la branche `featureBranch`. Render lit `render.yaml` et prépare le service `nora-api`.
-3. Renseignez les variables demandées :
+1. Sur [vercel.com](https://vercel.com) : **Add New › Project**, importez le dépôt.
+2. Réglages :
+   - **Project Name** : `kora-erp-api`
+   - **Root Directory** : `apps/api` (Vercel reconnaît NestJS seul ; ne choisissez pas d'autre framework)
+3. **Environment Variables** :
 
    | Variable | Valeur |
    | --- | --- |
-   | `WEB_URL` | L'adresse Vercel de l'étape 3, par exemple `https://nora-erp.vercel.app` (mettez une valeur provisoire, vous la corrigerez) |
-   | `DATABASE_OWNER_URL`, `DATABASE_APP_URL`, `DATABASE_PLATFORM_URL` | Les trois lignes affichées à l'étape 1 |
+   | `DATABASE_OWNER_URL`, `DATABASE_APP_URL`, `DATABASE_PLATFORM_URL` | Les trois lignes de l'étape 1 |
+   | `WEB_URL` | L'adresse de l'interface, par exemple `https://kora-erp-real.vercel.app` (sans `/` final) |
    | `ENCRYPTION_KEY` | Le résultat de `openssl rand -base64 32` |
-   | `SEED_SUPERADMIN_EMAIL`, `SEED_SUPERADMIN_PASSWORD` | Votre compte de la console éditeur (mot de passe d'au moins 10 caractères) |
-   | `SMTP_URL`, `MAIL_FROM` | Voir l'étape 4 ; laissez vide pour commencer |
+   | `PAYMENT_SANDBOX_SECRET` | Le résultat de `openssl rand -hex 16` |
+   | `CRON_SECRET` | Le résultat de `openssl rand -hex 24` (servira aussi à l'étape 4) |
+   | `JOBS_ENABLED` | `false` |
+   | `DB_POOL_MAX` | `3` |
+   | `SMTP_URL`, `MAIL_FROM` | Voir l'étape 5 ; à ajouter plus tard |
 
-4. Lancez le déploiement. Au démarrage, Render applique les migrations, crée les formules et votre compte administrateur.
-5. Vérifiez : `https://nora-api.onrender.com/health` doit répondre `{"status":"ok"}` (le nom exact du service figure sur Render).
+4. **Settings › Git** : branche de production `featureBranch`. Déployez.
+5. Vérifiez : `https://kora-erp-api.vercel.app/health` doit répondre `{"status":"ok"}`.
 
-## 3. Interface sur Vercel
+## 3. Interface sur Vercel (projet n° 2)
 
-1. Créez un compte sur [vercel.com](https://vercel.com) avec GitHub, puis **Add New › Project** et importez le dépôt.
-2. Réglages du projet :
-   - **Root Directory** : `apps/web`
-   - **Framework** : Next.js (détecté automatiquement)
-   - **Variable d'environnement** : `API_URL` = l'adresse Render, par exemple `https://nora-api.onrender.com` (sans `/` final)
-   - **Branche de production** (Settings › Git) : `featureBranch`
-3. Déployez. Vercel donne une adresse en `.vercel.app`.
-4. Revenez sur Render et mettez cette adresse exacte dans `WEB_URL` (sans `/` final), puis redéployez l'API : sans cela, les connexions sont refusées (« Origine de la requête non autorisée ») et les liens des e-mails pointent au mauvais endroit.
+Si vous avez déjà un projet Vercel pour Kora (par exemple `kora-erp-real`), réutilisez-le pour l'interface : son adresse est celle que vos testeurs utiliseront.
 
-## 4. E-mails (recommandé)
+1. **Settings › General › Root Directory** : `apps/web` (framework Next.js).
+2. **Settings › Environment Variables** : une seule variable, `API_URL` = l'adresse de l'API de l'étape 2 (`https://kora-erp-api.vercel.app`, sans `/` final). Supprimez toute autre variable (bases de données, secrets) : elles n'ont rien à faire dans l'interface.
+3. **Settings › Git** : branche de production `featureBranch`. Redéployez.
+4. Si l'adresse finale de l'interface diffère de `WEB_URL` (étape 2), corrigez `WEB_URL` dans le projet de l'API et redéployez-le : sinon les connexions sont refusées (« Origine de la requête non autorisée »).
 
-Sans `SMTP_URL`, aucun e-mail ne part : les invitations restent copiables à l'écran, mais « mot de passe oublié » ne fonctionne pas. Pour les tests, un compte gratuit [Brevo](https://www.brevo.com) suffit :
+## 4. Tâches de fond (Supabase)
+
+1. Ouvrez [infra/db/supabase-cron.sql](../infra/db/supabase-cron.sql), remplacez `<ADRESSE_API>` (étape 2) et `<CRON_SECRET>` (même valeur que dans Vercel).
+2. Dans Supabase, **SQL Editor**, collez le tout et exécutez.
+3. Après deux minutes, vérifiez dans le même éditeur :
+
+   ```sql
+   select status_code, content, created from net._http_response order by created desc limit 5;
+   ```
+
+   `status_code` doit valoir `200`. Un `404` signifie que le secret ne correspond pas à `CRON_SECRET`.
+
+## 5. E-mails (recommandé)
+
+Sans `SMTP_URL`, aucun e-mail ne part : les invitations restent copiables à l'écran, mais « mot de passe oublié » ne fonctionne pas. Pour les tests, un compte gratuit [Brevo](https://www.brevo.com) suffit. Dans le projet Vercel de l'API :
 
 - `SMTP_URL` = `smtp://IDENTIFIANT:CLE_SMTP@smtp-relay.brevo.com:587`
-- `MAIL_FROM` = `"Kora ERP <adresse-verifiee@votre-domaine>"` (une adresse validée chez Brevo)
+- `MAIL_FROM` = `Kora ERP <adresse-verifiee@votre-domaine>` (une adresse validée chez Brevo)
 
-## 5. Première connexion
+Puis redéployez l'API.
 
-1. Ouvrez l'adresse Vercel et connectez-vous avec le compte administrateur de l'étape 2.
+## 6. Première connexion
+
+1. Ouvrez l'adresse de l'interface et connectez-vous avec le compte de l'étape 1.
 2. En production, la console éditeur exige la double authentification : activez-la dans **Ma sécurité**.
 3. Les testeurs créent leur entreprise par **Créer mon entreprise** (14 jours d'essai), ou vous la préparez depuis la console.
 
-## Limites de l'offre gratuite
-
-- **Mise en veille** : l'API Render s'endort après 15 minutes sans visite et met environ une minute à se réveiller. Avant une séance de test, ouvrez l'adresse `/health` de l'API et attendez la réponse. Pendant la veille, les e-mails en attente, les rappels et les renouvellements ne sont pas traités ; ils reprennent au réveil.
-- **Base** : Neon gratuit offre 0,5 Go, largement assez pour des tests ; la base se met aussi en veille et se réveille en une seconde.
-- **Paiements** : l'abonnement se règle par un paiement simulé (`/paiement-test`) ; aucun moyen de paiement réel n'est branché.
-
 ## Mettre à jour
 
-Chaque envoi sur `featureBranch` redéploie automatiquement l'interface (Vercel) et l'API (Render), migrations comprises.
+- **Code** : chaque envoi sur `featureBranch` redéploie l'interface et l'API.
+- **Base** : quand une mise à jour ajoute une migration (fichier dans `apps/api/src/db/migrations`), appliquez-la depuis votre poste avec l'adresse `DATABASE_OWNER_URL` :
+
+  ```bash
+  DATABASE_OWNER_URL="postgresql://kora_owner.abcdefgh:…@aws-0-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=no-verify" npm run db:migrate
+  ```
+
+  Faites-le avant le redéploiement de l'API qui en a besoin.
+
+## Bon à savoir
+
+- **Mise en veille de Supabase** : un projet gratuit inactif pendant une semaine est mis en pause ; on le relance d'un clic depuis le tableau de bord.
+- **Connexion chiffrée** : les adresses Supabase utilisent `sslmode=no-verify` : la connexion est chiffrée, mais le certificat de Supabase (signé par sa propre autorité) n'est pas vérifié.
+- **Paiements** : l'abonnement se règle par un paiement simulé (`/paiement-test`) ; aucun moyen de paiement réel n'est branché.
+- **Autre hébergement de l'API** : [render.yaml](../render.yaml) décrit l'API sur Render, où elle tourne en continu ; dans ce cas `JOBS_ENABLED` reste à `true` et l'étape 4 est inutile.
