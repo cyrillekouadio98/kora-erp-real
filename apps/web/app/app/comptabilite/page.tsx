@@ -391,14 +391,19 @@ function downloadCsv(name: string, rows: (string | number | null | undefined)[][
 
 function Balances({ period, version }: { period: any; version: number }) {
   const [kind, setKind] = useState<BalanceKind>('4');
-  const picker = (
-    <label className="field" style={{ minWidth: 240 }}>État
-      <select className="input" value={kind} onChange={(e) => setKind(e.target.value as BalanceKind)}>
-        {BALANCES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+  // Les six états restent visibles en permanence : un bouton par balance.
+  const picker = null;
+  const tabs = (
+    <div className="row no-print" role="tablist" aria-label="Type de balance" style={{ gap: 6, flexWrap: 'wrap' }}>
+      {BALANCES.map(([k, l]) => <button key={k} type="button" role="tab" aria-selected={kind === k} className={`btn sm${kind === k ? ' primary' : ''}`} onClick={() => setKind(k)}>{l}</button>)}
+    </div>
   );
-  if (kind === 'tiers') return <ThirdPartyBalance period={period} version={version} picker={picker} />;
-  if (kind === 'aged') return <AgedBalance period={period} version={version} picker={picker} />;
-  return <AccountBalance key={kind} format={kind} period={period} version={version} picker={picker} />;
+  return <>
+    {tabs}
+    {kind === 'tiers' ? <ThirdPartyBalance period={period} version={version} picker={picker} />
+      : kind === 'aged' ? <AgedBalance period={period} version={version} picker={picker} />
+      : <AccountBalance key={kind} format={kind} period={period} version={version} picker={picker} />}
+  </>;
 }
 
 /**
