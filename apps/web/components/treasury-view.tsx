@@ -48,7 +48,10 @@ export default function TreasuryView({ kind }: { kind?: TreasuryKind }) {
   const submit = () => run(async () => {
     const m = modal;
     if (m.type === 'expense' || m.type === 'income') {
-      await api('/company/treasury/movements', { body: { kind: m.type, accountId: m.accountId, amount: Number(m.amount), category: m.category, label: m.label, date: m.date, reference: m.reference || null } });
+      const body = { accountId: m.accountId, amount: Number(m.amount), category: m.category, label: m.label, date: m.date, reference: m.reference || null, ...(m.contactId ? { contactId: m.contactId } : {}) };
+      // Modification : l'API contre-passe l'ancien mouvement et enregistre le nouveau.
+      if (m.editId) await api(`/company/treasury/movements/${m.editId}/correct`, { body });
+      else await api('/company/treasury/movements', { body: { ...body, kind: m.type } });
     } else if (m.type === 'transfer') {
       await api('/company/treasury/transfers', { body: { fromAccountId: m.fromAccountId, toAccountId: m.toAccountId, amount: Number(m.amount), date: m.date, label: m.label || null, reference: m.reference || null } });
     } else if (m.type === 'count') {
@@ -145,8 +148,11 @@ export default function TreasuryView({ kind }: { kind?: TreasuryKind }) {
                 <td className="n" style={{ whiteSpace: 'nowrap', color: 'var(--ok)' }}>{m.direction === 'in' ? money(m.amount) : ''}</td>
                 <td className="n" style={{ whiteSpace: 'nowrap' }}>{m.direction === 'out' ? money(m.amount) : ''}</td>
                 {journal.opening !== null && <td className="n" style={{ whiteSpace: 'nowrap' }}>{money(m.balanceAfter)}</td>}
-                <td className="n">{['expense', 'income', 'transfer'].includes(m.sourceType) && !m.reversedBy && can('cash.cancel') && writable &&
-                  <button className="btn sm" onClick={() => open({ type: 'reverse', movement: m, reason: '' })}>Contre-passer</button>}</td>
+                <td className="n"><div className="row" style={{ gap: 6, flexWrap: 'nowrap', justifyContent: 'flex-end' }}>
+                  {['expense', 'income'].includes(m.sourceType) && !m.reversedBy && can('cash.cancel') && can('cash.create') && writable &&
+                    <button className="btn sm" onClick={() => open({ type: m.sourceType, editId: m.id, accountId: m.accountId, amount: String(m.amount), category: m.category, label: m.label, date: m.date, reference: m.reference ?? '', contactId: m.contactId ?? null })}>Modifier</button>}
+                  {['expense', 'income', 'transfer'].includes(m.sourceType) && !m.reversedBy && can('cash.cancel') && writable &&
+                    <button className="btn sm" onClick={() => open({ type: 'reverse', movement: m, reason: '' })}>Contre-passer</button>}</div></td>
               </tr>
             ))}
             {journal && !journal.movements.length && <tr><td colSpan={8} className="muted" style={{ textAlign: 'center', padding: 24 }}>Aucun mouvement sur cette période.</td></tr>}
@@ -158,7 +164,8 @@ export default function TreasuryView({ kind }: { kind?: TreasuryKind }) {
         <div className="modal-back" onClick={() => setModal(null)}>
           <form className="modal" style={{ width: 'min(520px, 100%)' }} onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); submit(); }}>
             {(modal.type === 'expense' || modal.type === 'income') && <>
-              <h2>{modal.type === 'expense' ? 'Nouvelle dépense' : 'Nouvelle recette'}</h2>
+              <h2>{modal.editId ? (modal.type === 'expense' ? 'Modifier la dépense' : 'Modifier la recette') : modal.type === 'expense' ? 'Nouvelle dépense' : 'Nouvelle recette'}</h2>
+              {modal.editId && <p className="small muted" style={{ margin: 0 }}>Un mouvement enregistré ne s'efface pas : l'ancien sera contre-passé à la date du jour et le mouvement corrigé enregistré. Les deux restent visibles dans le journal.</p>}
               <Alert>{error}</Alert>
               <label className="field">Catégorie
                 <select className="input" value={modal.category} onChange={set('category')}>{Object.entries(modal.type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>

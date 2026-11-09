@@ -94,6 +94,8 @@ export default function SalesDocumentPage() {
             title={dirty ? 'Enregistrez d\u2019abord le brouillon' : undefined} onClick={() => act('validate', doc.number ? `Émettre de nouveau la facture ${doc.number} ? Elle garde son numéro et ne pourra plus être modifiée.` : validateText)}>{validateLabel}</button>}
           {isInvoice && doc.status === 'issued' && writable && can('sales.validate') && <button className="btn" disabled={busy}
             onClick={() => act('reset-to-draft', `Remettre la facture ${doc.number} en brouillon pour la corriger ? Son écriture comptable sera contre-passée et la marchandise rentrera en stock. Elle gardera son numéro.`)}>Remettre en brouillon</button>}
+          {type === 'credit_note' && doc.status === 'issued' && writable && can('sales.validate') && <button className="btn" disabled={busy}
+            onClick={() => act('reset-to-draft', `Remettre l'avoir ${doc.number} en brouillon pour le corriger ? Son écriture comptable sera contre-passée, la facture retrouvera son reste à payer et la marchandise reprise ressortira du stock. Il gardera son numéro.`)}>Remettre en brouillon</button>}
           {type === 'quote' && doc.status === 'sent' && writable && can('sales.validate') && <>
             <button className="btn" disabled={busy} onClick={() => act('refuse')}>Refusé par le client</button>
             <button className="btn" disabled={busy} onClick={() => act('accept')}>Accepté par le client</button></>}

@@ -118,6 +118,11 @@ export class AccountingService {
   async reverseSource(trx: TenantTrx, t: TenantInfo, sourceType: EntrySource, sourceId: string, reason: string) {
     const e = await trx.selectFrom('journal_entry').selectAll().where('source_type', '=', sourceType).where('source_id', '=', sourceId).where('reversed_by', 'is', null).forUpdate().executeTakeFirst();
     if (!e) return null;
+    return this.reverseAtOwnDate(trx, t, e, reason);
+  }
+
+  /** Contre-passe une écriture validée à sa propre date (refusé si cette date est dans une période clôturée). */
+  private async reverseAtOwnDate(trx: TenantTrx, t: TenantInfo, e: { id: string; journal_code: string; number: string | null; date: string }, reason: string) {
     const c = await trx.selectFrom('company').select('accounting_locked_until').where('id', '=', t.companyId).executeTakeFirstOrThrow();
     if (c.accounting_locked_until && e.date <= c.accounting_locked_until) {
       throw conflict(`L'écriture ${e.number} est datée du ${e.date}, dans la période clôturée jusqu'au ${c.accounting_locked_until} : l'opération ne peut plus être remise en brouillon.`, 'period_locked');
@@ -320,6 +325,33 @@ export class AccountingService {
     return this.getEntry(t, id);
   }
 
+  /**
+   * Remise en brouillon d'une écriture manuelle validée : la loi interdit de modifier une écriture validée, donc elle est
+   * contre-passée à sa date et une copie identique est créée en brouillon, à corriger puis valider.
+   * Une écriture automatique se corrige depuis son document (facture, paie, bon de stock, trésorerie).
+   */
+  async resetToDraft(t: TenantInfo, id: string) {
+    const newId = await this.db.tenant(t.ctx, async (trx) => {
+      const e = await this.entry(trx, id, true);
+      if (e.status !== 'posted') throw conflict('Cette écriture est déjà en brouillon.', 'already_draft');
+      if (e.reversed_by) throw conflict('Cette écriture est déjà contre-passée : elle ne se remet plus en brouillon.', 'already_reversed');
+      if (e.source_type === 'reversal' || e.source_type === 'year_closing') throw conflict("Une contre-passation ou l'écriture de clôture ne se remet pas en brouillon.", 'not_resettable');
+      if (e.source_type !== 'manual') {
+        throw conflict("Cette écriture vient d'un document : remettez ce document en brouillon (facture, avoir, paie, bon de stock) ou modifiez le mouvement en trésorerie.", 'from_document');
+      }
+      const lines = await trx.selectFrom('journal_line').selectAll().where('entry_id', '=', id).orderBy('position').execute();
+      await this.reverseAtOwnDate(trx, t, e, 'remise en brouillon');
+      const copy = await trx.insertInto('journal_entry').values({
+        company_id: t.companyId, journal_code: e.journal_code, date: e.date, label: e.label, reference: e.reference, source_type: 'manual',
+        source_id: null, reversal_of: null, number: null, reversed_by: null, created_by: t.ctx.userId, posted_by: null,
+      }).returning('id').executeTakeFirstOrThrow();
+      await this.writeLines(trx, t, copy.id, lines.map((l) => ({ account: l.account_code, contactId: l.contact_id, label: l.label, debit: Number(l.debit), credit: Number(l.credit) })));
+      await this.audit.tenant(trx, t.ctx, { action: 'accounting.entry_reset_to_draft', entityType: 'journal_entry', entityId: id, data: { number: e.number, draft: copy.id } });
+      return copy.id;
+    });
+    return this.getEntry(t, newId);
+  }
+
   /** Contre-passation d'une écriture manuelle validée. Les écritures automatiques se corrigent depuis leur document (avoir, contre-passation de trésorerie). */
   async reverse(t: TenantInfo, id: string, input: { date?: string; reason: string }) {
     const newId = await this.db.tenant(t.ctx, async (trx) => {
@@ -385,7 +417,7 @@ export class AccountingService {
 
   async entries(t: TenantInfo, f: { journal?: string; from?: string; to?: string; q?: string; status?: string }) {
     return this.db.tenant(t.ctx, async (trx) => {
-      let q = trx.selectFrom('journal_entry as e').select(['e.id', 'e.journal_code as journal', 'e.number', 'e.date', 'e.label', 'e.reference', 'e.status', 'e.source_type as sourceType', 'e.reversed_by as reversedBy',
+      let q = trx.selectFrom('journal_entry as e').select(['e.id', 'e.journal_code as journal', 'e.number', 'e.date', 'e.label', 'e.reference', 'e.status', 'e.source_type as sourceType', 'e.source_id as sourceId', 'e.reversed_by as reversedBy',
         (eb) => eb.selectFrom('journal_line as l').whereRef('l.entry_id', '=', 'e.id').select((x) => x.fn.sum<string>('l.debit').as('s')).as('total')])
         .orderBy('e.date', 'desc').orderBy('e.created_at', 'desc').limit(2000);
       if (f.journal) q = q.where('e.journal_code', '=', f.journal);

@@ -121,7 +121,7 @@ export default function AccountingPage() {
               if (modal.type === 'reverse') await api(`/company/accounting/entries/${modal.entry.id}/reverse`, { body: { reason: modal.reason } });
               if (modal.type === 'entry') {
                 const body = { date: modal.date, label: modal.label, reference: modal.reference || null,
-                  lines: modal.lines.filter((l: any) => l.account).map((l: any) => ({ account: l.account, label: l.label || modal.label, debit: Number(l.debit || 0), credit: Number(l.credit || 0) })) };
+                  lines: modal.lines.filter((l: any) => l.account).map((l: any) => ({ account: l.account, ...(l.contactId ? { contactId: l.contactId } : {}), label: l.label || modal.label, debit: Number(l.debit || 0), credit: Number(l.credit || 0) })) };
                 const saved = modal.id ? await api(`/company/accounting/entries/${modal.id}`, { method: 'PATCH', body }) : await api('/company/accounting/entries', { body: { ...body, journal: modal.journal } });
                 if (post) await api(`/company/accounting/entries/${saved.id}/post`, { body: {} });
               }
@@ -218,7 +218,15 @@ function Entries({ period, version, onEdit, onReverse, changed }: { period: any;
                 {e.status === 'draft' && writable && can('accounting.update') && <button className="btn sm" onClick={() => api(`/company/accounting/entries/${e.id}`).then(onEdit)}>Modifier</button>}
                 {e.status === 'draft' && writable && can('accounting.validate') && <button className="btn sm primary" disabled={busy} onClick={() => run(async () => { await api(`/company/accounting/entries/${e.id}/post`, { body: {} }); changed(); })}>Valider</button>}
                 {e.status === 'draft' && writable && can('accounting.cancel') && <button className="btn sm danger" disabled={busy} onClick={() => run(async () => { await api(`/company/accounting/entries/${e.id}`, { method: 'DELETE' }); changed(); })}>Supprimer</button>}
-                {e.status === 'posted' && e.sourceType === 'manual' && !e.reversedBy && writable && can('accounting.reverse') && <button className="btn sm" onClick={() => onReverse(e)}>Contre-passer</button>}
+                {e.status === 'posted' && e.sourceType === 'manual' && !e.reversedBy && writable && can('accounting.reverse') && <>
+                  <button className="btn sm" disabled={busy} title="L'écriture est contre-passée à sa date et une copie s'ouvre en brouillon, à corriger puis valider" onClick={() => {
+                    if (window.confirm(`Remettre l'écriture ${e.number} en brouillon pour la corriger ?\n\nUne écriture validée ne peut pas être effacée : elle sera contre-passée à sa date (${date(e.date)}) et une copie s'ouvrira en brouillon. Vous la corrigez puis la validez.`)) {
+                      run(async () => { const draft = await api(`/company/accounting/entries/${e.id}/reset-to-draft`, { body: {} }); changed(); onEdit(draft); });
+                    }
+                  }}>Remettre en brouillon</button>
+                  <button className="btn sm" onClick={() => onReverse(e)}>Contre-passer</button></>}
+                {e.status === 'posted' && e.sourceType !== 'manual' && !e.reversedBy && SOURCE_LINK[e.sourceType] && <a className="btn sm" href={SOURCE_LINK[e.sourceType](e.sourceId)}
+                  title="Cette écriture est passée automatiquement : corrigez le document d'origine (remise en brouillon), l'écriture suivra.">Corriger le document</a>}
               </div></td>
             </tr>
             {e.lines.map((l: any, i: number) => (
@@ -235,6 +243,11 @@ function Entries({ period, version, onEdit, onReverse, changed }: { period: any;
     </Report>
   );
 }
+
+/** Page du document d'origine d'une écriture automatique, où elle se corrige. */
+const SOURCE_LINK: Record<string, (id: string) => string> = {
+  sales_document: (id) => `/app/ventes/${id}`, purchase_document: (id) => `/app/achats/${id}`, payroll_run: (id) => `/app/paie/fiches/${id}`, treasury_movement: () => '/app/tresorerie',
+};
 
 const VIEWS = [['account', 'Par compte'], ['customer', 'Clients'], ['supplier', 'Fournisseurs']] as const;
 

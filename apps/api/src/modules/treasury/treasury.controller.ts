@@ -22,6 +22,14 @@ const MovementsQuery = z.object({
   accountId: z.string().uuid().optional(), kind: z.enum(['cash', 'bank', 'mobile_money']).optional(), from: isoDate.optional(), to: isoDate.optional(), category: z.string().max(40).optional(), q: z.string().trim().max(100).optional(),
 });
 
+const ManualSchema = z.object({
+  accountId: z.string().min(1, { message: 'Choisissez un compte' }),
+  date: isoDate.optional(), amount,
+  category: z.enum([...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES] as [string, ...string[]], { message: 'Catégorie inconnue' }),
+  label: z.string().trim().min(2, { message: 'Indiquez un libellé' }).max(200),
+  contactId: z.string().nullable().optional(), reference: text(100),
+});
+
 @ApiTags('Trésorerie')
 @Controller('company/treasury')
 export class TreasuryController {
@@ -85,14 +93,14 @@ export class TreasuryController {
   @Permission('cash.create')
   @Post('movements')
   addManual(@Tenant() t: TenantInfo, @Body() body: unknown) {
-    return this.treasury.addManual(t, parse(z.object({
-      kind: z.enum(['expense', 'income']),
-      accountId: z.string().min(1, { message: 'Choisissez un compte' }),
-      date: isoDate.optional(), amount,
-      category: z.enum([...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES] as [string, ...string[]], { message: 'Catégorie inconnue' }),
-      label: z.string().trim().min(2, { message: 'Indiquez un libellé' }).max(200),
-      contactId: z.string().nullable().optional(), reference: text(100),
-    }).strict(), body));
+    return this.treasury.addManual(t, parse(ManualSchema.extend({ kind: z.enum(['expense', 'income']) }).strict(), body));
+  }
+
+  /** Modification d'une dépense ou d'une recette : contre-passation de l'ancien mouvement et enregistrement du nouveau. */
+  @Permission('cash.cancel') @HttpCode(200)
+  @Post('movements/:id/correct')
+  correct(@Tenant() t: TenantInfo, @Param('id') id: string, @Body() body: unknown) {
+    return this.treasury.correct(t, id, parse(ManualSchema.strict(), body));
   }
 
   @Permission('cash.create')

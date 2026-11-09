@@ -23,6 +23,8 @@ export interface MovementInput {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+type ManualInput = { kind: 'expense' | 'income'; accountId: string; date?: string; amount: number; category: string; label: string; contactId?: string | null; reference?: string | null };
+
 @Injectable()
 export class TreasuryService {
   constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly accounting: AccountingService) {}
@@ -214,19 +216,39 @@ export class TreasuryService {
     });
   }
 
-  async addManual(t: TenantInfo, input: { kind: 'expense' | 'income'; accountId: string; date?: string; amount: number; category: string; label: string; contactId?: string | null; reference?: string | null }) {
+  async addManual(t: TenantInfo, input: ManualInput) {
+    return this.db.tenant(t.ctx, (trx) => this.addManualIn(trx, t, input));
+  }
+
+  private async addManualIn(trx: TenantTrx, t: TenantInfo, input: ManualInput) {
     const allowed = input.kind === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
     if (!allowed.includes(input.category)) throw badRequest('Catégorie inconnue.', undefined, 'unknown_category');
+    if (input.contactId) {
+      if (!isUuid(input.contactId) || !(await trx.selectFrom('contact').select('id').where('id', '=', input.contactId).executeTakeFirst())) throw badRequest('Contact introuvable.', undefined, 'unknown_contact');
+    }
+    const m = await this.record(trx, t, {
+      accountId: input.accountId, date: input.date ?? today(), direction: input.kind === 'expense' ? 'out' : 'in', amount: input.amount,
+      category: input.category, label: input.label, contactId: input.contactId, sourceType: input.kind, reference: input.reference,
+    });
+    await this.audit.tenant(trx, t.ctx, { action: `treasury.${input.kind}_recorded`, entityType: 'treasury_movement', entityId: m.id, data: { amount: input.amount, category: input.category, label: input.label } });
+    return m;
+  }
+
+  /**
+   * Modification d'une dépense ou d'une recette : le mouvement d'origine est contre-passé (la loi interdit de le modifier)
+   * et le mouvement corrigé est enregistré, dans la même transaction.
+   */
+  async correct(t: TenantInfo, id: string, input: Omit<ManualInput, 'kind'>) {
     return this.db.tenant(t.ctx, async (trx) => {
-      if (input.contactId) {
-        if (!isUuid(input.contactId) || !(await trx.selectFrom('contact').select('id').where('id', '=', input.contactId).executeTakeFirst())) throw badRequest('Contact introuvable.', undefined, 'unknown_contact');
-      }
-      const m = await this.record(trx, t, {
-        accountId: input.accountId, date: input.date ?? today(), direction: input.kind === 'expense' ? 'out' : 'in', amount: input.amount,
-        category: input.category, label: input.label, contactId: input.contactId, sourceType: input.kind, reference: input.reference,
-      });
-      await this.audit.tenant(trx, t.ctx, { action: `treasury.${input.kind}_recorded`, entityType: 'treasury_movement', entityId: m.id, data: { amount: input.amount, category: input.category, label: input.label } });
-      return m;
+      if (!isUuid(id)) throw notFound('Mouvement');
+      const m = await trx.selectFrom('treasury_movement').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
+      if (!m) throw notFound('Mouvement');
+      if (m.reversed_by) throw conflict('Ce mouvement est déjà contre-passé : il ne se modifie plus.', 'already_reversed');
+      if (!['expense', 'income'].includes(m.source_type)) throw conflict("Seules les dépenses et les recettes se modifient ici ; un virement se contre-passe, un règlement se corrige depuis sa facture.", 'not_editable');
+      await this.reverseIn(trx, t, m, 'modification');
+      const fresh = await this.addManualIn(trx, t, { ...input, kind: m.source_type as 'expense' | 'income' });
+      await this.audit.tenant(trx, t.ctx, { action: 'treasury.movement_corrected', entityType: 'treasury_movement', entityId: id, data: { replacement: fresh.id, amount: input.amount, label: input.label } });
+      return fresh;
     });
   }
 
@@ -276,17 +298,28 @@ export class TreasuryService {
       const legs = m.transfer_id
         ? await trx.selectFrom('treasury_movement').selectAll().where('transfer_id', '=', m.transfer_id).where('reversed_by', 'is', null).forUpdate().execute()
         : [m];
-      // Un virement s'annule en entier (ses deux jambes) ; la caisse refusera si les espèces ont déjà été dépensées.
-      for (const leg of legs) {
-        const r = await this.record(trx, t, {
-          accountId: leg.account_id, date: today(), direction: leg.direction === 'in' ? 'out' : 'in', amount: Number(leg.amount), category: leg.category,
-          label: `Contre-passation : ${leg.label} — ${reason}`, contactId: leg.contact_id, sourceType: 'reversal', reversalOf: leg.id, reference: leg.reference,
-        });
-        await trx.updateTable('treasury_movement').set({ reversed_by: r.id }).where('id', '=', leg.id).execute();
-      }
+      await this.reverseIn(trx, t, m, reason);
       await this.audit.tenant(trx, t.ctx, { action: 'treasury.movement_reversed', entityType: 'treasury_movement', entityId: id, data: { label: m.label, amount: Number(m.amount), reason } });
       return { ok: true };
     });
+  }
+
+  /**
+   * Contre-passation d'un mouvement (et de l'autre jambe d'un virement), datée du jour.
+   * Sert aussi aux autres modules qui annulent un mouvement qu'ils ont créé (achat comptant d'un bon de stock).
+   */
+  async reverseIn(trx: TenantTrx, t: TenantInfo, m: { id: string; transfer_id: string | null }, reason: string) {
+    const legs = m.transfer_id
+      ? await trx.selectFrom('treasury_movement').selectAll().where('transfer_id', '=', m.transfer_id).where('reversed_by', 'is', null).forUpdate().execute()
+      : await trx.selectFrom('treasury_movement').selectAll().where('id', '=', m.id).where('reversed_by', 'is', null).forUpdate().execute();
+    // Un virement s'annule en entier (ses deux jambes) ; la caisse refusera si les espèces ont déjà été dépensées.
+    for (const leg of legs) {
+      const r = await this.record(trx, t, {
+        accountId: leg.account_id, date: today(), direction: leg.direction === 'in' ? 'out' : 'in', amount: Number(leg.amount), category: leg.category,
+        label: `Contre-passation : ${leg.label} — ${reason}`, contactId: leg.contact_id, sourceType: 'reversal', reversalOf: leg.id, reference: leg.reference,
+      });
+      await trx.updateTable('treasury_movement').set({ reversed_by: r.id }).where('id', '=', leg.id).execute();
+    }
   }
 
   async summary(t: TenantInfo) {

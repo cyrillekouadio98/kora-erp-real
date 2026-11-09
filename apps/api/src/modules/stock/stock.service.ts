@@ -196,9 +196,9 @@ export class StockService {
    * Facture remise en brouillon : chaque mouvement qu'elle a provoqué est annulé à la même valeur
    * (la marchandise vendue rentre, la marchandise achetée ressort si elle est encore en stock).
    */
-  async revertSource(trx: TenantTrx, t: TenantInfo, sourceId: string, label: string) {
+  async revertSource(trx: TenantTrx, t: TenantInfo, sourceId: string, label: string, opts: { byDocument?: boolean; blocked?: string } = {}) {
     const moves = await trx.selectFrom('stock_movement as m').innerJoin('product as p', (j) => j.onRef('p.id', '=', 'm.product_id').onRef('p.company_id', '=', 'm.company_id'))
-      .select(['m.product_id', 'm.warehouse_id', 'm.direction', 'm.quantity', 'm.value', 'p.name']).where('m.source_id', '=', sourceId).execute();
+      .select(['m.product_id', 'm.warehouse_id', 'm.direction', 'm.quantity', 'm.value', 'p.name']).where(opts.byDocument ? 'm.document_id' : 'm.source_id', '=', sourceId).execute();
     const net = new Map<string, { productId: string; warehouseId: string; name: string; qty: number; value: number }>();
     for (const m of moves) {
       const key = `${m.product_id}|${m.warehouse_id}`;
@@ -211,10 +211,11 @@ export class StockService {
     const back = [...net.values()].filter((x) => x.qty !== 0);
     for (const w of new Set(back.filter((x) => x.qty > 0).map((x) => x.warehouseId))) {
       const wanted = new Map(back.filter((x) => x.qty > 0 && x.warehouseId === w).map((x) => [x.productId, { name: x.name, qty: x.qty }]));
-      await this.assertAvailable(trx, w, wanted, ' La marchandise de cette facture est déjà sortie du stock : elle ne peut plus être remise en brouillon.');
+      await this.assertAvailable(trx, w, wanted, opts.blocked ?? ' La marchandise de cette facture est déjà sortie du stock : elle ne peut plus être remise en brouillon.');
     }
     for (const x of back) {
-      await this.move(trx, t, { productId: x.productId, warehouseId: x.warehouseId, direction: x.qty > 0 ? 'out' : 'in', quantity: Math.abs(x.qty), value: Math.abs(x.value), date: today(), reason: 'cancellation', sourceId, label });
+      await this.move(trx, t, { productId: x.productId, warehouseId: x.warehouseId, direction: x.qty > 0 ? 'out' : 'in', quantity: Math.abs(x.qty), value: Math.abs(x.value), date: today(), reason: 'cancellation',
+        ...(opts.byDocument ? { documentId: sourceId } : { sourceId }), label });
     }
   }
 
@@ -693,11 +694,35 @@ export class StockService {
   async removeDocument(t: TenantInfo, id: string) {
     return this.db.tenant(t.ctx, async (trx) => {
       const d = await this.doc(trx, id, true);
-      if (d.status !== 'draft') throw conflict('Un bon validé ne se supprime pas : passez un bon inverse.', 'document_locked');
+      if (d.status !== 'draft') throw conflict('Un bon validé ne se supprime pas : remettez-le en brouillon pour le corriger.', 'document_locked');
+      if (d.number) throw conflict(`Le bon ${d.number} a déjà reçu son numéro : corrigez-le puis validez-le à nouveau.`, 'document_numbered');
       await trx.deleteFrom('stock_document').where('id', '=', id).execute();
       await this.audit.tenant(trx, t.ctx, { action: `stock_${d.type}.deleted`, entityType: 'stock_document', entityId: id, data: { type: d.type } });
       return { ok: true };
     });
+  }
+
+  /**
+   * Remet un bon validé en brouillon pour le corriger : ses mouvements de stock sont annulés à la même valeur,
+   * le paiement d'un achat comptant est contre-passé en trésorerie (avec son écriture), et il garde son numéro.
+   * Refusé si la marchandise entrée est déjà ressortie.
+   */
+  async resetDocument(t: TenantInfo, id: string) {
+    await this.db.tenant(t.ctx, async (trx) => {
+      const d = await this.doc(trx, id, true);
+      if (d.status !== 'done') throw conflict('Ce bon est déjà en brouillon.', 'already_draft');
+      if (d.treasury_movement_id && !t.permissions.has('cash.cancel')) {
+        throw forbidden("Ce bon est un achat comptant : seul un utilisateur autorisé à annuler des mouvements de trésorerie peut le remettre en brouillon.", 'cash_permission_required');
+      }
+      const label = `Annulation du bon ${d.number} (remis en brouillon)`;
+      await this.revertSource(trx, t, id, label, { byDocument: true, blocked: ` La marchandise du bon ${d.number} est déjà ressortie du stock : il ne peut plus être remis en brouillon.` });
+      if (d.treasury_movement_id) {
+        await this.treasury.reverseIn(trx, t, { id: d.treasury_movement_id, transfer_id: null }, `bon ${d.number} remis en brouillon`);
+      }
+      await trx.updateTable('stock_document').set({ status: 'draft', treasury_movement_id: null, validated_at: null, validated_by: null }).where('id', '=', id).execute();
+      await this.audit.tenant(trx, t.ctx, { action: `stock_${d.type}.reset_to_draft`, entityType: 'stock_document', entityId: id, data: { number: d.number } });
+    });
+    return this.getDocument(t, id);
   }
 
   /**
@@ -728,7 +753,8 @@ export class StockService {
         await this.assertAvailable(trx, w.id, new Map(active.map((l) => [l.product_id, { name: l.name, qty: Number(l.quantity) }])), '');
       }
 
-      const number = await nextNumber(trx, t.companyId, `stock_${d.type}`, PREFIX[d.type], Number(d.date.slice(0, 4)));
+      // Un bon remis en brouillon garde son numéro.
+      const number = d.number ?? await nextNumber(trx, t.companyId, `stock_${d.type}`, PREFIX[d.type], Number(d.date.slice(0, 4)));
       const motive = d.type === 'receipt' ? RECEIPT_REASONS[d.reason as keyof typeof RECEIPT_REASONS] : d.type === 'issue' ? ISSUE_REASONS[d.reason as keyof typeof ISSUE_REASONS] : null;
       const label = `${TITLE[d.type]} ${number}${motive ? ` — ${motive}` : ''}${dest ? ` : ${w.name} → ${dest.name}` : ''}`;
       let total = 0;

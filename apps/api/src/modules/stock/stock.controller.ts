@@ -100,6 +100,11 @@ export class StockController {
   @Delete('documents/:id')
   removeDocument(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.stock.removeDocument(t, id); }
 
+  /** Remise en brouillon d'un bon validé (mouvements annulés, numéro conservé). */
+  @Permission('stock.cancel') @HttpCode(200)
+  @Post('documents/:id/reset-to-draft')
+  resetDocument(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.stock.resetDocument(t, id); }
+
   /** Validation : numéro, mouvements de stock et, pour un achat comptant, sortie de trésorerie et écriture. */
   @Permission('stock.validate') @HttpCode(200)
   @Post('documents/:id/validate')

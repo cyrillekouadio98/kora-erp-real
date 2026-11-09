@@ -117,7 +117,13 @@ export function StockDocument({ id, type: newType, base }: { id?: string; type?:
     return (
       <>
         <div className="page-head no-print"><h1>{title}</h1>
-          <div className="row"><button className="btn" onClick={() => window.print()}>Imprimer / PDF</button><Link className="btn" href={base}>Retour à la liste</Link></div></div>
+          <div className="row">
+            {writable && can('stock.cancel') && <button className="btn" disabled={busy} onClick={() => {
+              const text = `Remettre ${type === 'inventory' ? "l'inventaire" : 'le bon'} ${doc.number} en brouillon pour le corriger ?\n\nSes mouvements de stock seront annulés${doc.treasuryAccount ? ", le paiement en trésorerie et son écriture seront contre-passés" : ''}. Il gardera son numéro ; vous le validerez de nouveau après correction.`;
+              if (confirm(text)) run(async () => { await api(`/company/stock/documents/${doc.id}/reset-to-draft`, { method: 'POST' }); await load(); });
+            }}>Remettre en brouillon</button>}
+            <button className="btn" onClick={() => window.print()}>Imprimer / PDF</button><Link className="btn" href={base}>Retour à la liste</Link></div></div>
+        <Alert>{error}</Alert>
         <div className="card stock-print">
           <header className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div><h2 style={{ margin: 0 }}>{STOCK_DOC[type]}</h2><div className="small muted">{doc.number} · {date(doc.date)}</div></div>
@@ -266,9 +272,9 @@ export function StockDocument({ id, type: newType, base }: { id?: string; type?:
         {writable && <div className="row no-print">
           {editable && <button className="btn" disabled={busy}>{doc ? 'Enregistrer le brouillon' : 'Créer le brouillon'}</button>}
           {doc && can('stock.validate') && <button type="button" className="btn primary" disabled={busy || (isInventory ? !counted : !lines.length)} onClick={() => {
-            if (confirm(isInventory ? `Valider l'inventaire ? Les ${counted} article(s) compté(s) seront ajustés au stock compté.` : 'Valider ce bon ? Le stock sera mis à jour et le bon ne sera plus modifiable.')) validate();
+            if (confirm(isInventory ? `Valider l'inventaire ? Les ${counted} article(s) compté(s) seront ajustés au stock compté.` : (doc.number ? `Valider de nouveau le bon ${doc.number} ? Le stock sera mis à jour.` : 'Valider ce bon ? Le stock sera mis à jour. Pour le corriger ensuite, il faudra le remettre en brouillon.'))) validate();
           }}>{isInventory ? "Valider l'inventaire" : 'Valider le bon'}</button>}
-          {doc && can('stock.cancel') && <button type="button" className="btn danger" disabled={busy} onClick={remove}>Supprimer le brouillon</button>}
+          {doc && !doc.number && can('stock.cancel') && <button type="button" className="btn danger" disabled={busy} onClick={remove}>Supprimer le brouillon</button>}
         </div>}
       </form>
     </>

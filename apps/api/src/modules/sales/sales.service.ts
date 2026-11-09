@@ -277,7 +277,8 @@ export class SalesService {
   async resetToDraft(t: TenantInfo, id: string) {
     await this.db.tenant(t.ctx, async (trx) => {
       const d = await this.doc(trx, id, true);
-      if (d.type !== 'invoice') throw conflict('Seule une facture se remet en brouillon.', 'invalid_state');
+      if (d.type === 'credit_note') return this.resetCreditNote(trx, t, d);
+      if (d.type !== 'invoice') throw conflict('Seule une facture ou un avoir se remet en brouillon.', 'invalid_state');
       if (d.status === 'draft') throw conflict('Cette facture est déjà en brouillon.', 'already_draft');
       if (d.status !== 'issued' || Number(d.paid_amount) > 0) throw conflict(`La facture ${d.number} a déjà reçu un encaissement ou un avoir : elle ne peut plus être remise en brouillon. Corrigez-la par un avoir.`, 'invoice_settled');
       const cn = await trx.selectFrom('sales_document').select('id').where('source_invoice_id', '=', id).executeTakeFirst();
@@ -289,6 +290,25 @@ export class SalesService {
       await this.audit.tenant(trx, t.ctx, { action: 'invoice.reset_to_draft', entityType: 'sales_document', entityId: id, data: { number: d.number, totalTtc: Number(d.total_ttc) } });
     });
     return this.get(t, id);
+  }
+
+  /**
+   * Avoir remis en brouillon : son écriture est contre-passée, la marchandise reprise ressort du stock,
+   * la facture d'origine retrouve son reste à payer ; il garde son numéro. Refusé s'il a déjà été remboursé.
+   */
+  private async resetCreditNote(trx: TenantTrx, t: TenantInfo, d: SalesDocumentRow) {
+    if (d.status === 'draft') throw conflict('Cet avoir est déjà en brouillon.', 'already_draft');
+    if (Number(d.refunded_amount) > 0) throw conflict(`L'avoir ${d.number} a déjà été remboursé : il ne peut plus être remis en brouillon.`, 'credit_note_refunded');
+    await this.stock.revertSource(trx, t, d.id, `Annulation du retour ${d.number}`, { blocked: ` La marchandise reprise par l'avoir ${d.number} est déjà ressortie du stock : il ne peut plus être remis en brouillon.` });
+    await this.accounting.reverseSource(trx, t, 'sales_document', d.id, `avoir ${d.number} remis en brouillon`);
+    if (d.source_invoice_id) {
+      const inv = await this.doc(trx, d.source_invoice_id, true);
+      if (Number(inv.refunded_amount) > 0) throw conflict(`La facture ${inv.number} a déjà fait l'objet d'un remboursement : l'avoir ${d.number} ne peut plus être remis en brouillon.`, 'invoice_refunded');
+      const credited = Math.max(0, Number(inv.credited_amount) - Number(d.total_ttc));
+      await trx.updateTable('sales_document').set({ credited_amount: credited, status: invoiceStatus(Number(inv.total_ttc), Number(inv.paid_amount), credited) }).where('id', '=', inv.id).execute();
+    }
+    await trx.updateTable('sales_document').set({ status: 'draft', validated_at: null, validated_by: null }).where('id', '=', d.id).execute();
+    await this.audit.tenant(trx, t.ctx, { action: 'credit_note.reset_to_draft', entityType: 'sales_document', entityId: d.id, data: { number: d.number, totalTtc: Number(d.total_ttc) } });
   }
 
   async decideQuote(t: TenantInfo, id: string, accepted: boolean) {

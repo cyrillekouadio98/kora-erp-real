@@ -118,6 +118,11 @@ export class AccountingController {
   @Post('entries/:id/post')
   post(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.accounting.postManual(t, id); }
 
+  /** Remise en brouillon d'une écriture validée (contre-passation automatique et copie en brouillon). */
+  @Permission('accounting.reverse') @HttpCode(200)
+  @Post('entries/:id/reset-to-draft')
+  resetToDraft(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.accounting.resetToDraft(t, id); }
+
   @Permission('accounting.reverse') @HttpCode(200)
   @Post('entries/:id/reverse')
   reverse(@Tenant() t: TenantInfo, @Param('id') id: string, @Body() body: unknown) {
