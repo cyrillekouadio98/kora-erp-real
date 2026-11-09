@@ -4,10 +4,12 @@ import type { Response } from 'express';
 import { z } from 'zod';
 import { AllowWhenReadOnly, Permission, Tenant } from '../../common/decorators';
 import type { TenantInfo } from '../../common/request-context';
+import { badRequest } from '../../common/errors';
 import { parse } from '../../common/validation';
 import { toCsv } from '../exports/export.controller';
 import { isoDate } from '../sales/sales.controller';
 import { AccountingService } from './accounting.service';
+import { BalancesService } from './balances.service';
 import { FinancialService } from './financial.service';
 
 // Numéros sur 6 chiffres ; un numéro plus court est complété par des zéros (411 → 411000).
@@ -31,7 +33,7 @@ const Period = z.object({ from: isoDate.optional(), to: isoDate.optional() });
 @ApiTags('Comptabilité')
 @Controller('company/accounting')
 export class AccountingController {
-  constructor(private readonly accounting: AccountingService, private readonly financial: FinancialService) {}
+  constructor(private readonly accounting: AccountingService, private readonly financial: FinancialService, private readonly balances: BalancesService) {}
 
   /** Bilan à une date (présentation simplifiée du système normal SYSCOHADA). */
   @Permission('accounting.read') @AllowWhenReadOnly()
@@ -143,6 +145,40 @@ export class AccountingController {
   @Permission('accounting.read') @AllowWhenReadOnly()
   @Get('trial-balance')
   trialBalance(@Tenant() t: TenantInfo, @Query() query: unknown) { return this.accounting.trialBalance(t, parse(Period, query)); }
+
+  /**
+   * Balance des comptes (4, 6, 8 colonnes ou développée) : mouvements antérieurs, de la période, soldes de la période et cumulés,
+   * et, si compareTo est donné, le solde de la période comparée. accountFrom / accountTo limitent la plage de comptes.
+   */
+  @Permission('accounting.read') @AllowWhenReadOnly()
+  @Get('account-balance')
+  accountBalance(@Tenant() t: TenantInfo, @Query() query: unknown) {
+    const code = z.string().trim().regex(/^\d{1,6}$/, { message: 'Numéro de compte invalide' }).optional();
+    return this.balances.accountBalance(t, parse(Period.extend({
+      accountFrom: code, accountTo: code, compareFrom: isoDate.optional(), compareTo: isoDate.optional(),
+      withClosing: z.enum(['true', 'false']).optional().transform((v) => v === 'true'),
+    }), query));
+  }
+
+  /** Balance des tiers : un solde par tiers et par compte collectif. */
+  @Permission('accounting.read') @AllowWhenReadOnly()
+  @Get('third-party-balance')
+  thirdPartyBalance(@Tenant() t: TenantInfo, @Query() query: unknown) {
+    return this.balances.thirdPartyBalance(t, parse(Period.extend({ kind: z.enum(['all', 'customer', 'supplier']).default('all') }), query));
+  }
+
+  /** Balance âgée des clients ou des fournisseurs à une date, par tranches de retard (30, 45, 60 jours par défaut). */
+  @Permission('accounting.read') @AllowWhenReadOnly()
+  @Get('aged-balance')
+  agedBalance(@Tenant() t: TenantInfo, @Query() query: unknown) {
+    const q = parse(z.object({
+      date: isoDate.optional(), kind: z.enum(['customer', 'supplier']).default('customer'),
+      steps: z.string().regex(/^\d{1,3}(,\d{1,3}){0,5}$/, { message: 'Tranches attendues sous la forme 30,45,60' }).default('30,45,60'),
+    }), query);
+    const steps = [...new Set(q.steps.split(',').map(Number).filter((n) => n > 0))];
+    if (!steps.length) throw badRequest('Indiquez au moins une tranche.', undefined, 'invalid_steps');
+    return this.balances.agedBalance(t, { date: q.date ?? new Date().toISOString().slice(0, 10), kind: q.kind, steps });
+  }
 
   @Permission('accounting.read') @AllowWhenReadOnly()
   @Get('vat')

@@ -7,7 +7,7 @@ import { Alert, Field, Pill, useAction } from '@/components/ui';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const yearStart = () => `${today().slice(0, 4)}-01-01`;
-const TABS = [['entries', 'Écritures'], ['ledger', 'Grand livre'], ['balance', 'Balance'], ['sheet', 'Bilan'], ['sig', 'Soldes de gestion'], ['result', 'Compte de résultat'],
+const TABS = [['entries', 'Écritures'], ['ledger', 'Grand livre'], ['balance', 'Balances'], ['sheet', 'Bilan'], ['sig', 'Soldes de gestion'], ['result', 'Compte de résultat'],
   ['vat', 'TVA'], ['closing', 'Clôture d\u2019exercice'], ['chart', 'Plan comptable']] as const;
 type Tab = (typeof TABS)[number][0];
 const num = (n: number) => (n ? money(n) : '');
@@ -102,7 +102,7 @@ export default function AccountingPage() {
 
       {tab === 'entries' && <Entries period={period} version={version} onEdit={(e) => { setError(''); setModal({ type: 'entry', ...e, reference: e.reference ?? '', lines: e.lines.map((l: any) => ({ ...l, debit: l.debit || '', credit: l.credit || '' })) }); }} onReverse={(e) => { setError(''); setModal({ type: 'reverse', entry: e, reason: '' }); }} changed={changed} />}
       {tab === 'ledger' && <Ledger period={period} accounts={accounts} version={version} />}
-      {tab === 'balance' && <TrialBalance period={period} version={version} />}
+      {tab === 'balance' && <Balances period={period} version={version} />}
       {tab === 'vat' && <Vat version={version} />}
       {tab === 'result' && <IncomeStatement period={period} version={version} />}
       {tab === 'sheet' && <BalanceSheet version={version} />}
@@ -366,24 +366,233 @@ function LedgerTable({ account: a, showAccount }: { account: any; showAccount?: 
   );
 }
 
-function TrialBalance({ period, version }: { period: any; version: number }) {
-  const { data } = useLatest<any>(`/company/accounting/trial-balance?from=${period.from}&to=${period.to}`, [version]);
-  if (!data) return null;
-  const cols = ['openingDebit', 'openingCredit', 'debit', 'credit', 'closingDebit', 'closingCredit'];
+/** Les six états de balance proposés par l'onglet « Balances ». */
+const BALANCES = [['4', 'Balance des comptes'], ['6', 'Balance 6 colonnes'], ['8', 'Balance 8 colonnes'], ['dev', 'Balance développée (comparée)'],
+  ['tiers', 'Balance des tiers'], ['aged', 'Balance âgée']] as const;
+type BalanceKind = (typeof BALANCES)[number][0];
+const AGE_STEPS = [['30,45,60', '30 / 45 / 60 jours'], ['30,60,90', '30 / 60 / 90 jours'], ['30,60,90,120', '30 / 60 / 90 / 120 jours']] as const;
+const td = { whiteSpace: 'nowrap' } as const;
+const subtotal = { fontWeight: 600, background: 'var(--surface-2)' } as const;
+const lastYear = (d: string) => `${Number(d.slice(0, 4)) - 1}${d.slice(4)}`;
+const dayBefore = (d: string) => { const x = new Date(`${d}T00:00:00Z`); x.setUTCDate(x.getUTCDate() - 1); return x.toISOString().slice(0, 10); };
+const signed = (n: number | null) => (n ? `${money(Math.abs(n))} ${n > 0 ? 'D' : 'C'}` : '');
+
+/** Fichier CSV lisible par Excel (séparateur « ; », encodage UTF-8 avec BOM). */
+function downloadCsv(name: string, rows: (string | number | null | undefined)[][]) {
+  const cell = (v: string | number | null | undefined) => {
+    const s = v == null ? '' : typeof v === 'number' ? String(v).replace('.', ',') : v;
+    return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const blob = new Blob([`﻿${rows.map((r) => r.map(cell).join(';')).join('\r\n')}`], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = `${name}.csv`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function Balances({ period, version }: { period: any; version: number }) {
+  const [kind, setKind] = useState<BalanceKind>('4');
+  const picker = (
+    <label className="field" style={{ minWidth: 240 }}>État
+      <select className="input" value={kind} onChange={(e) => setKind(e.target.value as BalanceKind)}>
+        {BALANCES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+  );
+  if (kind === 'tiers') return <ThirdPartyBalance period={period} version={version} picker={picker} />;
+  if (kind === 'aged') return <AgedBalance period={period} version={version} picker={picker} />;
+  return <AccountBalance key={kind} format={kind} period={period} version={version} picker={picker} />;
+}
+
+/**
+ * Balance des comptes : 4 colonnes (mouvements, soldes), 6 colonnes (mouvements antérieurs, mouvements, soldes cumulés),
+ * 8 colonnes (+ soldes de la période) ou développée (+ solde de la période comparée et écart).
+ */
+function AccountBalance({ format, period, version, picker }: { format: '4' | '6' | '8' | 'dev'; period: any; version: number; picker: React.ReactNode }) {
+  const [range, setRange] = useState({ from: '', to: '' });
+  const [byClass, setByClass] = useState(false);
+  const [withClosing, setWithClosing] = useState(false);
+  const [cmp, setCmp] = useState({ from: lastYear(period.from), to: lastYear(period.to) });
+  const q = new URLSearchParams({ from: period.from, to: period.to, ...(range.from && { accountFrom: range.from }), ...(range.to && { accountTo: range.to }),
+    ...(withClosing && { withClosing: 'true' }), ...(format === 'dev' && cmp.from && cmp.to && { compareFrom: cmp.from, compareTo: cmp.to }) });
+  const { data, error } = useLatest<any>(`/company/accounting/account-balance?${q}`, [version]);
+  const prior = `Mouvements au ${date(dayBefore(period.from))}`;
+  const groups: { label: string; cols: [string, string]; net?: [string, string] }[] = [
+    ...(format === '6' || format === '8' ? [{ label: prior, cols: ['priorDebit', 'priorCredit'] as [string, string] }] : []),
+    { label: 'Mouvements', cols: ['debit', 'credit'] },
+    ...(format === '8' ? [{ label: 'Soldes période', cols: ['periodDebit', 'periodCredit'] as [string, string], net: ['netPeriodDebit', 'netPeriodCredit'] as [string, string] }] : []),
+    { label: format === '4' || format === 'dev' ? 'Soldes' : 'Soldes cumulés', cols: ['closingDebit', 'closingCredit'], net: ['netClosingDebit', 'netClosingCredit'] },
+  ];
+  const dev = format === 'dev';
+  const title = BALANCES.find(([k]) => k === format)![1];
+  const cells = (r: any, net = false) => groups.flatMap((g) => (net && g.net ? g.net : g.cols).map((c) => r[c]));
+  const devCells = (r: any) => (dev ? [r.compare, r.closingDebit - r.closingCredit - (r.compare ?? 0)] : []);
+  const width = 2 + groups.length * 2 + (dev ? 2 : 0);
+  const exportCsv = () => data && downloadCsv(`${title} ${period.from} ${period.to}`, [
+    ['Compte', 'Intitulé', ...groups.flatMap((g) => [`${g.label} débit`, `${g.label} crédit`]), ...(dev ? ['Solde période comparée', 'Écart'] : [])],
+    ...data.accounts.map((a: any) => [a.account, a.name, ...cells(a), ...devCells(a)]),
+    ['', 'Totaux comptes de bilan', ...cells(data.groups.balanceSheet, true), ...devCells(data.groups.balanceSheet)],
+    ['', 'Totaux comptes de gestion', ...cells(data.groups.management, true), ...devCells(data.groups.management)],
+    ['', 'Totaux de la balance', ...cells(data.totals), ...devCells(data.totals)],
+  ]);
+  const tools = <>
+    {picker}
+    <Field label="Du compte" placeholder="1" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value.replace(/\D/g, '').slice(0, 6) })} style={{ width: 90 }} />
+    <Field label="Au compte" placeholder="8" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value.replace(/\D/g, '').slice(0, 6) })} style={{ width: 90 }} />
+    {dev && <>
+      <Field label="Comparer du" type="date" value={cmp.from} onChange={(e) => setCmp({ ...cmp, from: e.target.value })} />
+      <Field label="au" type="date" value={cmp.to} onChange={(e) => setCmp({ ...cmp, to: e.target.value })} /></>}
+    <label className="row small" style={{ gap: 6, paddingBottom: 8 }}><input type="checkbox" checked={byClass} onChange={(e) => setByClass(e.target.checked)} />Totaux par classe</label>
+    <label className="row small" style={{ gap: 6, paddingBottom: 8 }} title="Écriture de détermination du résultat qui solde les comptes 6, 7 et 8"><input type="checkbox" checked={withClosing} onChange={(e) => setWithClosing(e.target.checked)} />Avec l&apos;écriture de clôture</label>
+    <button className="btn sm" type="button" onClick={exportCsv} disabled={!data}>Exporter (Excel)</button>
+  </>;
+  const row = (r: any, key: string, label: React.ReactNode, style?: React.CSSProperties, net = false) => (
+    <tr key={key} style={style}>{label}
+      {cells(r, net).map((v, i) => <td key={i} className="n" style={td}>{num(v)}</td>)}
+      {dev && <><td className="n" style={td}>{signed(r.compare)}</td><td className="n" style={td}>{signed(round2(r.closingDebit - r.closingCredit - (r.compare ?? 0)))}</td></>}
+    </tr>
+  );
+  const body: React.ReactNode[] = [];
+  if (data) {
+    for (const c of data.classes) {
+      for (const a of data.accounts.filter((x: any) => x.class === c.class)) body.push(row(a, a.account, <><td><code className="k">{a.account}</code></td><td className="small">{a.name}</td></>));
+      if (byClass) body.push(row(c, `c${c.class}`, <td colSpan={2}>Total classe {c.class} · {c.label}</td>, subtotal));
+    }
+  }
   return (
-    <Report title="Balance générale" period={between(period)} wide>
-    <div className="card">
-      <header><h2 className="no-print">Balance générale</h2>{data.balanced ? <Pill tone="ok">Équilibrée</Pill> : <Pill tone="crit">Déséquilibrée</Pill>}</header>
-      <div className="table-wrap"><table>
-        <thead>
-          <tr><th rowSpan={2}>Compte</th><th rowSpan={2}>Intitulé</th><th colSpan={2} style={{ textAlign: 'center' }}>Soldes à l'ouverture</th><th colSpan={2} style={{ textAlign: 'center' }}>Mouvements</th><th colSpan={2} style={{ textAlign: 'center' }}>Soldes de clôture</th></tr>
-          <tr>{cols.map((c, i) => <th key={c} className="n">{i % 2 ? 'Crédit' : 'Débit'}</th>)}</tr>
-        </thead>
-        <tbody>{data.accounts.map((a: any) => (
-          <tr key={a.account}><td><code className="k">{a.account}</code></td><td className="small">{a.name}</td>{cols.map((c) => <td key={c} className="n" style={{ whiteSpace: 'nowrap' }}>{num(a[c])}</td>)}</tr>))}</tbody>
-        <tfoot><tr><td colSpan={2}><b>Totaux</b></td>{cols.map((c) => <td key={c} className="n" style={{ whiteSpace: 'nowrap' }}><b>{money(data.totals[c])}</b></td>)}</tr></tfoot>
-      </table></div>
-    </div>
+    <Report title={title} period={`${between(period)}${range.from || range.to ? ` · comptes ${range.from || '1'} à ${range.to || '9'}` : ''}${dev && cmp.from ? ` · comparée au ${date(cmp.from)} - ${date(cmp.to)}` : ''}`} wide tools={tools}>
+      <Alert>{error}</Alert>
+      {data && <div className="card">
+        <header><h2 className="no-print">{title}</h2>{data.balanced ? <Pill tone="ok">Équilibrée</Pill> : <Pill tone="crit">Déséquilibrée</Pill>}</header>
+        <div className="table-wrap"><table>
+          <thead>
+            <tr><th rowSpan={2}>Compte</th><th rowSpan={2}>Intitulé</th>
+              {groups.map((g) => <th key={g.label} colSpan={2} style={{ textAlign: 'center' }}>{g.label}</th>)}
+              {dev && <><th rowSpan={2} className="n">Solde période comparée</th><th rowSpan={2} className="n">Écart</th></>}</tr>
+            <tr>{groups.flatMap((g) => [<th key={`${g.label}d`} className="n">Débit</th>, <th key={`${g.label}c`} className="n">Crédit</th>])}</tr>
+          </thead>
+          <tbody>
+            {body}
+            {!data.accounts.length && <tr><td colSpan={width} className="muted" style={{ textAlign: 'center', padding: 24 }}>Aucun mouvement sur cette période.</td></tr>}
+          </tbody>
+          {data.accounts.length > 0 && <tfoot>
+            {row(data.groups.balanceSheet, 'bs', <td colSpan={2}><b>Totaux comptes de bilan</b></td>, undefined, true)}
+            {row(data.groups.management, 'mg', <td colSpan={2}><b>Totaux comptes de gestion</b></td>, undefined, true)}
+            {row(data.totals, 'all', <td colSpan={2}><b>Totaux de la balance</b></td>, { fontWeight: 700 })}
+          </tfoot>}
+        </table></div>
+        {data.groups.management.netPeriodDebit + data.groups.management.netPeriodCredit > 0 && <p className="small muted" style={{ margin: '8px 0 0' }}>
+          Résultat de la période : <b>{data.groups.management.netPeriodCredit ? 'bénéfice' : 'perte'} de {money(data.groups.management.netPeriodCredit || data.groups.management.netPeriodDebit)}</b> (solde des mouvements des comptes de gestion).</p>}
+      </div>}
+    </Report>
+  );
+}
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Balance des tiers : un solde par client, fournisseur ou autre tiers, regroupé par compte collectif. */
+function ThirdPartyBalance({ period, version, picker }: { period: any; version: number; picker: React.ReactNode }) {
+  const [kind, setKind] = useState<'all' | 'customer' | 'supplier'>('all');
+  const [onlyOpen, setOnlyOpen] = useState(false);
+  const { data, error } = useLatest<any>(`/company/accounting/third-party-balance?kind=${kind}&from=${period.from}&to=${period.to}`, [version]);
+  const parties = (data?.parties ?? []).filter((p: any) => !onlyOpen || p.balance);
+  const showOpening = !!data && (data.totals.openingDebit || data.totals.openingCredit);
+  const cols = [...(showOpening ? ['openingDebit', 'openingCredit'] : []), 'debit', 'credit', 'closingDebit', 'closingCredit'];
+  const sum = (list: any[], k: string) => round2(list.reduce((s, p) => s + p[k], 0));
+  const total = parties.reduce((s: number, p: any) => s + p.balance, 0);
+  const exportCsv = () => downloadCsv(`Balance des tiers ${period.from} ${period.to}`, [
+    ['Compte collectif', 'Code tiers', 'Tiers', ...(showOpening ? ['Solde antérieur débit', 'Solde antérieur crédit'] : []), 'Mouvements débit', 'Mouvements crédit', 'Solde débit', 'Solde crédit'],
+    ...parties.map((p: any) => [p.account, p.code, p.name, ...cols.map((c) => p[c])]),
+    ['', '', 'Total général', ...cols.map((c) => sum(parties, c))],
+  ]);
+  const tools = <>
+    {picker}
+    <label className="field">Tiers
+      <select className="input" value={kind} onChange={(e) => setKind(e.target.value as any)}>
+        <option value="all">Tous</option><option value="customer">Clients (41)</option><option value="supplier">Fournisseurs (40)</option></select></label>
+    <label className="row small" style={{ gap: 6, paddingBottom: 8 }}><input type="checkbox" checked={onlyOpen} onChange={(e) => setOnlyOpen(e.target.checked)} />Soldes non nuls seulement</label>
+    <button className="btn sm" type="button" onClick={exportCsv} disabled={!data}>Exporter (Excel)</button>
+  </>;
+  const accounts = [...new Set(parties.map((p: any) => p.account))] as string[];
+  return (
+    <Report title="Balance des tiers" period={`${kind === 'customer' ? 'Clients · ' : kind === 'supplier' ? 'Fournisseurs · ' : ''}${between(period)}`} wide tools={tools}>
+      <Alert>{error}</Alert>
+      {data && <div className="card">
+        <div className="table-wrap"><table>
+          <thead>
+            <tr><th rowSpan={2}>Numéro</th><th rowSpan={2}>Intitulé du tiers</th>
+              {showOpening && <th colSpan={2} style={{ textAlign: 'center' }}>Soldes au {date(dayBefore(period.from))}</th>}
+              <th colSpan={2} style={{ textAlign: 'center' }}>Mouvements</th><th colSpan={2} style={{ textAlign: 'center' }}>Soldes</th></tr>
+            <tr>{cols.map((c, i) => <th key={c} className="n">{i % 2 ? 'Crédit' : 'Débit'}</th>)}</tr>
+          </thead>
+          <tbody>
+            {accounts.map((acc) => {
+              const list = parties.filter((p: any) => p.account === acc);
+              return [
+                <tr key={`h${acc}`}><td colSpan={2 + cols.length}><b><code className="k">{acc}</code> {list[0].accountName}</b></td></tr>,
+                ...list.map((p: any) => (
+                  <tr key={`${acc}${p.contactId}`}><td className="small" style={td}>{p.code ?? '—'}</td><td className="small">{p.name}</td>
+                    {cols.map((c) => <td key={c} className="n" style={td}>{num(p[c])}</td>)}</tr>)),
+                <tr key={`t${acc}`} style={subtotal}><td colSpan={2}>Total compte {acc}</td>{cols.map((c) => <td key={c} className="n" style={td}>{num(sum(list, c))}</td>)}</tr>,
+              ];
+            })}
+            {!parties.length && <tr><td colSpan={2 + cols.length} className="muted" style={{ textAlign: 'center', padding: 24 }}>Aucun tiers mouvementé sur cette période.</td></tr>}
+          </tbody>
+          {parties.length > 0 && <tfoot>
+            <tr><td colSpan={2}><b>Total général · {parties.length} ligne(s)</b></td>{cols.map((c) => <td key={c} className="n" style={td}><b>{money(sum(parties, c))}</b></td>)}</tr>
+            <tr><td colSpan={2 + cols.length - 2}><b>Solde de la balance</b></td>
+              <td className="n" style={td}><b>{total > 0 ? money(total) : ''}</b></td><td className="n" style={td}><b>{total < 0 ? money(-total) : ''}</b></td></tr>
+          </tfoot>}
+        </table></div>
+      </div>}
+    </Report>
+  );
+}
+
+/**
+ * Balance âgée des clients ou des fournisseurs à la date de fin : règlements imputés sur les pièces les plus anciennes,
+ * reste dû classé par retard sur l'échéance. Un montant négatif est une avance ou un avoir en faveur du tiers.
+ */
+function AgedBalance({ period, version, picker }: { period: any; version: number; picker: React.ReactNode }) {
+  const [kind, setKind] = useState<'customer' | 'supplier'>('customer');
+  const [steps, setSteps] = useState<string>(AGE_STEPS[0][0]);
+  const { data, error } = useLatest<any>(`/company/accounting/aged-balance?kind=${kind}&date=${period.to}&steps=${steps}`, [version]);
+  const who = kind === 'customer' ? 'clients' : 'fournisseurs';
+  const exportCsv = () => data && downloadCsv(`Balance agee ${who} ${period.to}`, [
+    ['Compte collectif', 'Code tiers', 'Tiers', 'Solde du compte', ...data.buckets.map((b: any) => b.label)],
+    ...data.parties.map((p: any) => [p.account, p.code, p.name, p.balance, ...data.buckets.map((b: any) => p.amounts[b.key])]),
+    ['', '', 'Totaux', data.totals.balance, ...data.buckets.map((b: any) => data.totals.amounts[b.key])],
+    ['', '', '% période', '', ...data.buckets.map((b: any) => data.totals.shares[b.key])],
+  ]);
+  const tools = <>
+    {picker}
+    <label className="field">Tiers
+      <select className="input" value={kind} onChange={(e) => setKind(e.target.value as any)}><option value="customer">Clients</option><option value="supplier">Fournisseurs</option></select></label>
+    <label className="field">Tranches
+      <select className="input" value={steps} onChange={(e) => setSteps(e.target.value)}>{AGE_STEPS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+    <button className="btn sm" type="button" onClick={exportCsv} disabled={!data}>Exporter (Excel)</button>
+  </>;
+  const amt = (v: number) => (v ? (v < 0 ? `-${money(-v)}` : money(v)) : '');
+  const line = (r: any, key: string, label: React.ReactNode, style?: React.CSSProperties) => (
+    <tr key={key} style={style}>{label}<td className="n" style={td}>{amt(r.balance)}</td>{data.buckets.map((b: any) => <td key={b.key} className="n" style={td}>{amt(r.amounts[b.key])}</td>)}</tr>
+  );
+  return (
+    <Report title={`Balance âgée des ${who}`} period={`au ${date(period.to)} · d'après la date d'échéance`} wide tools={tools}>
+      <p className="small muted no-print" style={{ margin: 0 }}>Les règlements soldent d&apos;abord les factures les plus anciennes ; le reste dû est classé selon son retard sur l&apos;échéance (date de l&apos;écriture à défaut). Montants positifs : {kind === 'customer' ? 'ce que le client doit' : 'ce qui est dû au fournisseur'} ; négatifs : avance ou avoir en sa faveur.</p>
+      <Alert>{error}</Alert>
+      {data && <div className="card">
+        <div className="table-wrap"><table>
+          <thead><tr><th>Numéro</th><th>Intitulé du tiers</th><th className="n">Solde du compte</th>{data.buckets.map((b: any) => <th key={b.key} className="n">{b.label}</th>)}</tr></thead>
+          <tbody>
+            {data.accounts.map((acc: any) => [
+              <tr key={`h${acc.account}`}><td colSpan={3 + data.buckets.length}><b><code className="k">{acc.account}</code> {acc.name}</b></td></tr>,
+              ...data.parties.filter((p: any) => p.account === acc.account).map((p: any) => line(p, `${acc.account}${p.contactId}`, <><td className="small" style={td}>{p.code ?? '—'}</td><td className="small">{p.name}</td></>)),
+              line(acc, `t${acc.account}`, <td colSpan={2}>Total compte {acc.account}</td>, subtotal),
+            ])}
+            {!data.parties.length && <tr><td colSpan={3 + data.buckets.length} className="muted" style={{ textAlign: 'center', padding: 24 }}>Aucun solde {kind === 'customer' ? 'client' : 'fournisseur'} à cette date.</td></tr>}
+          </tbody>
+          {data.parties.length > 0 && <tfoot>
+            {line(data.totals, 'tot', <td colSpan={2}><b>Totaux</b></td>, { fontWeight: 700 })}
+            <tr><td colSpan={3}><b>% période</b></td>{data.buckets.map((b: any) => <td key={b.key} className="n" style={td}>{data.totals.shares[b.key] ? `${data.totals.shares[b.key].toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %` : ''}</td>)}</tr>
+          </tfoot>}
+        </table></div>
+      </div>}
     </Report>
   );
 }
