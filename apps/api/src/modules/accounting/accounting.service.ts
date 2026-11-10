@@ -122,7 +122,7 @@ export class AccountingService {
   }
 
   /** Contre-passe une écriture validée à sa propre date (refusé si cette date est dans une période clôturée). */
-  private async reverseAtOwnDate(trx: TenantTrx, t: TenantInfo, e: { id: string; journal_code: string; number: string | null; date: string }, reason: string) {
+  async reverseAtOwnDate(trx: TenantTrx, t: TenantInfo, e: { id: string; journal_code: string; number: string | null; date: string }, reason: string) {
     const c = await trx.selectFrom('company').select('accounting_locked_until').where('id', '=', t.companyId).executeTakeFirstOrThrow();
     if (c.accounting_locked_until && e.date <= c.accounting_locked_until) {
       throw conflict(`L'écriture ${e.number} est datée du ${e.date}, dans la période clôturée jusqu'au ${c.accounting_locked_until} : l'opération ne peut plus être remise en brouillon.`, 'period_locked');
@@ -183,6 +183,7 @@ export class AccountingService {
     if (m.category === 'customer_payment' || m.category === 'customer_refund') { counterpart = ACCOUNTS.customer; contactId = m.contact_id; }
     else if (m.category === 'supplier_payment') { counterpart = ACCOUNTS.supplier; contactId = m.contact_id; }
     else if (m.category === 'cash_difference') counterpart = m.direction === 'in' ? ACCOUNTS.otherIncome : ACCOUNTS.otherCharges;
+    else if (m.counterpart_code) counterpart = m.counterpart_code;
     else counterpart = MOVEMENT_COUNTERPART[m.category] ?? (m.direction === 'in' ? ACCOUNTS.otherIncome : ACCOUNTS.otherCharges);
     const amount = Number(m.amount);
     const treasury = { account: m.ledger_code, label: m.label, ...(m.direction === 'in' ? { debit: amount } : { credit: amount }) };

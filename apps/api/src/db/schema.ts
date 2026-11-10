@@ -150,16 +150,25 @@ export interface TreasuryAccountTable {
   company_id: string; site_id: Generated<string>; id: Generated<string>; kind: TreasuryKind; name: string; bank_name: string | null; account_number: string | null; ledger_code: string;
   opening_balance: NumDefault; opening_date: ColumnType<string, string | undefined, string>; archived_at: TsNullable; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
-export type MovementSource = 'sales_payment' | 'purchase_payment' | 'sales_refund' | 'payroll' | 'expense' | 'income' | 'transfer' | 'cash_count' | 'stock_purchase' | 'reversal';
+export type MovementSource = 'sales_payment' | 'purchase_payment' | 'sales_refund' | 'payroll' | 'expense' | 'income' | 'transfer' | 'cash_count' | 'stock_purchase' | 'formation' | 'reversal';
 export interface TreasuryMovementTable {
   company_id: string; id: Generated<string>; account_id: string; date: DateCol; direction: 'in' | 'out'; amount: Num; category: string; label: string;
   contact_id: string | null; source_type: MovementSource; source_id: string | null; transfer_id: string | null; reversal_of: string | null; reversed_by: string | null;
-  reference: string | null; created_by: string | null; created_at: Generated<Date>;
+  reference: string | null; counterpart_code: Generated<string | null>; created_by: string | null; created_at: Generated<Date>;
+}
+
+export interface CompanyFormationTable {
+  company_id: string; legal_form: string; formation_date: DateCol; capital: Num; nature: Generated<any>; cash_paid: NumDefault; deposit: Generated<'bank' | 'notary'>;
+  bank_account_id: string | null; updated_by: string | null; updated_at: Generated<Date>;
+}
+export interface CompanyFormationStepTable {
+  company_id: string; id: Generated<string>; step: string; date: DateCol; amount: NumDefault; data: Generated<any>; entry_ids: Generated<string[]>; movement_ids: Generated<string[]>;
+  created_by: string | null; created_at: Generated<Date>; cancelled_by: string | null; cancelled_at: TsNullable;
 }
 
 export interface LedgerAccountTable { company_id: string; code: string; name: string; is_system: Generated<boolean>; archived_at: TsNullable; created_at: Generated<Date>; }
 export interface JournalTable { company_id: string; code: string; name: string; }
-export type EntrySource = 'manual' | 'sales_document' | 'purchase_document' | 'treasury_movement' | 'treasury_opening' | 'stock_opening' | 'stock_variation' | 'payroll_run' | 'year_closing' | 'reversal';
+export type EntrySource = 'manual' | 'sales_document' | 'purchase_document' | 'treasury_movement' | 'treasury_opening' | 'stock_opening' | 'stock_variation' | 'payroll_run' | 'year_closing' | 'formation' | 'reversal';
 export interface JournalEntryTable {
   company_id: string; site_id: string | null; id: Generated<string>; journal_code: string; number: string | null; date: string; label: string; reference: string | null;
   status: Generated<'draft' | 'posted'>; source_type: EntrySource; source_id: string | null; reversal_of: string | null; reversed_by: string | null;
@@ -267,7 +276,7 @@ export interface DB {
   subscription_event: SubscriptionEventTable; platform_invoice: PlatformInvoiceTable; platform_payment: PlatformPaymentTable;
   payment_webhook_event: PaymentWebhookEventTable; notification: NotificationTable; support_access_grant: SupportAccessGrantTable;
   audit_log: AuditLogTable; numbering_sequence: NumberingSequenceTable; outbox_event: OutboxEventTable; contact: ContactTable;
-  pos_register: PosRegisterTable; pos_session: PosSessionTable;
+  pos_register: PosRegisterTable; pos_session: PosSessionTable; company_formation: CompanyFormationTable; company_formation_step: CompanyFormationStepTable;
   product: ProductTable; sales_document: SalesDocumentTable; sales_document_line: SalesDocumentLineTable; sales_payment: SalesPaymentTable; sales_reminder: SalesReminderTable;
   purchase_document: PurchaseDocumentTable; purchase_document_line: PurchaseDocumentLineTable; purchase_payment: PurchasePaymentTable;
   treasury_account: TreasuryAccountTable; treasury_movement: TreasuryMovementTable;

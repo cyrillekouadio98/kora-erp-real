@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { z } from 'zod';
@@ -11,6 +11,7 @@ import { isoDate } from '../sales/sales.controller';
 import { AccountingService } from './accounting.service';
 import { BalancesService } from './balances.service';
 import { FinancialService } from './financial.service';
+import { FormationService, LEGAL_FORMS, STEPS } from './formation.service';
 
 // Numéros sur 6 chiffres ; un numéro plus court est complété par des zéros (411 → 411000).
 const accountCode = z.string().trim().regex(/^[1-9][0-9]{1,5}$/, { message: 'Numéro de compte invalide : 6 chiffres au plus' }).transform((c) => c.padEnd(6, '0'));
@@ -33,7 +34,38 @@ const Period = z.object({ from: isoDate.optional(), to: isoDate.optional() });
 @ApiTags('Comptabilité')
 @Controller('company/accounting')
 export class AccountingController {
-  constructor(private readonly accounting: AccountingService, private readonly financial: FinancialService, private readonly balances: BalancesService) {}
+  constructor(private readonly accounting: AccountingService, private readonly financial: FinancialService, private readonly balances: BalancesService, private readonly formation: FormationService) {}
+
+  /** Fiche de constitution de la société et aperçu des écritures de chaque étape. */
+  @Permission('accounting.read') @AllowWhenReadOnly()
+  @Get('formation')
+  getFormation(@Tenant() t: TenantInfo) { return this.formation.get(t); }
+
+  @Permission('accounting.create')
+  @Put('formation')
+  saveFormation(@Tenant() t: TenantInfo, @Body() body: unknown) {
+    const amount = z.coerce.number().min(0).max(1e13);
+    return this.formation.save(t, parse(z.object({
+      legalForm: z.enum(LEGAL_FORMS), date: isoDate, capital: z.coerce.number().positive({ message: 'Indiquez le capital' }).max(1e13),
+      nature: z.array(z.object({ account: accountCode, label: z.string().trim().max(200).default(''), amount: amount.positive({ message: 'Montant de l’apport en nature' }) }).strict()).max(50).default([]),
+      cashPaid: amount.default(0), deposit: z.enum(['bank', 'notary']).default('bank'), bankAccountId: z.string().uuid().nullable().optional(),
+    }).strict(), body));
+  }
+
+  /** Passe une étape : ses écritures d'OD sont validées, ses versements et frais passent en trésorerie (journal TR). */
+  @Permission('accounting.validate') @HttpCode(200)
+  @Post('formation/steps/:key')
+  passFormationStep(@Tenant() t: TenantInfo, @Param('key') key: string, @Body() body: unknown) {
+    const step = parse(z.enum(STEPS), key);
+    return this.formation.pass(t, step, parse(z.object({
+      date: isoDate, amount: z.coerce.number().positive().max(1e13).optional(), accountId: z.string().uuid().nullable().optional(),
+      fees: z.array(z.object({ account: accountCode, label: z.string().trim().min(2, { message: 'Libellé du frais' }).max(200), amount: z.coerce.number().min(0).max(1e13) }).strict()).max(30).optional(),
+    }).strict(), body ?? {}));
+  }
+
+  @Permission('accounting.reverse') @HttpCode(200)
+  @Post('formation/steps/:id/cancel')
+  cancelFormationStep(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.formation.cancel(t, id); }
 
   /** Bilan à une date (présentation simplifiée du système normal SYSCOHADA). */
   @Permission('accounting.read') @AllowWhenReadOnly()

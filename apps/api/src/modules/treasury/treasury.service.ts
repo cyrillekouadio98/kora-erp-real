@@ -19,6 +19,8 @@ const KIND_FOR_METHOD: Record<PaymentMethod, TreasuryKind> = { cash: 'cash', mob
 export interface MovementInput {
   accountId: string; date: string; direction: 'in' | 'out'; amount: number; category: string; label: string;
   contactId?: string | null; sourceType: MovementSource; sourceId?: string | null; transferId?: string | null; reversalOf?: string | null; reference?: string | null;
+  /** Contrepartie comptable imposée (constitution) au lieu de celle de la catégorie. */
+  counterpart?: string | null;
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -86,7 +88,7 @@ export class TreasuryService {
     const row = await trx.insertInto('treasury_movement').values({
       company_id: t.companyId, account_id: a.id, date: m.date, direction: m.direction, amount: m.amount, category: m.category, label: m.label,
       contact_id: m.contactId ?? null, source_type: m.sourceType, source_id: m.sourceId ?? null, transfer_id: m.transferId ?? null,
-      reversal_of: m.reversalOf ?? null, reversed_by: null, reference: m.reference ?? null, created_by: t.ctx.userId,
+      reversal_of: m.reversalOf ?? null, reversed_by: null, reference: m.reference ?? null, counterpart_code: m.counterpart ?? null, created_by: t.ctx.userId,
     }).returning(['id']).executeTakeFirstOrThrow();
     await this.accounting.postMovement(trx, t, row.id);
     return row;
@@ -316,7 +318,7 @@ export class TreasuryService {
     for (const leg of legs) {
       const r = await this.record(trx, t, {
         accountId: leg.account_id, date: today(), direction: leg.direction === 'in' ? 'out' : 'in', amount: Number(leg.amount), category: leg.category,
-        label: `Contre-passation : ${leg.label} — ${reason}`, contactId: leg.contact_id, sourceType: 'reversal', reversalOf: leg.id, reference: leg.reference,
+        label: `Contre-passation : ${leg.label} — ${reason}`, contactId: leg.contact_id, sourceType: 'reversal', reversalOf: leg.id, reference: leg.reference, counterpart: leg.counterpart_code,
       });
       await trx.updateTable('treasury_movement').set({ reversed_by: r.id }).where('id', '=', leg.id).execute();
     }

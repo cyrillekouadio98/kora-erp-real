@@ -102,7 +102,7 @@ export const EXPENSE_CATEGORIES: Record<string, string> = {
 export const INCOME_CATEGORIES: Record<string, string> = { capital: 'Apport (capital, exploitant)', loan: 'Emprunt reçu', other_income: 'Autre recette' };
 export const MOVEMENT_CATEGORIES: Record<string, string> = {
   ...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES, customer_payment: 'Encaissement client', supplier_payment: 'Règlement fournisseur', customer_refund: 'Remboursement client', goods_purchase: 'Achat comptant de marchandises',
-  transfer: 'Virement interne', cash_difference: 'Écart de caisse', net_salary: 'Salaire net',
+  transfer: 'Virement interne', cash_difference: 'Écart de caisse', formation_fees: 'Frais de constitution', net_salary: 'Salaire net',
 };
 
 export const JOURNALS: Record<string, string> = { VT: 'Ventes', AC: 'Achats', TR: 'Trésorerie', OD: 'Opérations diverses', AN: 'À-nouveaux' };

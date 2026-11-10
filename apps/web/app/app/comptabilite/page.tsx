@@ -5,12 +5,13 @@ import { date, date as fmtDate, JOURNALS, money } from '@/lib/format';
 import { useSession } from '@/components/session';
 import { ImportButton } from '@/components/import';
 import { ENTRIES_IMPORT } from '@/components/import-configs';
+import { Formation } from '@/components/formation';
 import { Alert, Field, Pill, useAction } from '@/components/ui';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const yearStart = () => `${today().slice(0, 4)}-01-01`;
 const TABS = [['entries', 'Écritures'], ['ledger', 'Grand livre'], ['balance', 'Balances'], ['sheet', 'Bilan'], ['sig', 'Soldes de gestion'], ['result', 'Compte de résultat'],
-  ['vat', 'TVA'], ['closing', 'Clôture d\u2019exercice'], ['chart', 'Plan comptable']] as const;
+  ['vat', 'TVA'], ['closing', 'Clôture d\u2019exercice'], ['chart', 'Plan comptable'], ['formation', 'Constitution']] as const;
 type Tab = (typeof TABS)[number][0];
 const num = (n: number) => (n ? money(n) : '');
 const between = (p: { from: string; to: string }) => `du ${date(p.from)} au ${date(p.to)}`;
@@ -97,7 +98,7 @@ export default function AccountingPage() {
 
       <div className="row no-print" role="tablist" style={{ gap: 6 }}>
         {TABS.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={`btn sm${tab === k ? ' primary' : ''}`} onClick={() => setTab(k)}>{l}</button>)}
-        {!['chart', 'vat', 'sheet', 'closing'].includes(tab) && <div className="row" style={{ marginLeft: 'auto', gap: 8 }}>
+        {!['chart', 'vat', 'sheet', 'closing', 'formation'].includes(tab) && <div className="row" style={{ marginLeft: 'auto', gap: 8 }}>
           <Field label="Du" type="date" value={period.from} onChange={(e) => setPeriod({ ...period, from: e.target.value })} />
           <Field label="Au" type="date" value={period.to} onChange={(e) => setPeriod({ ...period, to: e.target.value })} />
         </div>}
@@ -112,6 +113,7 @@ export default function AccountingPage() {
       {tab === 'sig' && <ManagementBalances period={period} version={version} />}
       {tab === 'closing' && <Closing version={version} changed={changed} />}
       {tab === 'chart' && <Chart accounts={accounts} changed={changed} />}
+      {tab === 'formation' && <Formation accounts={accounts} changed={changed} />}
 
       {modal && (
         <div className="modal-back" onClick={() => setModal(null)}>
