@@ -49,9 +49,11 @@ export default function TreasuryView({ kind }: { kind?: TreasuryKind }) {
     const m = modal;
     if (m.type === 'expense' || m.type === 'income') {
       const body = { accountId: m.accountId, amount: Number(m.amount), category: m.category, label: m.label, date: m.date, reference: m.reference || null, ...(m.contactId ? { contactId: m.contactId } : {}) };
-      // Modification : l'API contre-passe l'ancien mouvement et enregistre le nouveau.
-      if (m.editId) await api(`/company/treasury/movements/${m.editId}/correct`, { body });
+      // Modification sur place : un mouvement validé est revalidé avec ses nouvelles données.
+      if (m.editId) await api(`/company/treasury/movements/${m.editId}`, { method: 'PATCH', body });
       else await api('/company/treasury/movements', { body: { ...body, kind: m.type } });
+    } else if (m.type === 'transfer' && m.editId) {
+      await api(`/company/treasury/movements/${m.editId}`, { method: 'PATCH', body: { fromAccountId: m.fromAccountId, toAccountId: m.toAccountId, amount: Number(m.amount), date: m.date, label: m.label || null, reference: m.reference || null } });
     } else if (m.type === 'transfer') {
       await api('/company/treasury/transfers', { body: { fromAccountId: m.fromAccountId, toAccountId: m.toAccountId, amount: Number(m.amount), date: m.date, label: m.label || null, reference: m.reference || null } });
     } else if (m.type === 'count') {
@@ -65,6 +67,30 @@ export default function TreasuryView({ kind }: { kind?: TreasuryKind }) {
     }
     setModal(null); await refresh();
   });
+
+  /** Ouvre la saisie pré-remplie : dépense, recette, ou virement (ses deux comptes). */
+  const edit = (m: any) => {
+    if (m.sourceType === 'transfer') {
+      const legs = journal.movements.filter((x: any) => x.transferId === m.transferId);
+      const out = legs.find((x: any) => x.direction === 'out'), into = legs.find((x: any) => x.direction === 'in');
+      open({ type: 'transfer', editId: m.id, fromAccountId: out?.accountId ?? (m.direction === 'out' ? m.accountId : ''), toAccountId: into?.accountId ?? (m.direction === 'in' ? m.accountId : ''),
+        amount: String(m.amount), label: m.label, date: m.date, reference: m.reference ?? '', status: m.status });
+    } else open({ type: m.sourceType, editId: m.id, accountId: m.accountId, amount: String(m.amount), category: m.category, label: m.label, date: m.date, reference: m.reference ?? '', contactId: m.contactId ?? null, status: m.status });
+  };
+  /** Brouillon, validation, suppression : actions immédiates sur une ligne du journal. */
+  const act = (m: any, action: 'draft' | 'post' | 'delete') => {
+    const msg = action === 'delete'
+      ? (m.reversedBy || m.sourceType === 'reversal' ? 'Supprimer ce mouvement et sa contre-passation du journal ?' : `Supprimer « ${m.label} » (${money(m.amount)}) ?${m.transferId ? ' Les deux côtés du virement seront supprimés.' : ''}`)
+        + '\n\nLa suppression est définitive. La comptabilité garde la trace (écriture et contre-passation).'
+      : null;
+    if (msg && !confirm(msg)) return;
+    setResult('');
+    run(async () => {
+      if (action === 'delete') await api(`/company/treasury/movements/${m.id}`, { method: 'DELETE' });
+      else await api(`/company/treasury/movements/${m.id}/${action}`, { body: {} });
+      await refresh();
+    });
+  };
 
   const first = (k: string) => shown.find((a) => a.kind === k)?.id ?? shown[0]?.id ?? accounts[0]?.id ?? '';
   const total = shown.reduce((s, a) => s + a.balance, 0);
@@ -140,19 +166,17 @@ export default function TreasuryView({ kind }: { kind?: TreasuryKind }) {
           <thead><tr><th>Date</th><th>Libellé</th>{!filters.accountId && <th>Compte</th>}<th>Catégorie</th><th className="n">Entrée</th><th className="n">Sortie</th>{journal?.opening !== null && <th className="n">Solde</th>}<th></th></tr></thead>
           <tbody>
             {journal?.movements.map((m: any) => (
-              <tr key={m.id} style={m.reversedBy ? { opacity: .55 } : undefined}>
+              <tr key={m.id} style={m.reversedBy || m.status === 'draft' ? { opacity: .6 } : undefined}>
                 <td style={{ whiteSpace: 'nowrap' }}>{date(m.date)}</td>
-                <td>{m.label}{m.reversedBy && <> <Pill>Contre-passé</Pill></>}<div className="small muted">{[m.contactName, m.reference, m.by].filter(Boolean).join(' · ')}</div></td>
+                <td>{m.label}{m.status === 'draft' && <> <Pill tone="warn">Brouillon</Pill></>}{m.reversedBy && <> <Pill>Contre-passé</Pill></>}<div className="small muted">{[m.contactName, m.reference, m.by].filter(Boolean).join(' · ')}</div></td>
                 {!filters.accountId && <td className="small">{m.accountName}{!kind && m.accountName !== ACCOUNT_KINDS[m.accountKind] && <div className="muted">{ACCOUNT_KINDS[m.accountKind]}</div>}</td>}
                 <td className="small">{MOVEMENT_CATEGORIES[m.category] ?? m.category}</td>
                 <td className="n" style={{ whiteSpace: 'nowrap', color: 'var(--ok)' }}>{m.direction === 'in' ? money(m.amount) : ''}</td>
                 <td className="n" style={{ whiteSpace: 'nowrap' }}>{m.direction === 'out' ? money(m.amount) : ''}</td>
-                {journal.opening !== null && <td className="n" style={{ whiteSpace: 'nowrap' }}>{money(m.balanceAfter)}</td>}
+                {journal.opening !== null && <td className="n" style={{ whiteSpace: 'nowrap' }}>{m.status === 'draft' ? <span className="small muted">hors solde</span> : money(m.balanceAfter)}</td>}
                 <td className="n"><div className="row" style={{ gap: 6, flexWrap: 'nowrap', justifyContent: 'flex-end' }}>
-                  {['expense', 'income'].includes(m.sourceType) && !m.reversedBy && can('cash.cancel') && can('cash.create') && writable &&
-                    <button className="btn sm" onClick={() => open({ type: m.sourceType, editId: m.id, accountId: m.accountId, amount: String(m.amount), category: m.category, label: m.label, date: m.date, reference: m.reference ?? '', contactId: m.contactId ?? null })}>Modifier</button>}
-                  {['expense', 'income', 'transfer'].includes(m.sourceType) && !m.reversedBy && can('cash.cancel') && writable &&
-                    <button className="btn sm" onClick={() => open({ type: 'reverse', movement: m, reason: '' })}>Contre-passer</button>}</div></td>
+                  <MovementActions m={m} writable={writable} busy={busy} onEdit={() => edit(m)} onReverse={() => open({ type: 'reverse', movement: m, reason: '' })} act={act} />
+                </div></td>
               </tr>
             ))}
             {journal && !journal.movements.length && <tr><td colSpan={8} className="muted" style={{ textAlign: 'center', padding: 24 }}>Aucun mouvement sur cette période.</td></tr>}
@@ -165,7 +189,7 @@ export default function TreasuryView({ kind }: { kind?: TreasuryKind }) {
           <form className="modal" style={{ width: 'min(520px, 100%)' }} onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); submit(); }}>
             {(modal.type === 'expense' || modal.type === 'income') && <>
               <h2>{modal.editId ? (modal.type === 'expense' ? 'Modifier la dépense' : 'Modifier la recette') : modal.type === 'expense' ? 'Nouvelle dépense' : 'Nouvelle recette'}</h2>
-              {modal.editId && <p className="small muted" style={{ margin: 0 }}>Un mouvement enregistré ne s'efface pas : l'ancien sera contre-passé à la date du jour et le mouvement corrigé enregistré. Les deux restent visibles dans le journal.</p>}
+              {modal.editId && <EditNote draft={modal.status === 'draft'} />}
               <Alert>{error}</Alert>
               <label className="field">Catégorie
                 <select className="input" value={modal.category} onChange={set('category')}>{Object.entries(modal.type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
@@ -179,8 +203,8 @@ export default function TreasuryView({ kind }: { kind?: TreasuryKind }) {
               </div>
             </>}
             {modal.type === 'transfer' && <>
-              <h2>Virement interne</h2>
-              <p className="small muted" style={{ margin: 0 }}>Ex. dépôt des espèces de la caisse à la banque, ou retrait.</p>
+              <h2>{modal.editId ? 'Modifier le virement' : 'Virement interne'}</h2>
+              {modal.editId ? <EditNote draft={modal.status === 'draft'} /> : <p className="small muted" style={{ margin: 0 }}>Ex. dépôt des espèces de la caisse à la banque, ou retrait.</p>}
               <Alert>{error}</Alert>
               <div className="grid2">
                 <label className="field">De<select className="input" value={modal.fromAccountId} onChange={set('fromAccountId')}>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({money(a.balance)})</option>)}</select></label>
@@ -227,4 +251,29 @@ export default function TreasuryView({ kind }: { kind?: TreasuryKind }) {
       )}
     </>
   );
+}
+
+const MANUAL = ['expense', 'income', 'transfer'];
+
+function EditNote({ draft }: { draft: boolean }) {
+  return <p className="small muted" style={{ margin: 0 }}>{draft
+    ? 'Le mouvement reste en brouillon (hors solde) jusqu’à sa validation.'
+    : 'La ligne est modifiée dans le journal et le solde recalculé ; en comptabilité, l’ancienne écriture est contre-passée et la nouvelle passée.'}</p>;
+}
+
+/** Actions d'une ligne : modifier, mettre en brouillon ou valider (droit « modifier »), contre-passer, supprimer (administrateur). */
+function MovementActions({ m, writable, busy, onEdit, onReverse, act }: { m: any; writable: boolean; busy: boolean; onEdit: () => void; onReverse: () => void; act: (m: any, a: 'draft' | 'post' | 'delete') => void }) {
+  const { can } = useSession();
+  if (!writable) return null;
+  const manual = MANUAL.includes(m.sourceType);
+  const live = manual && !m.reversedBy;
+  const deletable = can('cash.admin') && (manual || (m.sourceType === 'reversal' && MANUAL.includes(m.originType)));
+  return <>
+    {live && can('cash.update') && <button className="btn sm" disabled={busy} onClick={onEdit}>Modifier</button>}
+    {live && can('cash.update') && (m.status === 'draft'
+      ? <button className="btn sm primary" disabled={busy} onClick={() => act(m, 'post')}>Valider</button>
+      : <button className="btn sm" disabled={busy} title="Le mouvement sort du solde jusqu’à sa validation" onClick={() => act(m, 'draft')}>Brouillon</button>)}
+    {live && m.status !== 'draft' && can('cash.cancel') && <button className="btn sm" disabled={busy} onClick={onReverse}>Contre-passer</button>}
+    {deletable && <button className="btn sm danger" disabled={busy} onClick={() => act(m, 'delete')}>Supprimer</button>}
+  </>;
 }

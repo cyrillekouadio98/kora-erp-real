@@ -154,7 +154,7 @@ export type MovementSource = 'sales_payment' | 'purchase_payment' | 'sales_refun
 export interface TreasuryMovementTable {
   company_id: string; id: Generated<string>; account_id: string; date: DateCol; direction: 'in' | 'out'; amount: Num; category: string; label: string;
   contact_id: string | null; source_type: MovementSource; source_id: string | null; transfer_id: string | null; reversal_of: string | null; reversed_by: string | null;
-  reference: string | null; counterpart_code: Generated<string | null>; created_by: string | null; created_at: Generated<Date>;
+  reference: string | null; counterpart_code: Generated<string | null>; status: Generated<'posted' | 'draft'>; created_by: string | null; created_at: Generated<Date>;
 }
 
 export interface CompanyFormationTable {

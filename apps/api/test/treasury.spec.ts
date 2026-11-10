@@ -84,7 +84,7 @@ describe('Trésorerie : caisse, banque, mobile money', () => {
     expect((await owner.agent.post(`/company/treasury/movements/${payment.id}/reverse`).send({ reason: 'test' })).body.error.code).toBe('not_reversible');
 
     const c = await ownerClient();
-    await expect(c.query('DELETE FROM treasury_movement WHERE id = $1', [rent.id])).rejects.toThrow(/suppression interdite/);
+    await expect(c.query('DELETE FROM treasury_movement WHERE id = $1', [payment.id])).rejects.toThrow(/remettez-le en brouillon avant de le supprimer/);
     await expect(c.query('UPDATE treasury_movement SET amount = 1 WHERE id = $1', [payment.id])).rejects.toThrow(/modification interdite/);
     await c.end();
   });

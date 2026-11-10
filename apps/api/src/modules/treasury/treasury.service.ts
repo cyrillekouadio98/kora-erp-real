@@ -25,6 +25,11 @@ export interface MovementInput {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+const MANUAL_SOURCES: string[] = ['expense', 'income', 'transfer'];
+export type EditInput =
+  | { accountId: string; date?: string; amount: number; category: string; label: string; contactId?: string | null; reference?: string | null }
+  | { fromAccountId: string; toAccountId: string; amount: number; date?: string; label?: string | null; reference?: string | null };
+
 type ManualInput = { kind: 'expense' | 'income'; accountId: string; date?: string; amount: number; category: string; label: string; contactId?: string | null; reference?: string | null };
 
 @Injectable()
@@ -48,7 +53,7 @@ export class TreasuryService {
   /** Solde courant (solde d'ouverture + entrées − sorties), éventuellement arrêté à une date. */
   async balance(trx: TenantTrx, accountId: string, until?: string) {
     const a = await this.account(trx, accountId);
-    const rows = await trx.selectFrom('treasury_movement').select(['direction', 'amount']).where('account_id', '=', accountId)
+    const rows = await trx.selectFrom('treasury_movement').select(['direction', 'amount']).where('account_id', '=', accountId).where('status', '=', 'posted')
       .$if(!!until, (q) => q.where('date', '<=', until!)).execute();
     return Number(a.opening_balance) + rows.reduce((s, m) => s + (m.direction === 'in' ? 1 : -1) * Number(m.amount), 0);
   }
@@ -73,6 +78,18 @@ export class TreasuryService {
    * La caisse ne peut jamais devenir négative : on ne sort pas d'espèces qu'on n'a pas.
    */
   async record(trx: TenantTrx, t: TenantInfo, m: MovementInput) {
+    const a = await this.assertBookable(trx, t, m);
+    const row = await trx.insertInto('treasury_movement').values({
+      company_id: t.companyId, account_id: a.id, date: m.date, direction: m.direction, amount: m.amount, category: m.category, label: m.label,
+      contact_id: m.contactId ?? null, source_type: m.sourceType, source_id: m.sourceId ?? null, transfer_id: m.transferId ?? null,
+      reversal_of: m.reversalOf ?? null, reversed_by: null, reference: m.reference ?? null, counterpart_code: m.counterpart ?? null, created_by: t.ctx.userId,
+    }).returning(['id']).executeTakeFirstOrThrow();
+    await this.accounting.postMovement(trx, t, row.id);
+    return row;
+  }
+
+  /** Contrôles communs à l'inscription et à la revalidation d'un mouvement : compte actif, dates, espèces disponibles. */
+  private async assertBookable(trx: TenantTrx, t: TenantInfo, m: { accountId: string; date: string; direction: 'in' | 'out'; amount: number; reversalOf?: string | null }) {
     const a = await this.account(trx, m.accountId, true);
     if (a.archived_at) throw conflict(`Le compte « ${a.name} » est archivé.`, 'account_archived');
     // Après un passage à une formule sans banque, l'historique reste consultable et se corrige (contre-passation).
@@ -85,20 +102,14 @@ export class TreasuryService {
         throw conflict(`Solde insuffisant dans « ${a.name} » : ${available.toLocaleString('fr-FR')} FCFA disponibles pour une sortie de ${m.amount.toLocaleString('fr-FR')} FCFA.`, 'insufficient_cash');
       }
     }
-    const row = await trx.insertInto('treasury_movement').values({
-      company_id: t.companyId, account_id: a.id, date: m.date, direction: m.direction, amount: m.amount, category: m.category, label: m.label,
-      contact_id: m.contactId ?? null, source_type: m.sourceType, source_id: m.sourceId ?? null, transfer_id: m.transferId ?? null,
-      reversal_of: m.reversalOf ?? null, reversed_by: null, reference: m.reference ?? null, counterpart_code: m.counterpart ?? null, created_by: t.ctx.userId,
-    }).returning(['id']).executeTakeFirstOrThrow();
-    await this.accounting.postMovement(trx, t, row.id);
-    return row;
+    return a;
   }
 
   // ------------------------------------------------------------------ comptes
   async accounts(t: TenantInfo, includeArchived = false) {
     return this.db.tenant(t.ctx, async (trx) => {
       const accounts = await inScope(trx.selectFrom('treasury_account').selectAll().$if(!includeArchived, (q) => q.where('archived_at', 'is', null)), t, 'site_id').orderBy('created_at').execute();
-      const sums = await trx.selectFrom('treasury_movement').select(['account_id', 'direction', 'amount', 'date']).execute();
+      const sums = await trx.selectFrom('treasury_movement').select(['account_id', 'direction', 'amount', 'date']).where('status', '=', 'posted').execute();
       const now = today();
       const monthStart = `${now.slice(0, 7)}-01`;
       return accounts.map((a) => {
@@ -192,8 +203,9 @@ export class TreasuryService {
         .innerJoin('treasury_account as a', (j) => j.onRef('a.id', '=', 'm.account_id').onRef('a.company_id', '=', 'm.company_id'))
         .leftJoin('contact as c', (j) => j.onRef('c.id', '=', 'm.contact_id').onRef('c.company_id', '=', 'm.company_id'))
         .leftJoin('user_account as u', 'u.id', 'm.created_by')
-        .select(['m.id', 'm.date', 'm.direction', 'm.amount', 'm.category', 'm.label', 'm.reference', 'm.source_type as sourceType', 'm.source_id as sourceId',
-          'm.transfer_id as transferId', 'm.reversal_of as reversalOf', 'm.reversed_by as reversedBy', 'm.created_at as createdAt',
+        .leftJoin('treasury_movement as o', (j) => j.onRef('o.id', '=', 'm.reversal_of').onRef('o.company_id', '=', 'm.company_id'))
+        .select(['m.id', 'm.date', 'o.source_type as originType', 'm.direction', 'm.amount', 'm.category', 'm.label', 'm.reference', 'm.source_type as sourceType', 'm.source_id as sourceId',
+          'm.transfer_id as transferId', 'm.reversal_of as reversalOf', 'm.reversed_by as reversedBy', 'm.status', 'm.created_at as createdAt',
           'a.id as accountId', 'a.name as accountName', 'a.kind as accountKind', 'c.id as contactId', 'c.name as contactName', 'u.full_name as by'])
         .$call((qb) => inScope(qb, t, 'a.site_id'))
         .orderBy('m.date').orderBy('m.created_at').limit(5000);
@@ -211,7 +223,7 @@ export class TreasuryService {
       if (f.accountId && !f.category && !f.q) {
         let running = f.from ? await this.balance(trx, f.accountId, addDaysIso(f.from, -1)) : Number((await this.account(trx, f.accountId)).opening_balance);
         const opening = running;
-        const withBalance = rows.map((r) => ({ ...r, balanceAfter: (running += (r.direction === 'in' ? 1 : -1) * r.amount) }));
+        const withBalance = rows.map((r) => ({ ...r, balanceAfter: (running += r.status === 'draft' ? 0 : (r.direction === 'in' ? 1 : -1) * r.amount) }));
         return { opening, movements: withBalance.reverse(), closing: running };
       }
       return { opening: null, movements: rows.reverse(), closing: null };
@@ -246,11 +258,126 @@ export class TreasuryService {
       const m = await trx.selectFrom('treasury_movement').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
       if (!m) throw notFound('Mouvement');
       if (m.reversed_by) throw conflict('Ce mouvement est déjà contre-passé : il ne se modifie plus.', 'already_reversed');
+      if (m.status === 'draft') throw conflict('Ce mouvement est en brouillon : modifiez-le directement.', 'is_draft');
       if (!['expense', 'income'].includes(m.source_type)) throw conflict("Seules les dépenses et les recettes se modifient ici ; un virement se contre-passe, un règlement se corrige depuis sa facture.", 'not_editable');
       await this.reverseIn(trx, t, m, 'modification');
       const fresh = await this.addManualIn(trx, t, { ...input, kind: m.source_type as 'expense' | 'income' });
       await this.audit.tenant(trx, t.ctx, { action: 'treasury.movement_corrected', entityType: 'treasury_movement', entityId: id, data: { replacement: fresh.id, amount: input.amount, label: input.label } });
       return fresh;
+    });
+  }
+
+  // ------------------------------------------------------------------ brouillon, modification, suppression
+  /** Mouvement saisi à la main (dépense, recette, virement) avec ses jambes non contre-passées, verrouillés. */
+  private async manualLegs(trx: TenantTrx, id: string) {
+    if (!isUuid(id)) throw notFound('Mouvement');
+    const m = await trx.selectFrom('treasury_movement').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
+    if (!m) throw notFound('Mouvement');
+    if (!MANUAL_SOURCES.includes(m.source_type)) {
+      throw conflict('Ce mouvement provient d’une facture, de la paie, du point de vente ou d’un arrêté de caisse : il se corrige depuis son document.', 'not_editable');
+    }
+    if (m.reversed_by) throw conflict('Ce mouvement est contre-passé : il ne se modifie plus (un administrateur peut supprimer la paire).', 'already_reversed');
+    const legs = m.transfer_id
+      ? await trx.selectFrom('treasury_movement').selectAll().where('transfer_id', '=', m.transfer_id).where('reversed_by', 'is', null).orderBy('direction', 'desc').forUpdate().execute()
+      : [m];
+    return { m, legs };
+  }
+
+  /** Brouillon : le mouvement sort du solde et son écriture comptable est contre-passée à sa propre date. */
+  private async draftIn(trx: TenantTrx, t: TenantInfo, legs: { id: string; status: string }[]) {
+    for (const leg of legs.filter((l) => l.status === 'posted')) {
+      await this.accounting.reverseSource(trx, t, 'treasury_movement', leg.id, 'remise en brouillon du mouvement de trésorerie');
+      await trx.updateTable('treasury_movement').set({ status: 'draft' }).where('id', '=', leg.id).execute();
+    }
+  }
+
+  /** Validation d'un brouillon : mêmes contrôles qu'une saisie, puis nouvelle écriture comptable. */
+  private async postIn(trx: TenantTrx, t: TenantInfo, ids: string[]) {
+    // Les entrées d'abord : un virement de la banque vers la caisse ne bute pas sur le solde de la caisse.
+    const legs = await trx.selectFrom('treasury_movement').selectAll().where('id', 'in', ids).orderBy('direction').execute();
+    for (const leg of legs.filter((l) => l.status === 'draft')) {
+      await this.assertBookable(trx, t, { accountId: leg.account_id, date: leg.date, direction: leg.direction, amount: Number(leg.amount) });
+      await trx.updateTable('treasury_movement').set({ status: 'posted' }).where('id', '=', leg.id).execute();
+      await this.accounting.postMovement(trx, t, leg.id);
+    }
+  }
+
+  async toDraft(t: TenantInfo, id: string) {
+    return this.db.tenant(t.ctx, async (trx) => {
+      const { m, legs } = await this.manualLegs(trx, id);
+      if (m.status === 'draft') throw conflict('Ce mouvement est déjà en brouillon.', 'is_draft');
+      await this.draftIn(trx, t, legs);
+      await this.audit.tenant(trx, t.ctx, { action: 'treasury.movement_drafted', entityType: 'treasury_movement', entityId: id, data: { label: m.label, amount: Number(m.amount) } });
+      return { ok: true };
+    });
+  }
+
+  async validateDraft(t: TenantInfo, id: string) {
+    return this.db.tenant(t.ctx, async (trx) => {
+      const { m, legs } = await this.manualLegs(trx, id);
+      if (m.status !== 'draft') throw conflict('Ce mouvement est déjà validé.', 'already_posted');
+      await this.postIn(trx, t, legs.map((l) => l.id));
+      await this.audit.tenant(trx, t.ctx, { action: 'treasury.movement_posted', entityType: 'treasury_movement', entityId: id, data: { label: m.label, amount: Number(m.amount) } });
+      return { ok: true };
+    });
+  }
+
+  /**
+   * Modification sur place. Un mouvement validé passe par le brouillon (contre-passation de son écriture)
+   * et est revalidé avec ses nouvelles données ; un brouillon reste en brouillon.
+   */
+  async update(t: TenantInfo, id: string, input: EditInput) {
+    return this.db.tenant(t.ctx, async (trx) => {
+      const { m, legs } = await this.manualLegs(trx, id);
+      const wasPosted = m.status === 'posted';
+      await this.draftIn(trx, t, legs);
+      if (m.transfer_id) {
+        if (!('fromAccountId' in input)) throw badRequest('Un virement se modifie avec ses comptes de départ et d’arrivée.', undefined, 'transfer_fields');
+        if (input.fromAccountId === input.toAccountId) throw badRequest('Choisissez deux comptes différents.', undefined, 'same_account');
+        const from = await this.account(trx, input.fromAccountId), to = await this.account(trx, input.toAccountId);
+        const common = { amount: input.amount, date: input.date ?? m.date, label: input.label || `Virement de ${from.name} vers ${to.name}`, reference: input.reference ?? null };
+        for (const leg of legs) {
+          await trx.updateTable('treasury_movement').set({ ...common, account_id: leg.direction === 'out' ? from.id : to.id }).where('id', '=', leg.id).execute();
+        }
+      } else {
+        if ('fromAccountId' in input) throw badRequest('Seul un virement a des comptes de départ et d’arrivée.', undefined, 'not_transfer');
+        const allowed = m.source_type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
+        if (!allowed.includes(input.category)) throw badRequest('Catégorie inconnue.', undefined, 'unknown_category');
+        if (input.contactId && (!isUuid(input.contactId) || !(await trx.selectFrom('contact').select('id').where('id', '=', input.contactId).executeTakeFirst()))) {
+          throw badRequest('Contact introuvable.', undefined, 'unknown_contact');
+        }
+        await this.account(trx, input.accountId);
+        await trx.updateTable('treasury_movement').set({
+          account_id: input.accountId, amount: input.amount, date: input.date ?? m.date, category: input.category, label: input.label,
+          contact_id: input.contactId ?? null, reference: input.reference ?? null,
+        }).where('id', '=', m.id).execute();
+      }
+      if (wasPosted) await this.postIn(trx, t, legs.map((l) => l.id));
+      await this.audit.tenant(trx, t.ctx, { action: 'treasury.movement_updated', entityType: 'treasury_movement', entityId: id, data: { label: m.label, from: Number(m.amount), to: input.amount } });
+      return { ok: true };
+    });
+  }
+
+  /**
+   * Suppression (administrateur) : un mouvement validé est d'abord remis en brouillon, ce qui contre-passe son écriture
+   * comptable ; une paire déjà contre-passée disparaît du journal de trésorerie, la comptabilité gardant l'écriture et son inverse.
+   */
+  async remove(t: TenantInfo, id: string) {
+    return this.db.tenant(t.ctx, async (trx) => {
+      if (!isUuid(id)) throw notFound('Mouvement');
+      let m = await trx.selectFrom('treasury_movement').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
+      if (!m) throw notFound('Mouvement');
+      if (m.source_type === 'reversal' && m.reversal_of) m = await trx.selectFrom('treasury_movement').selectAll().where('id', '=', m.reversal_of).forUpdate().executeTakeFirstOrThrow();
+      if (!MANUAL_SOURCES.includes(m.source_type)) {
+        throw conflict('Ce mouvement provient d’une facture, de la paie, du point de vente ou d’un arrêté de caisse : il se corrige depuis son document.', 'not_editable');
+      }
+      const originals = m.transfer_id ? await trx.selectFrom('treasury_movement').selectAll().where('transfer_id', '=', m.transfer_id).forUpdate().execute() : [m];
+      await this.draftIn(trx, t, originals.filter((o) => !o.reversed_by));
+      const ids = originals.map((o) => o.id);
+      const reversals = await trx.selectFrom('treasury_movement').select('id').where('reversal_of', 'in', ids).execute();
+      await trx.deleteFrom('treasury_movement').where('id', 'in', [...ids, ...reversals.map((r) => r.id)]).execute();
+      await this.audit.tenant(trx, t.ctx, { action: 'treasury.movement_deleted', entityType: 'treasury_movement', entityId: m.id, data: { label: m.label, amount: Number(m.amount), date: m.date, legs: ids.length, reversals: reversals.length } });
+      return { ok: true };
     });
   }
 
@@ -295,6 +422,7 @@ export class TreasuryService {
       const m = await trx.selectFrom('treasury_movement').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
       if (!m) throw notFound('Mouvement');
       if (m.reversed_by) throw conflict('Ce mouvement est déjà contre-passé.', 'already_reversed');
+      if (m.status === 'draft') throw conflict('Un brouillon ne se contre-passe pas : supprimez-le ou validez-le.', 'is_draft');
       if (m.source_type === 'reversal') throw conflict('Une contre-passation ne se contre-passe pas.', 'invalid_state');
       if (!['expense', 'income', 'transfer'].includes(m.source_type)) throw conflict('Ce mouvement provient d’une facture ou d’un arrêté de caisse : il ne se contre-passe pas ici.', 'not_reversible');
       const legs = m.transfer_id

@@ -250,7 +250,7 @@ export class ReportsService {
         .where('a.opening_date', '<=', to).$if(!!kind, (q) => q.where('a.kind', '=', kind!)), t, 'a.site_id').orderBy('a.kind').orderBy('a.name').execute();
       const ids = accounts.map((a) => a.id);
       const moves = ids.length ? await trx.selectFrom('treasury_movement').select(['account_id', 'date', 'direction', 'amount', 'category', 'source_type', 'transfer_id'])
-        .where('account_id', 'in', ids).where('date', '<=', to).execute() : [];
+        .where('account_id', 'in', ids).where('date', '<=', to).where('status', '=', 'posted').execute() : [];
       // Virement interne au périmètre : ses deux jambes y figurent, il ne compte ni en entrée ni en sortie.
       const legs = new Map<string, number>();
       for (const m of moves) if (m.transfer_id) legs.set(m.transfer_id, (legs.get(m.transfer_id) ?? 0) + 1);
@@ -336,7 +336,7 @@ export class ReportsService {
     // Dépenses et recettes saisies en trésorerie (contre-passations exclues des deux côtés).
     const moves = await inScope(trx.selectFrom('treasury_movement as m')
       .innerJoin('treasury_account as a', (j) => j.onRef('a.id', '=', 'm.account_id').onRef('a.company_id', '=', 'm.company_id'))
-      .where('m.date', '>=', from).where('m.date', '<=', to).where('m.reversed_by', 'is', null).where('m.reversal_of', 'is', null)
+      .where('m.date', '>=', from).where('m.date', '<=', to).where('m.status', '=', 'posted').where('m.reversed_by', 'is', null).where('m.reversal_of', 'is', null)
       .where('m.source_type', 'in', ['expense', 'income', 'cash_count'])
       .select(['m.source_type', 'm.category', sql<string>`sum(case when m.direction = 'out' then m.amount else -m.amount end)`.as('out')])
       .groupBy(['m.source_type', 'm.category']), t, 'a.site_id').execute();

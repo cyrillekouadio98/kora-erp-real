@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { z } from 'zod';
@@ -102,6 +102,30 @@ export class TreasuryController {
   correct(@Tenant() t: TenantInfo, @Param('id') id: string, @Body() body: unknown) {
     return this.treasury.correct(t, id, parse(ManualSchema.strict(), body));
   }
+
+  /** Remise en brouillon d'une dépense, d'une recette ou d'un virement : il sort du solde, son écriture est contre-passée. */
+  @Permission('cash.update') @HttpCode(200)
+  @Post('movements/:id/draft')
+  toDraft(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.treasury.toDraft(t, id); }
+
+  @Permission('cash.update') @HttpCode(200)
+  @Post('movements/:id/post')
+  validateDraft(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.treasury.validateDraft(t, id); }
+
+  /** Modification sur place (un mouvement validé est revalidé avec ses nouvelles données). */
+  @Permission('cash.update')
+  @Patch('movements/:id')
+  update(@Tenant() t: TenantInfo, @Param('id') id: string, @Body() body: unknown) {
+    return this.treasury.update(t, id, parse(z.union([
+      ManualSchema.strict(),
+      z.object({ fromAccountId: z.string().uuid(), toAccountId: z.string().uuid(), amount, date: isoDate.optional(), label: text(200), reference: text(100) }).strict(),
+    ]), body));
+  }
+
+  /** Suppression : réservée aux administrateurs de la trésorerie. */
+  @Permission('cash.admin')
+  @Delete('movements/:id')
+  remove(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.treasury.remove(t, id); }
 
   @Permission('cash.create')
   @Post('transfers')

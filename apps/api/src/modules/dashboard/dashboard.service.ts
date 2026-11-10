@@ -59,7 +59,7 @@ export class DashboardService {
         // Solde de trésorerie en fin de mois : soldes d'ouverture + mouvements jusqu'à cette date.
         const accounts = await inScope(trx.selectFrom('treasury_account').select(['opening_balance', 'opening_date']), t, 'site_id').execute();
         const moves = await inScope(trx.selectFrom('treasury_movement as m').innerJoin('treasury_account as a', (j) => j.onRef('a.id', '=', 'm.account_id').onRef('a.company_id', '=', 'm.company_id'))
-          .select(['m.date', 'm.direction', 'm.amount']), t, 'a.site_id').execute();
+          .select(['m.date', 'm.direction', 'm.amount']).where('m.status', '=', 'posted'), t, 'a.site_id').execute();
         for (const m of monthly) {
           const end = monthEnd(m.month);
           if (end < from) continue;

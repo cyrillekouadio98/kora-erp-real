@@ -223,7 +223,7 @@ export class AccountingService {
     const has = (type: EntrySource) => (eb: any) => eb.not(eb.exists(eb.selectFrom('journal_entry as e').select('e.id').where('e.source_type', '=', type).where('e.reversed_by', 'is', null).whereRef('e.source_id', '=', 'x.id')));
     const sales = await trx.selectFrom('sales_document as x').select(['x.id', 'x.issue_date as date', 'x.created_at']).where('x.type', 'in', ['invoice', 'credit_note']).where('x.status', '!=', 'draft').where(has('sales_document')).execute();
     const purchases = await trx.selectFrom('purchase_document as x').select(['x.id', 'x.issue_date as date', 'x.created_at']).where('x.type', '=', 'invoice').where('x.status', '!=', 'draft').where(has('purchase_document')).execute();
-    const movements = await trx.selectFrom('treasury_movement as x').select(['x.id', 'x.date', 'x.created_at']).where(has('treasury_movement')).execute();
+    const movements = await trx.selectFrom('treasury_movement as x').select(['x.id', 'x.date', 'x.created_at']).where('x.status', '=', 'posted').where(has('treasury_movement')).execute();
     const openings = [];
     for (const a of await trx.selectFrom('treasury_account').select(['id', 'opening_date', 'created_at']).execute()) {
       if ((await this.openingGap(trx, a.id)).gap) openings.push({ id: a.id, date: a.opening_date, created_at: a.created_at, kind: 'opening' as const });
