@@ -172,8 +172,8 @@ export default function TreasuryView({ kind }: { kind?: TreasuryKind }) {
                   <div className="row" style={{ gap: 6, marginTop: 6 }}><MovementActions m={m} writable={writable} busy={busy} onEdit={() => edit(m)} onReverse={() => open({ type: 'reverse', movement: m, reason: '' })} act={act} /></div></td>
                 {!filters.accountId && <td className="small">{m.accountName}{!kind && m.accountName !== ACCOUNT_KINDS[m.accountKind] && <div className="muted">{ACCOUNT_KINDS[m.accountKind]}</div>}</td>}
                 <td className="small">{MOVEMENT_CATEGORIES[m.category] ?? m.category}</td>
-                <td className="n" style={{ whiteSpace: 'nowrap', color: 'var(--ok)' }}>{m.direction === 'in' ? money(m.amount) : ''}</td>
-                <td className="n" style={{ whiteSpace: 'nowrap' }}>{m.direction === 'out' ? money(m.amount) : ''}</td>
+                <td className="n" style={{ whiteSpace: 'nowrap', color: 'var(--ok)', fontWeight: 600 }}>{m.direction === 'in' ? `+ ${money(m.amount)}` : ''}</td>
+                <td className="n" style={{ whiteSpace: 'nowrap', color: 'var(--crit)', fontWeight: 600 }}>{m.direction === 'out' ? `− ${money(m.amount)}` : ''}</td>
                 {journal.opening !== null && <td className="n" style={{ whiteSpace: 'nowrap' }}>{m.status === 'draft' ? <span className="small muted">hors solde</span> : money(m.balanceAfter)}</td>}
               </tr>
             ))}
