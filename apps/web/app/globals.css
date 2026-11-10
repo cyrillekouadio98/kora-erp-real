@@ -608,3 +608,42 @@ table.report-pl tr.total td { font-weight: 700; font-size: 15px; border-top: 2px
 .donut-legend .sw { width: 12px; height: 12px; border-radius: 3px; }
 .donut-legend li > span:last-child { text-align: right; }
 @media print { .report-grid, .dash-grid { grid-template-columns: minmax(0, 1fr); } .report-kpis { grid-template-columns: repeat(2, 1fr); } }
+
+/* Intérieur des modules : la teinte de l'icône de l'application (--mod-h, posée sur la coquille) colore l'accent,
+   l'en-tête, les indicateurs et les tableaux, sur un fond légèrement dégradé comme l'écran d'accueil. */
+.shell.module {
+  --accent: hsl(var(--mod-h) var(--mod-s, 58%) var(--mod-l, 31%)); --accent-ink: #ffffff; --accent-soft: hsl(var(--mod-h) 62% 93%);
+  --mod-strong: hsl(var(--mod-h) 55% 24%); --mod-wash: hsl(var(--mod-h) 55% 97.5%); --mod-line: hsl(var(--mod-h) 32% 86%);
+  --mod-top: hsl(var(--mod-h) 60% 95.5%); --mod-bg-a: hsl(var(--mod-h) 42% 94.5%); --mod-bg-b: hsl(calc(var(--mod-h) + 50) 28% 95%);
+  background: linear-gradient(160deg, var(--mod-bg-a) 0%, var(--bg) 42%, var(--mod-bg-b) 100%) fixed;
+}
+.shell.module .main { background: transparent; }
+.shell.module .topbar { background: linear-gradient(90deg, var(--mod-top) 0%, var(--surface) 65%); border-bottom: 3px solid var(--accent); }
+.shell.module .app-title { color: var(--mod-strong); }
+.app-title-ico { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; background: var(--surface); box-shadow: var(--tile-shadow); flex: none; }
+.shell.module .subnav a:hover { background: var(--accent-soft); }
+.shell.module .subnav a.active { background: var(--accent); color: var(--accent-ink); }
+.shell.module .page-head h1 { display: flex; align-items: center; gap: 10px; }
+.shell.module .page-head h1::before { content: ''; width: 5px; height: 1.05em; border-radius: 3px; background: var(--accent); flex: none; }
+.shell.module .card, .shell.module .table-wrap { border-color: var(--mod-line); }
+.shell.module .card.kpi { border-top: 3px solid var(--accent); }
+.shell.module .kpi .l { color: var(--mod-strong); opacity: .85; }
+.shell.module .table-wrap thead th { background: var(--accent-soft); color: var(--mod-strong); border-bottom-color: var(--mod-line); }
+.shell.module .table-wrap thead tr:first-child th:first-child { border-top-left-radius: calc(var(--radius) - 1px); }
+.shell.module .table-wrap thead tr:first-child th:last-child { border-top-right-radius: calc(var(--radius) - 1px); }
+.shell.module .table-wrap tbody tr:hover td { background: var(--mod-wash); }
+.shell.module .seg { border-color: var(--mod-line); }
+.shell.module .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.shell.module .card > header h2 { color: var(--mod-strong); }
+@media (prefers-color-scheme: dark) {
+  .shell.module {
+    --accent: hsl(var(--mod-h) 58% 66%); --accent-ink: #0d1311; --accent-soft: hsl(var(--mod-h) 32% 20%);
+    --mod-strong: hsl(var(--mod-h) 55% 80%); --mod-wash: hsl(var(--mod-h) 22% 15%); --mod-line: hsl(var(--mod-h) 18% 25%);
+    --mod-top: hsl(var(--mod-h) 30% 15%); --mod-bg-a: hsl(var(--mod-h) 30% 11%); --mod-bg-b: hsl(calc(var(--mod-h) + 50) 18% 10%);
+  }
+}
+@media print {
+  .shell.module { --accent: #1f6b4f; --accent-soft: #e1efe8; --mod-strong: #000; --mod-line: #bbb; background: none; }
+  .shell.module .table-wrap thead th { background: none; }
+  .shell.module .page-head h1::before { display: none; }
+}

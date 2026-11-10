@@ -161,6 +161,21 @@ export const APPS: App[] = [
   { key: 'manual', label: 'Manuel', href: '/app/manuel' },
 ];
 
+/** Teinte (degrés HSL) de chaque application, reprise de la couleur dominante de son icône : elle colore l'intérieur du module. */
+export const APP_HUE: Record<string, number> = {
+  dashboard: 262, sales: 22, purchases: 172, treasury: 40, reports: 222, accounting: 206, stock: 318, calendar: 214, products: 2,
+  contacts: 296, employees: 212, leave: 192, evaluations: 44, payroll: 152, me: 172, sites: 22, company: 206, users: 280,
+  roles: 44, billing: 172, emails: 2, audit: 214, support: 2, security: 152, manual: 196,
+};
+
+/** Variables CSS d'un module : teinte, et saturation / luminosité adaptées pour que le texte blanc reste lisible sur l'accent
+ *  (les teintes chaudes brunissent si on les fonce trop, les verts et bleus clairs manquent de contraste si on ne les fonce pas). */
+export function appTone(key: string): React.CSSProperties {
+  const h = APP_HUE[key] ?? 152;
+  const warm = h <= 55 || h >= 345, green = h > 90 && h < 200;
+  return { '--mod-h': h, '--mod-s': warm ? '78%' : green ? '62%' : '56%', '--mod-l': h >= 30 && h <= 60 ? '30%' : warm ? '37%' : green ? '27%' : '34%' } as React.CSSProperties;
+}
+
 const under = (path: string, href: string) => path === href || path.startsWith(`${href}/`);
 /** L'adresse la plus précise l'emporte : /app/tresorerie/caisse → « Caisse », pas « Vue d'ensemble ». */
 export const activeHref = (path: string, hrefs: string[]) => hrefs.filter((h) => under(path, h)).sort((x, y) => y.length - x.length)[0];

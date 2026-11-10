@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api, ApiError } from '@/lib/api';
 import { SUB_STATUS } from '@/lib/format';
-import { activeHref, AppIcon, currentApp } from './apps';
+import { activeHref, AppIcon, appTone, currentApp } from './apps';
 import { Pill } from './ui';
 
 export interface Me {
@@ -70,11 +70,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <Ctx.Provider value={{ me, ctx, can, refresh }}>
-      <div className={home ? 'shell home' : 'shell'}>
+      <div className={home ? 'shell home' : app ? 'shell module' : 'shell'} style={!home && app ? appTone(app.key) : undefined}>
         <header className="topbar">
           {home || !app
             ? <Link href="/app" className="brand" style={{ textDecoration: 'none', color: 'inherit' }}>Kora<span> ERP</span></Link>
-            : <Link href="/app" className="app-title" title="Revenir à toutes les applications"><AppIcon name={app.key} size={26} />{app.label}</Link>}
+            : <Link href="/app" className="app-title" title="Revenir à toutes les applications"><span className="app-title-ico"><AppIcon name={app.key} size={24} /></span>{app.label}</Link>}
           {pages.length > 1 && (
             <nav className="subnav" aria-label={`Menu ${app!.label}`}>
               {pages.map((p) => <Link key={p.href} href={p.href} className={p.href === activePage ? 'active' : ''} aria-current={p.href === activePage ? 'page' : undefined}>{p.label}</Link>)}
