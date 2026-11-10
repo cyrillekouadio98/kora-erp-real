@@ -163,20 +163,18 @@ export default function TreasuryView({ kind }: { kind?: TreasuryKind }) {
         </div>
         {journal?.opening !== null && journal?.opening !== undefined && <p className="small" style={{ margin: '0 0 8px' }}>Solde au début de la période : <b>{money(journal.opening)}</b> · solde en fin de période : <b>{money(journal.closing)}</b></p>}
         <div className="table-wrap"><table>
-          <thead><tr><th>Date</th><th>Libellé</th>{!filters.accountId && <th>Compte</th>}<th>Catégorie</th><th className="n">Entrée</th><th className="n">Sortie</th>{journal?.opening !== null && <th className="n">Solde</th>}<th></th></tr></thead>
+          <thead><tr><th>Date</th><th>Libellé</th>{!filters.accountId && <th>Compte</th>}<th>Catégorie</th><th className="n">Entrée</th><th className="n">Sortie</th>{journal?.opening !== null && <th className="n">Solde</th>}</tr></thead>
           <tbody>
             {journal?.movements.map((m: any) => (
               <tr key={m.id} style={m.reversedBy || m.status === 'draft' ? { opacity: .6 } : undefined}>
                 <td style={{ whiteSpace: 'nowrap' }}>{date(m.date)}</td>
-                <td>{m.label}{m.status === 'draft' && <> <Pill tone="warn">Brouillon</Pill></>}{m.reversedBy && <> <Pill>Contre-passé</Pill></>}<div className="small muted">{[m.contactName, m.reference, m.by].filter(Boolean).join(' · ')}</div></td>
+                <td style={{ minWidth: 260 }}>{m.label}{m.status === 'draft' && <> <Pill tone="warn">Brouillon</Pill></>}{m.reversedBy && <> <Pill>Contre-passé</Pill></>}<div className="small muted">{[m.contactName, m.reference, m.by].filter(Boolean).join(' · ')}</div>
+                  <div className="row" style={{ gap: 6, marginTop: 6 }}><MovementActions m={m} writable={writable} busy={busy} onEdit={() => edit(m)} onReverse={() => open({ type: 'reverse', movement: m, reason: '' })} act={act} /></div></td>
                 {!filters.accountId && <td className="small">{m.accountName}{!kind && m.accountName !== ACCOUNT_KINDS[m.accountKind] && <div className="muted">{ACCOUNT_KINDS[m.accountKind]}</div>}</td>}
                 <td className="small">{MOVEMENT_CATEGORIES[m.category] ?? m.category}</td>
                 <td className="n" style={{ whiteSpace: 'nowrap', color: 'var(--ok)' }}>{m.direction === 'in' ? money(m.amount) : ''}</td>
                 <td className="n" style={{ whiteSpace: 'nowrap' }}>{m.direction === 'out' ? money(m.amount) : ''}</td>
                 {journal.opening !== null && <td className="n" style={{ whiteSpace: 'nowrap' }}>{m.status === 'draft' ? <span className="small muted">hors solde</span> : money(m.balanceAfter)}</td>}
-                <td className="n"><div className="row" style={{ gap: 6, flexWrap: 'nowrap', justifyContent: 'flex-end' }}>
-                  <MovementActions m={m} writable={writable} busy={busy} onEdit={() => edit(m)} onReverse={() => open({ type: 'reverse', movement: m, reason: '' })} act={act} />
-                </div></td>
               </tr>
             ))}
             {journal && !journal.movements.length && <tr><td colSpan={8} className="muted" style={{ textAlign: 'center', padding: 24 }}>Aucun mouvement sur cette période.</td></tr>}
