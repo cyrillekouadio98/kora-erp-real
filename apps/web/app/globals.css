@@ -647,3 +647,21 @@ table.report-pl tr.total td { font-weight: 700; font-size: 15px; border-top: 2px
   .shell.module .table-wrap thead th { background: none; }
   .shell.module .page-head h1::before { display: none; }
 }
+
+/* Assistant d'import (Excel, CSV, PDF) */
+.modal.import-modal { width: min(1040px, 100%); }
+.import-intro { background: var(--accent-soft); border-radius: 8px; padding: 10px 14px; line-height: 1.55; }
+.import-intro p { margin: 0 0 4px; } .import-intro ul { margin: 4px 0 0; padding-left: 18px; }
+.import-source { align-items: flex-end; } .import-source label.field { min-width: 200px; }
+table.import-map td { padding: 6px 10px; } table.import-map .input { padding: 6px 8px; }
+table.import-map .req { color: var(--crit); }
+.import-preview { max-height: 340px; overflow: auto; }
+.import-preview table { font-size: 13px; } .import-preview td { padding: 6px 10px; white-space: nowrap; }
+.import-preview td.imp-state { white-space: normal; min-width: 220px; }
+.import-preview tr.imp-error td { background: color-mix(in srgb, var(--crit-bg) 55%, transparent); }
+.import-preview tr.imp-skip td { color: var(--muted); }
+.imp-err { color: var(--crit); }
+.import-progress { position: relative; height: 22px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.import-progress span { position: absolute; inset: 0 auto 0 0; background: var(--accent); transition: width .2s; }
+.import-progress b { position: relative; display: block; text-align: center; font-size: 12px; line-height: 22px; mix-blend-mode: difference; color: #fff; }
+.import-preview td.imp-state .pill { white-space: normal; }

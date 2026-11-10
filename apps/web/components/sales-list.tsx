@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { date, docStatus, DocType, money } from '@/lib/format';
 import { useSession } from '@/components/session';
+import { ImportButton } from '@/components/import';
+import { SALES_IMPORT } from '@/components/import-configs';
 import { Alert, Field, Pill, useAction } from '@/components/ui';
 
 const STATUSES = {
@@ -38,6 +40,7 @@ export function SalesList({ type }: { type: DocType }) {
         <h1>{TITLES[type]}</h1>
         <div className="row">
           {can('sales.export') && <a className="btn" href={`/api/company/sales/documents/export?type=${type}`}>Exporter (CSV)</a>}
+          {isInvoice && can('sales.create') && !ctx?.readOnly && <ImportButton config={SALES_IMPORT} onDone={load} />}
           {can('sales.create') && !ctx?.readOnly && !isCredit && <Link className="btn primary" href={`/app/ventes/nouveau?type=${type}`}>{NEW_LABEL[type]}</Link>}
         </div>
       </div>

@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { useSession } from '@/components/session';
 import { money } from '@/lib/format';
+import { ImportButton } from '@/components/import';
+import { CONTACTS_IMPORT } from '@/components/import-configs';
 import { Alert, Field, hue, Pill, shrinkImage, useAction } from '@/components/ui';
 
 const KIND: Record<string, [string, 'ok' | 'warn' | 'mute']> = { customer: ['Client', 'ok'], supplier: ['Fournisseur', 'warn'], both: ['Client et fournisseur', 'mute'] };
@@ -90,6 +92,7 @@ export default function ContactsPage() {
         <h1>Clients et fournisseurs</h1>
         <div className="row">
           {can('contacts.export') && <a className="btn" href={`/api/company/contacts/export?${params}`}>Exporter (CSV)</a>}
+          {can('contacts.create') && writable && <ImportButton config={CONTACTS_IMPORT} onDone={load} />}
           {can('contacts.create') && writable && <button className="btn primary" onClick={() => open({ ...EMPTY })}>Nouveau contact</button>}
         </div>
       </div>

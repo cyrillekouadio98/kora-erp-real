@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { date, money, PURCHASE_STATUS } from '@/lib/format';
 import { useSession } from '@/components/session';
+import { ImportButton } from '@/components/import';
+import { PURCHASES_IMPORT } from '@/components/import-configs';
 import { Alert, Field, Pill, useAction } from '@/components/ui';
 
 const STATUSES = { order: ['draft', 'sent', 'cancelled', 'invoiced'], invoice: ['draft', 'to_pay', 'partially_paid', 'paid'] };
@@ -28,6 +30,7 @@ export function PurchaseList({ type }: { type: 'order' | 'invoice' }) {
         <h1>{isInvoice ? 'Factures fournisseurs' : 'Bons de commande'}</h1>
         <div className="row">
           {can('purchases.export') && <a className="btn" href={`/api/company/purchases/documents/export?type=${type}`}>Exporter (CSV)</a>}
+          {isInvoice && can('purchases.create') && !ctx?.readOnly && <ImportButton config={PURCHASES_IMPORT} onDone={load} />}
           {can('purchases.create') && !ctx?.readOnly && <Link className="btn primary" href={`/app/achats/nouveau?type=${type}`}>{isInvoice ? 'Saisir une facture fournisseur' : 'Nouveau bon de commande'}</Link>}
         </div>
       </div>

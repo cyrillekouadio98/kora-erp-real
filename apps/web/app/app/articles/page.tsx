@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { money, VAT_RATES } from '@/lib/format';
 import { useSession } from '@/components/session';
+import { ImportButton } from '@/components/import';
+import { PRODUCTS_IMPORT } from '@/components/import-configs';
 import { Alert, Field, Pill, useAction } from '@/components/ui';
 
 const EMPTY = { kind: 'good', name: '', description: '', unit: 'unité', salePrice: 0, purchasePrice: '', vatRate: 18 };
@@ -39,7 +41,10 @@ export default function ProductsPage() {
     <>
       <div className="page-head">
         <h1>Articles</h1>
-        {can('products.create') && writable && <button className="btn primary" onClick={() => setEdit({ ...EMPTY })}>Nouvel article</button>}
+        {can('products.create') && writable && <div className="row">
+          <ImportButton config={PRODUCTS_IMPORT} onDone={load} />
+          <button className="btn primary" onClick={() => setEdit({ ...EMPTY })}>Nouvel article</button>
+        </div>}
       </div>
       <Alert>{!edit && error}</Alert>
       <div className="row">

@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { date, money, qty, STOCK_MOVES } from '@/lib/format';
 import { useSession } from '@/components/session';
+import { ImportButton } from '@/components/import';
+import { STOCK_IMPORT } from '@/components/import-configs';
 import { Alert, Field, Pill, useAction } from '@/components/ui';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -81,6 +83,7 @@ export default function StockPage() {
             <Link className="btn" href="/app/stocks/operations/nouveau?type=issue">− Sortie</Link>
             {multi && <Link className="btn" href="/app/stocks/operations/nouveau?type=transfer">⇄ Transfert</Link>}
             <Link className="btn" href="/app/stocks/inventaires">Inventaire</Link>
+            <ImportButton config={STOCK_IMPORT} onDone={load} />
           </>}
         </div>
       </div>

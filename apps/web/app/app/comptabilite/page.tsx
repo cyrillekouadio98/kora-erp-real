@@ -3,6 +3,8 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import { api } from '@/lib/api';
 import { date, date as fmtDate, JOURNALS, money } from '@/lib/format';
 import { useSession } from '@/components/session';
+import { ImportButton } from '@/components/import';
+import { ENTRIES_IMPORT } from '@/components/import-configs';
 import { Alert, Field, Pill, useAction } from '@/components/ui';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -82,6 +84,7 @@ export default function AccountingPage() {
           {status?.lockedUntil && <Pill tone="mute">Clôturée jusqu'au {date(status.lockedUntil)}</Pill>}
           {can('accounting.export') && <a className="btn" href={`/api/company/accounting/entries/export?from=${period.from}&to=${period.to}`}>Exporter les écritures</a>}
           {can('accounting.close') && writable && <button className="btn" onClick={() => { setError(''); setModal({ type: 'lock', until: '' }); }}>Clôturer une période</button>}
+          {can('accounting.create') && writable && <ImportButton config={ENTRIES_IMPORT} onDone={changed} />}
           {can('accounting.create') && writable && <button className="btn primary" onClick={() => { setError(''); setModal({ type: 'entry', journal: 'OD', date: today(), label: '', reference: '', lines: [{ account: '', label: '', debit: '', credit: '' }, { account: '', label: '', debit: '', credit: '' }] }); }}>Nouvelle écriture</button>}
         </div>
       </div>
