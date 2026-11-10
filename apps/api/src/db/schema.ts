@@ -80,6 +80,16 @@ export interface AuditLogTable {
 export interface NumberingSequenceTable { company_id: string; doc_type: string; year: number; prefix: string; next_value: Generated<string>; }
 export interface OutboxEventTable { company_id: string; id: Generated<string>; type: string; payload: Json; dedupe_key: string; created_at: Generated<Date>; processed_at: TsNullable; }
 
+export interface PosRegisterTable {
+  company_id: string; id: Generated<string>; site_id: string; name: string; warehouse_id: string; cash_account_id: string; customer_id: string;
+  archived_at: TsNullable; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface PosSessionTable {
+  company_id: string; id: Generated<string>; site_id: string; register_id: string; number: string; status: Generated<'open' | 'closed'>;
+  opening_float: NumDefault; opened_by: string; opened_at: Generated<Date>; expected_cash: ColumnType<string | null, number | null | undefined, number | null>;
+  counted_cash: ColumnType<string | null, number | null | undefined, number | null>; difference: ColumnType<string | null, number | null | undefined, number | null>;
+  closing_note: string | null; closed_by: string | null; closed_at: TsNullable;
+}
 export interface ContactTable {
   company_id: string; id: Generated<string>; code: string; kind: 'customer' | 'supplier' | 'both'; legal_type: Generated<'company' | 'individual'>;
   name: string; tax_id: string | null; rccm: string | null; email: string | null; phone: string | null; address: string | null; city: string | null;
@@ -94,7 +104,7 @@ export interface ProductTable {
   company_id: string; id: Generated<string>; code: string; kind: Generated<'good' | 'service'>; name: string; description: string | null;
   unit: Generated<string>; sale_price: ColumnType<string, number | string | undefined, number | string>; purchase_price: ColumnType<string | null, number | string | null | undefined, number | string | null>;
   vat_rate: ColumnType<string, number | string | undefined, number | string>; archived_at: TsNullable; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
-  track_stock: Generated<boolean>; min_stock: ColumnType<string | null, number | string | null | undefined, number | string | null>;
+  track_stock: Generated<boolean>; barcode: ColumnType<string | null, string | null | undefined, string | null>; min_stock: ColumnType<string | null, number | string | null | undefined, number | string | null>;
   stock_qty: NumDefault; stock_value: NumDefault; avg_cost: NumDefault;
 }
 export type SalesDocType = 'quote' | 'order' | 'invoice' | 'credit_note';
@@ -105,6 +115,7 @@ export interface SalesDocumentTable {
   customer: JsonDefault<Record<string, unknown>>; issue_date: DateCol; due_date: DateNullable; valid_until: DateNullable; currency: Generated<string>; notes: string | null;
   total_ht: NumDefault; total_vat: NumDefault; total_ttc: NumDefault; paid_amount: NumDefault; credited_amount: NumDefault; refunded_amount: NumDefault; restock: Generated<boolean>; source_quote_id: string | null; source_invoice_id: string | null;
   source_order_id: string | null; delivery_date: DateNullable; customer_ref: string | null; warehouse_id: string | null;
+  pos_session_id: ColumnType<string | null, string | null | undefined, string | null>; cash_tendered: ColumnType<string | null, number | null | undefined, number | null>;
   validated_at: TsNullable; validated_by: string | null; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 export interface SalesDocumentLineTable {
@@ -256,6 +267,7 @@ export interface DB {
   subscription_event: SubscriptionEventTable; platform_invoice: PlatformInvoiceTable; platform_payment: PlatformPaymentTable;
   payment_webhook_event: PaymentWebhookEventTable; notification: NotificationTable; support_access_grant: SupportAccessGrantTable;
   audit_log: AuditLogTable; numbering_sequence: NumberingSequenceTable; outbox_event: OutboxEventTable; contact: ContactTable;
+  pos_register: PosRegisterTable; pos_session: PosSessionTable;
   product: ProductTable; sales_document: SalesDocumentTable; sales_document_line: SalesDocumentLineTable; sales_payment: SalesPaymentTable; sales_reminder: SalesReminderTable;
   purchase_document: PurchaseDocumentTable; purchase_document_line: PurchaseDocumentLineTable; purchase_payment: PurchasePaymentTable;
   treasury_account: TreasuryAccountTable; treasury_movement: TreasuryMovementTable;

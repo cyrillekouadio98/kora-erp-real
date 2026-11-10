@@ -102,6 +102,8 @@ export class SalesService {
           (eb) => eb.selectFrom('site as s').select('s.name').whereRef('s.id', '=', 'd.site_id').whereRef('s.company_id', '=', 'd.company_id').as('siteName')])
         .where('d.type', '=', f.type).orderBy('d.created_at', 'desc').limit(1000);
       q = inScope(q, t, 'd.site_id');
+      // Les tickets de caisse ont leur propre liste (Point de vente) ; une recherche les retrouve.
+      if (!f.q) q = q.where('d.pos_session_id', 'is', null);
       if (f.status) q = q.where('d.status', '=', f.status as any);
       if (f.q) {
         const like = `%${f.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;

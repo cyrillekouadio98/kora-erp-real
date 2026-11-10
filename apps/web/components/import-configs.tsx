@@ -34,12 +34,13 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 export const PRODUCTS_IMPORT: ImportConfig<{ exists: (r: unknown) => any }> = {
   title: 'Importer des articles', what: 'articles', one: 'article',
   intro: <><p>Une ligne par article. Le code (ART-00001…) est attribué automatiquement ; un article déjà présent sous le même nom est ignoré.</p>
-    <p>Colonnes reconnues : <b>Désignation</b>, <b>Prix de vente HT</b>, Type (bien ou service), Unité, Prix d'achat, TVA (18, 9 ou 0), Description.</p></>,
+    <p>Colonnes reconnues : <b>Désignation</b>, <b>Prix de vente HT</b>, Type (bien ou service), Unité, Code-barres, Prix d'achat, TVA (18, 9 ou 0), Description.</p></>,
   fields: [
     { key: 'name', label: 'Désignation', required: true, aliases: ['nom', 'article', 'produit', 'libelle', 'designation article', 'intitule'] },
     { key: 'kind', label: 'Type', type: 'choice', default: 'good', aliases: ['nature', 'type article'], choices: [
       { value: 'good', label: 'Bien', match: ['marchandise', 'produit', 'stocke', 'article', 'b'] }, { value: 'service', label: 'Service', match: ['prestation', 's'] }] },
     { key: 'unit', label: 'Unité', aliases: ['unite de vente', 'conditionnement', 'u'] },
+    { key: 'barcode', label: 'Code-barres', aliases: ['ean', 'ean13', 'code barre', 'code barres', 'gencod', 'upc'] },
     { key: 'salePrice', label: 'Prix de vente HT', type: 'number', required: true, aliases: ['prix de vente', 'prix', 'pv', 'pu', 'prix unitaire', 'prix ht', 'tarif'] },
     { key: 'purchasePrice', label: "Prix d'achat", type: 'number', aliases: ['pa', 'cout', 'cout d achat', 'prix achat', 'prix de revient'] },
     VAT,
@@ -55,7 +56,7 @@ export const PRODUCTS_IMPORT: ImportConfig<{ exists: (r: unknown) => any }> = {
     seen.add(key);
   },
   save: async ([r]) => {
-    const p = await api('/company/products', { body: { name: r.name, kind: r.kind ?? 'good', unit: r.unit, salePrice: r.salePrice, purchasePrice: r.purchasePrice ?? null, vatRate: r.vatRate ?? 18, description: r.description ?? null } });
+    const p = await api('/company/products', { body: { name: r.name, kind: r.kind ?? 'good', unit: r.unit, salePrice: r.salePrice, purchasePrice: r.purchasePrice ?? null, vatRate: r.vatRate ?? 18, description: r.description ?? null, barcode: r.barcode ? String(r.barcode).replace(/\s/g, '') : null } });
     return p.code;
   },
   template: { file: 'modele-import-articles.csv', rows: [

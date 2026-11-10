@@ -22,11 +22,12 @@ const ProductSchema = z.object({
   salePrice: money,
   purchasePrice: money.nullable().optional(),
   vatRate: z.coerce.number().refine((v) => VAT_RATES.includes(v), { message: 'Taux de TVA : 18 %, 9 % ou 0 %' }),
+  barcode: z.string().trim().max(40).regex(/^[A-Za-z0-9._-]*$/, { message: 'Code-barres : chiffres et lettres uniquement, sans espace' }).transform((v) => v || null).nullable().optional(),
 }).strict();
 
-const COLUMNS = { kind: 'kind', name: 'name', description: 'description', unit: 'unit', salePrice: 'sale_price', purchasePrice: 'purchase_price', vatRate: 'vat_rate' } as const;
+const COLUMNS = { kind: 'kind', name: 'name', description: 'description', unit: 'unit', salePrice: 'sale_price', purchasePrice: 'purchase_price', vatRate: 'vat_rate', barcode: 'barcode' } as const;
 const SELECT = ['id', 'code', 'kind', 'name', 'description', 'unit', 'sale_price as salePrice', 'purchase_price as purchasePrice', 'vat_rate as vatRate', 'archived_at as archivedAt',
-  'track_stock as trackStock', 'stock_qty as stockQty'] as const;
+  'track_stock as trackStock', 'stock_qty as stockQty', 'barcode'] as const;
 
 const toNumbers = <T extends { salePrice: string; purchasePrice: string | null; vatRate: string; stockQty: string }>(p: T) =>
   ({ ...p, salePrice: Number(p.salePrice), purchasePrice: p.purchasePrice === null ? null : Number(p.purchasePrice), vatRate: Number(p.vatRate), stockQty: Number(p.stockQty) });
@@ -43,6 +44,13 @@ export class ProductsController {
       const next = await nextNumber(trx, t.companyId, 'product', 'ART');
       if (!(await taken(next))) return next;
     }
+  }
+
+  /** Un code-barres désigne un seul article : la caisse doit savoir lequel vendre. */
+  private async assertBarcodeFree(trx: TenantTrx, barcode: string | null | undefined, exceptId?: string) {
+    if (!barcode) return;
+    const other = await trx.selectFrom('product').select(['code', 'name']).where('barcode', '=', barcode).$if(!!exceptId, (q) => q.where('id', '!=', exceptId!)).executeTakeFirst();
+    if (other) throw conflict(`Le code-barres ${barcode} est déjà celui de ${other.code} « ${other.name} ».`, 'barcode_taken');
   }
 
   /** Code que recevra le prochain article (aperçu du formulaire, rien n'est réservé). */
@@ -62,7 +70,7 @@ export class ProductsController {
       if (q.archived === 'true') qb = qb.where('archived_at', 'is not', null);
       if (q.q) {
         const like = `%${q.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-        qb = qb.where((eb) => eb.or([eb('name', 'ilike', like), eb('code', 'ilike', like), eb('description', 'ilike', like)]));
+        qb = qb.where((eb) => eb.or([eb('name', 'ilike', like), eb('code', 'ilike', like), eb('description', 'ilike', like), eb('barcode', '=', q.q!)]));
       }
       return qb.execute();
     });
@@ -74,6 +82,7 @@ export class ProductsController {
   create(@Tenant() t: TenantInfo, @Body() body: unknown) {
     const input = parse(ProductSchema, body);
     return this.db.tenant(t.ctx, async (trx) => {
+      await this.assertBarcodeFree(trx, input.barcode);
       const code = await this.nextCode(trx, t);
       const values: Record<string, unknown> = {};
       for (const [k, col] of Object.entries(COLUMNS)) if ((input as any)[k] !== undefined) values[col] = (input as any)[k];
@@ -93,6 +102,7 @@ export class ProductsController {
       const before = await trx.selectFrom('product').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
       if (!before) throw notFound('Article');
       if (before.archived_at) throw conflict('Cet article est archivé : restaurez-le avant de le modifier.', 'product_archived');
+      await this.assertBarcodeFree(trx, input.barcode, id);
       const patch: Record<string, unknown> = {};
       for (const [k, col] of Object.entries(COLUMNS)) if ((input as any)[k] !== undefined) patch[col] = (input as any)[k];
       // Un bien est suivi en stock, un service jamais : changer de type n'est possible qu'à stock vide.

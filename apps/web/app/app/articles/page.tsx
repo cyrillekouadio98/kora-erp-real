@@ -8,7 +8,7 @@ import { ImportButton } from '@/components/import';
 import { productsImport } from '@/components/import-configs';
 import { Alert, Field, Pill, useAction } from '@/components/ui';
 
-const EMPTY = { kind: 'good', name: '', description: '', unit: 'unité', salePrice: 0, purchasePrice: '', vatRate: 18 };
+const EMPTY = { kind: 'good', name: '', description: '', unit: 'unité', salePrice: 0, purchasePrice: '', vatRate: 18, barcode: '' };
 const FIELDS = Object.keys(EMPTY) as (keyof typeof EMPTY)[];
 
 /** Le module s'adapte à l'activité de l'entreprise (fiche entreprise) : libellés, type par défaut, colonnes et champs. */
@@ -49,6 +49,7 @@ export default function ProductsPage() {
   const save = () => run(async () => {
     const body: any = Object.fromEntries(FIELDS.map((k) => [k, edit[k]]));
     body.purchasePrice = body.purchasePrice === '' || body.purchasePrice === null ? null : Number(body.purchasePrice);
+    body.barcode = body.barcode?.trim() || null;
     if (edit.id) await api(`/company/products/${edit.id}`, { method: 'PATCH', body }); else await api('/company/products', { body });
     setEdit(null); await load();
   });
@@ -85,7 +86,7 @@ export default function ProductsPage() {
           {rows?.map((p) => { const mg = margin(p); return (
             <tr key={p.id} style={p.archivedAt ? { opacity: .6 } : undefined}>
               <td style={{ whiteSpace: 'nowrap' }}><code className="k">{p.code}</code></td>
-              <td><b>{p.name}</b>{p.archivedAt && <> <Pill>Archivé</Pill></>}<div className="small muted">par {p.unit}{p.description ? ` · ${p.description}` : ''}</div></td>
+              <td><b>{p.name}</b>{p.archivedAt && <> <Pill>Archivé</Pill></>}<div className="small muted">par {p.unit}{p.barcode ? ` · ${p.barcode}` : ''}{p.description ? ` · ${p.description}` : ''}</div></td>
               {showType && <td><Pill tone={p.kind === 'good' ? 'ok' : 'mute'}>{p.kind === 'good' ? (trade ? 'Marchandise' : 'Bien') : (services ? 'Prestation' : 'Service')}</Pill></td>}
               {trade && <td className="n" style={{ whiteSpace: 'nowrap' }}>{p.purchasePrice == null ? <span className="muted">—</span> : money(p.purchasePrice)}</td>}
               <td className="n" style={{ whiteSpace: 'nowrap' }}>{money(p.salePrice)}</td>
@@ -119,6 +120,7 @@ export default function ProductsPage() {
               <label className="field">Code (automatique)
                 <span className="input contact-code">{edit.id ? edit.code : (nextCode || '…')}{!edit.id && <span className="small muted"> attribué à l&apos;enregistrement</span>}</span></label>
               <Field label="Unité" value={edit.unit} onChange={set('unit')} placeholder={m.units} />
+              {edit.kind === 'good' && <Field label="Code-barres (scanné à la caisse)" value={edit.barcode ?? ''} onChange={set('barcode')} placeholder="Ex. 6151100000017" pattern="[A-Za-z0-9._\-]*" maxLength={40} />}
               {trade && edit.kind === 'good' && <Field label={m.cost} type="number" min={0} step="any" value={edit.purchasePrice ?? ''} onChange={set('purchasePrice')} />}
               <Field label={edit.kind === 'service' && !services ? 'Prix de vente HT (FCFA)' : m.price} type="number" min={0} step="any" required value={edit.salePrice} onChange={set('salePrice')} />
               <label className="field">TVA

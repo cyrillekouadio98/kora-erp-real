@@ -25,6 +25,8 @@ export const BUSINESS_MODULES = {
   evaluations: { label: 'Évaluations', entitlement: 'hr' },
   // Rapport de gestion : chiffre d'affaires, marge, dépenses et résultat ; seules la consultation et l'export ont un sens.
   reports: { label: 'Rapports', entitlement: 'sales', actions: ['read', 'export'] },
+  // Point de vente : vendre (ouvrir sa session, encaisser, clôturer), clôturer la session d'un autre (valider), gérer les caisses (administrer).
+  pos: { label: 'Point de vente', entitlement: 'sales', actions: ['read', 'create', 'validate', 'export', 'admin'] },
 } as const satisfies Record<string, { label: string; entitlement: string; actions?: readonly Action[] }>;
 export type BusinessModule = keyof typeof BUSINESS_MODULES;
 
@@ -91,29 +93,29 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
   {
     key: 'owner', name: 'Propriétaire / administrateur', description: "Tous les droits sur l'entreprise",
     permissions: [
-      ...expand({ contacts: 'LCMNEA', products: 'LCMNEA', stock: 'LCMVNEA', sales: 'LCMVNEA', purchases: 'LCMVNEA', cash: 'LCMVNEA', bank: 'LCMVNEA', accounting: 'LCMVNEA', employees: 'LCMNEA', leave: 'LCMVNEA', payroll: 'LCMVNEA', calendar: 'LCMVNEA', evaluations: 'LCMVNEA', reports: 'LE' }),
+      ...expand({ contacts: 'LCMNEA', products: 'LCMNEA', stock: 'LCMVNEA', sales: 'LCMVNEA', purchases: 'LCMVNEA', cash: 'LCMVNEA', bank: 'LCMVNEA', accounting: 'LCMVNEA', employees: 'LCMNEA', leave: 'LCMVNEA', payroll: 'LCMVNEA', calendar: 'LCMVNEA', evaluations: 'LCMVNEA', reports: 'LE', pos: 'LCVEA' }),
       ...Object.keys(CORE_PERMISSIONS), ...Object.keys(SENSITIVE_PERMISSIONS),
     ],
   },
   {
     key: 'director', name: 'Directeur / gérant', description: 'Pilotage et validations',
-    permissions: [...expand({ contacts: 'LE', products: 'LE', stock: 'LE', sales: 'LVE', purchases: 'LVE', cash: 'LVE', bank: 'LVE', accounting: 'LE', employees: 'LE', leave: 'LV', payroll: 'LVE', calendar: 'LCMN', evaluations: 'LCMV', reports: 'LE' }), 'users.read', 'settings.read', 'audit.read', 'billing.read'],
+    permissions: [...expand({ contacts: 'LE', products: 'LE', stock: 'LE', sales: 'LVE', purchases: 'LVE', cash: 'LVE', bank: 'LVE', accounting: 'LE', employees: 'LE', leave: 'LV', payroll: 'LVE', calendar: 'LCMN', evaluations: 'LCMV', reports: 'LE', pos: 'LVE' }), 'users.read', 'settings.read', 'audit.read', 'billing.read'],
   },
   {
     key: 'accountant', name: 'Comptable', description: 'Comptabilité, achats et banque',
-    permissions: [...expand({ contacts: 'LCME', products: 'LCME', stock: 'LCMVE', sales: 'LE', purchases: 'LCMVNE', cash: 'LE', bank: 'LCMVNE', accounting: 'LCMVNE', payroll: 'LE', calendar: 'LCM', reports: 'LE' }), 'settings.read', 'settings.tax', 'accounting.close', 'accounting.reverse'],
+    permissions: [...expand({ contacts: 'LCME', products: 'LCME', stock: 'LCMVE', sales: 'LE', purchases: 'LCMVNE', cash: 'LE', bank: 'LCMVNE', accounting: 'LCMVNE', payroll: 'LE', calendar: 'LCM', reports: 'LE', pos: 'LE' }), 'settings.read', 'settings.tax', 'accounting.close', 'accounting.reverse'],
   },
   {
     key: 'finance_manager', name: 'Responsable financier', description: 'Trésorerie et validations financières',
-    permissions: [...expand({ contacts: 'LE', products: 'LE', stock: 'LE', sales: 'LVE', purchases: 'LVE', cash: 'LVE', bank: 'LCMVNE', accounting: 'LVE', payroll: 'LE', calendar: 'LCM', reports: 'LE' }), 'settings.read', 'billing.read'],
+    permissions: [...expand({ contacts: 'LE', products: 'LE', stock: 'LE', sales: 'LVE', purchases: 'LVE', cash: 'LVE', bank: 'LCMVNE', accounting: 'LVE', payroll: 'LE', calendar: 'LCM', reports: 'LE', pos: 'LVE' }), 'settings.read', 'billing.read'],
   },
-  { key: 'cashier', name: 'Caissier', description: 'Encaissements et décaissements', permissions: expand({ contacts: 'L', products: 'L', stock: 'L', sales: 'L', cash: 'LC', calendar: 'L' }) },
-  { key: 'sales_rep', name: 'Commercial', description: 'Clients, devis et ventes', permissions: expand({ contacts: 'LCM', products: 'L', stock: 'L', sales: 'LCM', calendar: 'LCMN' }) },
+  { key: 'cashier', name: 'Caissier', description: 'Encaissements et décaissements', permissions: expand({ contacts: 'L', products: 'L', stock: 'L', sales: 'L', cash: 'LC', calendar: 'L', pos: 'LC' }) },
+  { key: 'sales_rep', name: 'Commercial', description: 'Clients, devis et ventes', permissions: expand({ contacts: 'LCM', products: 'L', stock: 'L', sales: 'LCM', calendar: 'LCMN', pos: 'LC' }) },
   { key: 'storekeeper', name: 'Magasinier', description: 'Réceptions, sorties, transferts et inventaires', permissions: expand({ contacts: 'L', products: 'L', stock: 'LCMVE', sales: 'L', purchases: 'L', calendar: 'LCM' }) },
   { key: 'hr_manager', name: 'Responsable RH', description: 'Employés et congés', permissions: expand({ employees: 'LCMNE', leave: 'LCMVNE', payroll: 'L', calendar: 'LCMN', evaluations: 'LCMVNE' }) },
   { key: 'payroll_manager', name: 'Gestionnaire de paie', description: 'Calcul et validation de la paie', permissions: [...expand({ employees: 'LM', leave: 'L', payroll: 'LCMVE', calendar: 'L', evaluations: 'L' }), 'payroll.salaries', 'employees.bank_details'] },
   { key: 'employee', name: 'Employé', description: 'Espace personnel', permissions: Object.keys(SELF_PERMISSIONS) },
-  { key: 'auditor', name: 'Auditeur / consultant', description: 'Lecture seule, accès limité dans le temps', permissions: [...expand({ contacts: 'L', products: 'LE', stock: 'LE', sales: 'LE', purchases: 'LE', cash: 'LE', bank: 'LE', accounting: 'LE', calendar: 'L', reports: 'LE' }), 'settings.read', 'audit.read'] },
+  { key: 'auditor', name: 'Auditeur / consultant', description: 'Lecture seule, accès limité dans le temps', permissions: [...expand({ contacts: 'L', products: 'LE', stock: 'LE', sales: 'LE', purchases: 'LE', cash: 'LE', bank: 'LE', accounting: 'LE', calendar: 'L', reports: 'LE', pos: 'LE' }), 'settings.read', 'audit.read'] },
 ];
 
 // Garde-fou : chaque permission d'un rôle standard existe dans le catalogue.

@@ -665,3 +665,58 @@ table.import-map .req { color: var(--crit); }
 .import-progress span { position: absolute; inset: 0 auto 0 0; background: var(--accent); transition: width .2s; }
 .import-progress b { position: relative; display: block; text-align: center; font-size: 12px; line-height: 22px; mix-blend-mode: difference; color: #fff; }
 .import-preview td.imp-state .pill { white-space: normal; }
+
+/* Point de vente : caisses, écran de vente, ticket 80 mm */
+.pos-registers { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.pos-register { display: grid; gap: 10px; align-content: start; }
+.main > .wrap:has(.pos-screen) { max-width: none; }
+.pos-screen { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); gap: 16px; height: calc(100vh - 140px); min-height: 520px; }
+.pos-left { display: flex; flex-direction: column; gap: 10px; min-height: 0; min-width: 0; }
+.pos-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pos-search { font-size: 18px; padding: 12px 14px; }
+.pos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; overflow: auto; align-content: start; flex: 1; padding: 2px; }
+.pos-tile { display: grid; gap: 4px; align-content: space-between; text-align: left; min-height: 92px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; }
+.pos-tile:hover, .pos-tile:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); outline: none; }
+.pos-tile:active { transform: scale(.98); }
+.pos-tile-name { font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+.pos-tile b { color: var(--accent); font-size: 15px; }
+.pos-cart { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.pos-cart-head { display: flex; gap: 8px; padding: 10px; border-bottom: 1px solid var(--line); }
+.pos-cart-head select { flex: 1; }
+.pos-lines { flex: 1; overflow: auto; }
+.pos-line { padding: 10px 12px; border-bottom: 1px solid var(--line); display: grid; gap: 6px; }
+.pos-line-top { display: flex; justify-content: space-between; gap: 10px; }
+.pos-line-qty { display: flex; align-items: center; gap: 6px; }
+.pos-line-qty input { width: 72px; text-align: center; padding: 4px 6px; }
+.pos-line-qty .danger { margin-left: auto; }
+.pos-sum { padding: 12px; border-top: 1px solid var(--line); display: grid; gap: 8px; background: var(--surface-2, var(--surface)); }
+.pos-total { display: flex; justify-content: space-between; align-items: baseline; font-size: 26px; }
+.pos-total b { font-weight: 800; }
+.pos-pay { font-size: 18px; padding: 14px; }
+.pos-change { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 14px; border-radius: 10px; background: var(--accent-soft); font-size: 18px; }
+.pos-change b { font-size: 26px; }
+.pos-change.big b { font-size: 34px; }
+@media (max-width: 860px) {
+  .pos-screen { grid-template-columns: 1fr; height: auto; }
+  .pos-grid { max-height: 45vh; }
+  .pos-lines { max-height: 40vh; }
+}
+
+.tk { width: 100%; max-width: 76mm; margin: 0 auto; font-size: 13px; line-height: 1.35; color: var(--ink); display: grid; gap: 8px; }
+.tk-head { display: grid; justify-items: center; text-align: center; gap: 2px; }
+.tk-head img { max-height: 48px; max-width: 60%; object-fit: contain; margin-bottom: 4px; }
+.tk-name { font-size: 15px; }
+.tk-title { margin-top: 6px; font-size: 14px; letter-spacing: .03em; }
+.tk-meta { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+.tk-lines, .tk-sub { border-top: 1px dashed var(--line); padding-top: 6px; display: grid; gap: 4px; }
+.tk-row { display: flex; justify-content: space-between; gap: 10px; }
+.tk-row > :last-child { white-space: nowrap; }
+.tk-total { display: flex; justify-content: space-between; align-items: baseline; border-top: 2px solid var(--ink); border-bottom: 2px solid var(--ink); padding: 6px 0; font-size: 17px; }
+.tk-foot { text-align: center; margin: 4px 0 0; font-size: 12px; }
+@page ticket { size: 80mm auto; margin: 3mm; }
+@media print {
+  .tk { page: ticket; max-width: none; font-size: 11px; color: #000; }
+  .tk-total { font-size: 14px; border-color: #000; }
+  .tk-lines, .tk-sub { border-color: #000; }
+}

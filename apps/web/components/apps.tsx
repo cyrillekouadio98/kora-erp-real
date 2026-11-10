@@ -27,6 +27,11 @@ const ICONS: Record<string, React.ReactNode> = {
     <rect x="6" y="24" width="18" height="18" rx="2" fill={O} /><rect x="24" y="24" width="18" height="18" rx="2" fill={T} /><rect x="15" y="6" width="18" height="18" rx="2" fill={P} />
     <rect x="13" y="24" width="4" height="6" fill={W} opacity=".55" /><rect x="31" y="24" width="4" height="6" fill={W} opacity=".55" /><rect x="22" y="6" width="4" height="6" fill={W} opacity=".55" />
   </>,
+  pos: <>
+    <rect x="6" y="20" width="36" height="22" rx="3" fill={P} /><rect x="10" y="6" width="22" height="12" rx="2" fill={B} /><rect x="13" y="9" width="16" height="6" rx="1" fill={W} opacity=".7" />
+    <rect x="11" y="25" width="5" height="4" rx="1" fill={W} opacity=".75" /><rect x="19" y="25" width="5" height="4" rx="1" fill={W} opacity=".75" /><rect x="27" y="25" width="5" height="4" rx="1" fill={W} opacity=".75" />
+    <rect x="11" y="32" width="21" height="4" rx="1" fill={W} opacity=".75" /><rect x="34" y="24" width="5" height="12" rx="1.5" fill={Y} />
+  </>,
   products: <>
     <path d="M6 8v14l20 20 16-16L22 6H8a2 2 0 0 0-2 2z" fill={C} /><path d="M26 42l16-16-9-9-16 16z" fill={Y} opacity=".85" /><circle cx="14" cy="14" r="3.5" fill={W} />
   </>,
@@ -128,6 +133,9 @@ export const APPS: App[] = [
     { href: '/app/tresorerie', label: "Vue d'ensemble" }, { href: '/app/tresorerie/caisse', label: 'Caisse' },
     { href: '/app/tresorerie/banque', label: 'Banque', module: 'bank' }, { href: '/app/tresorerie/mobile-money', label: 'Mobile money' },
   ] },
+  { key: 'pos', label: 'Point de vente', href: '/app/pos', perm: 'pos.read', module: 'sales', pages: [
+    { href: '/app/pos', label: 'Caisses' }, { href: '/app/pos/sessions', label: 'Sessions' }, { href: '/app/pos/tickets', label: 'Tickets' },
+  ] },
   { key: 'reports', label: 'Rapports', href: '/app/rapports', perm: 'reports.read' },
   { key: 'accounting', label: 'Comptabilité', href: '/app/comptabilite', perm: 'accounting.read', module: 'accounting' },
   { key: 'stock', label: 'Stocks', href: '/app/stocks', perm: 'stock.read', pages: [
@@ -166,7 +174,7 @@ export const appLabel = (a: { key: string; label: string }, activity?: string) =
 
 /** Teinte (degrés HSL) de chaque application, reprise de la couleur dominante de son icône : elle colore l'intérieur du module. */
 export const APP_HUE: Record<string, number> = {
-  dashboard: 262, sales: 22, purchases: 172, treasury: 40, reports: 222, accounting: 206, stock: 318, calendar: 214, products: 2,
+  dashboard: 262, sales: 22, pos: 340, purchases: 172, treasury: 40, reports: 222, accounting: 206, stock: 318, calendar: 214, products: 2,
   contacts: 296, employees: 212, leave: 192, evaluations: 44, payroll: 152, me: 172, sites: 22, company: 206, users: 280,
   roles: 44, billing: 172, emails: 2, audit: 214, support: 2, security: 152, manual: 196,
 };
