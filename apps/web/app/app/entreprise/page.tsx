@@ -2,10 +2,10 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { useSession } from '@/components/session';
-import { Alert, Field, LogoField, useAction } from '@/components/ui';
+import { ActivityField, Alert, Field, LogoField, useAction } from '@/components/ui';
 
 const FIELDS: [string, string, boolean?][] = [['name', 'Raison sociale'], ['legalForm', 'Forme juridique (SARL, SA, SAS…)'], ['rccm', 'RCCM'], ['taxId', 'Numéro de compte contribuable (NCC)', true], ['taxRegime', 'Régime fiscal', true], ['address', 'Adresse'], ['city', 'Ville'], ['phone', 'Téléphone'], ['email', 'E-mail de contact']];
-const COLS: Record<string, string> = { name: 'name', legalForm: 'legal_form', rccm: 'rccm', taxId: 'tax_id', taxRegime: 'tax_regime', address: 'address', city: 'city', phone: 'phone', email: 'email' };
+const COLS: Record<string, string> = { name: 'name', legalForm: 'legal_form', rccm: 'rccm', taxId: 'tax_id', taxRegime: 'tax_regime', address: 'address', city: 'city', phone: 'phone', email: 'email', activity: 'activity' };
 
 export default function CompanyPage() {
   const { can, ctx, refresh } = useSession();
@@ -22,6 +22,7 @@ export default function CompanyPage() {
     run(async () => {
       const body: Record<string, string | null> = {};
       for (const [k, , tax] of FIELDS) if (!tax || can('settings.tax')) body[k] = f[k] === '' && k !== 'name' ? null : f[k];
+      body.activity = f.activity || 'mixed';
       await api('/company', { method: 'PATCH', body }); setSaved(true); await refresh();
     });
   };
@@ -36,6 +37,7 @@ export default function CompanyPage() {
       <form className="card form" onSubmit={save}>
         <div className="grid2">
           {FIELDS.map(([k, label, tax]) => <Field key={k} label={label} value={f[k] ?? ''} disabled={!editable || (tax && !can('settings.tax'))} onChange={(e) => setF({ ...f, [k]: e.target.value })} />)}
+          <ActivityField value={f.activity ?? ''} disabled={!editable} onChange={(activity) => setF({ ...f, activity })} />
         </div>
         {editable && <div><button className="btn primary" disabled={busy}>Enregistrer</button></div>}
         <p className="small muted" style={{ margin: 0 }}>Les informations fiscales ne sont modifiables qu'avec la permission « paramètres fiscaux ». Chaque modification est inscrite au journal d'audit.</p>

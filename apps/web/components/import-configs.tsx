@@ -65,6 +65,23 @@ export const PRODUCTS_IMPORT: ImportConfig<{ exists: (r: unknown) => any }> = {
   ] },
 };
 
+/** Import d'articles adapté à l'activité : une entreprise de services importe des prestations par défaut. */
+export function productsImport(activity?: string): typeof PRODUCTS_IMPORT {
+  if (activity !== 'services') return PRODUCTS_IMPORT;
+  return {
+    ...PRODUCTS_IMPORT, title: 'Importer des prestations', what: 'prestations', one: 'prestation', feminine: true,
+    intro: <><p>Une ligne par prestation. Le code est attribué automatiquement ; une prestation déjà présente sous le même nom est ignorée.</p>
+      <p>Colonnes reconnues : <b>Désignation</b>, <b>Tarif HT</b>, Unité (heure, jour, forfait…), Coût de revient, TVA (18, 9 ou 0), Description, Type (service par défaut).</p></>,
+    fields: PRODUCTS_IMPORT.fields.map((f) => f.key === 'kind' ? { ...f, default: 'service' } : f.key === 'salePrice' ? { ...f, label: 'Tarif HT' } : f.key === 'purchasePrice' ? { ...f, label: 'Coût de revient' } : f),
+    save: async ([r], ctx, settings) => PRODUCTS_IMPORT.save([{ ...r, kind: r.kind ?? 'service', unit: r.unit || 'forfait' }], ctx, settings),
+    template: { file: 'modele-import-prestations.csv', rows: [
+      ['Désignation', 'Unité', 'Tarif HT', 'Coût de revient', 'TVA', 'Description'],
+      ['Maintenance informatique', 'heure', 15000, '', 18, 'Intervention sur site'],
+      ['Audit comptable', 'forfait', 350000, '', 18, ''],
+    ] },
+  };
+}
+
 /* ---------- Contacts ---------- */
 
 const REQUIRED_CONTACT: Record<string, [string, string][]> = {

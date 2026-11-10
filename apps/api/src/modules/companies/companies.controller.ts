@@ -9,16 +9,17 @@ import { parse } from '../../common/validation';
 import { DatabaseService } from '../../db/database.service';
 import { AuditService } from '../audit/audit.service';
 import { logoUrl, parseLogo, saveLogo } from './company-logo';
-import { ProvisioningService } from './provisioning.service';
+import { ACTIVITIES, ProvisioningService } from './provisioning.service';
 
 const opt = (max: number) => z.string().trim().max(max).nullable().optional();
 const UpdateSchema = z.object({
   name: z.string().trim().min(2).max(160).optional(),
   legalForm: opt(40), rccm: opt(60), taxId: opt(40), taxRegime: opt(60),
   address: opt(300), city: opt(80), phone: opt(40), email: z.string().trim().toLowerCase().email().nullable().optional(),
+  activity: z.enum(ACTIVITIES).optional(),
 }).strict();
 
-const COLUMNS = { name: 'name', legalForm: 'legal_form', rccm: 'rccm', taxId: 'tax_id', taxRegime: 'tax_regime', address: 'address', city: 'city', phone: 'phone', email: 'email' } as const;
+const COLUMNS = { name: 'name', legalForm: 'legal_form', rccm: 'rccm', taxId: 'tax_id', taxRegime: 'tax_regime', address: 'address', city: 'city', phone: 'phone', email: 'email', activity: 'activity' } as const;
 const TAX_FIELDS = ['taxId', 'taxRegime'];
 
 @ApiTags('Entreprise')
@@ -29,7 +30,7 @@ export class CompaniesController {
   /** Crée une entreprise supplémentaire dont l'utilisateur devient propriétaire. */
   @Post('companies')
   async create(@Auth() auth: AuthInfo, @Body() body: unknown, @Req() req: KoraRequest) {
-    const input = parse(z.object({ name: z.string().trim().min(2).max(160), legalForm: opt(40), taxId: opt(40), city: opt(80) }), body);
+    const input = parse(z.object({ name: z.string().trim().min(2).max(160), legalForm: opt(40), taxId: opt(40), city: opt(80), activity: z.enum(ACTIVITIES).optional() }), body);
     return this.db.asUser(auth.userId, (trx) => this.provisioning.provision(trx, auth.userId, input, clientIp(req)));
   }
 
@@ -38,7 +39,7 @@ export class CompaniesController {
   @Get('company/context')
   async context(@Tenant() t: TenantInfo) {
     const { company, sites } = await this.db.tenant(t.ctx, async (trx) => ({
-      company: { ...await trx.selectFrom('company').select(['id', 'name', 'currency', 'country_code', 'status']).where('id', '=', t.companyId).executeTakeFirstOrThrow(), logo: await logoUrl(trx) },
+      company: { ...await trx.selectFrom('company').select(['id', 'name', 'currency', 'country_code', 'status', 'activity']).where('id', '=', t.companyId).executeTakeFirstOrThrow(), logo: await logoUrl(trx) },
       sites: await trx.selectFrom('site').select(['id', 'code', 'name', 'is_default as isDefault']).where('archived_at', 'is', null).orderBy('is_default', 'desc').orderBy('code').execute(),
     }));
     return {

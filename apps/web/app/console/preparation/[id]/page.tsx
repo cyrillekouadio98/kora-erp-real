@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { date, money, SETUP_STATUS } from '@/lib/format';
-import { Alert, Field, LogoField, Pill, useAction } from '@/components/ui';
+import { ActivityField, Alert, Field, LogoField, Pill, useAction } from '@/components/ui';
 
 const COMPANY: [string, string, string?][] = [
   ['name', 'Raison sociale'], ['legalForm', 'Forme juridique', 'SARL, SA, SAS…'], ['rccm', 'RCCM'], ['taxId', 'Numéro de compte contribuable (NCC)'],
@@ -34,7 +34,7 @@ export default function PreparationPage() {
   const show = (x: any) => {
     setS(x);
     if (x.company && x.status === 'preparing') {
-      setCompany(Object.fromEntries(COMPANY.map(([k]) => [k, x.company[k] ?? ''])));
+      setCompany({ ...Object.fromEntries(COMPANY.map(([k]) => [k, x.company[k] ?? ''])), activity: x.company.activity ?? 'mixed' });
       setPlan({ planCode: x.subscription.planCode, billingCycle: x.subscription.billingCycle, trialDays: x.subscription.trialDays });
       setPeople({ owner: x.owner ?? { name: '', email: '' }, users: x.users.map((u: any) => ({ ...u, siteId: u.siteIds?.[0] ?? '' })), notes: x.notes ?? '' });
       setAccounts(Object.fromEntries(x.accounts.map((a: any) => [a.id, { name: a.name, bankName: a.bankName ?? '', accountNumber: a.accountNumber ?? '' }])));
@@ -91,7 +91,8 @@ export default function PreparationPage() {
           </section>}
           {tab === 'company' && <form className="card form" onSubmit={(e) => { e.preventDefault(); save('/company', company, 'Fiche enregistrée.'); }}>
             <header><h2>Fiche de l&apos;entreprise</h2><span className="small muted">Elle figure sur les devis et les factures</span></header>
-            <div className="grid2">{COMPANY.map(([k, label, ph]) => <Field key={k} label={label} placeholder={ph} required={k === 'name'} type={k === 'email' ? 'email' : 'text'} value={company[k] ?? ''} onChange={(e) => setCompany({ ...company, [k]: e.target.value })} />)}</div>
+            <div className="grid2">{COMPANY.map(([k, label, ph]) => <Field key={k} label={label} placeholder={ph} required={k === 'name'} type={k === 'email' ? 'email' : 'text'} value={company[k] ?? ''} onChange={(e) => setCompany({ ...company, [k]: e.target.value })} />)}
+              <ActivityField value={company.activity ?? ''} onChange={(activity) => setCompany({ ...company, activity })} /></div>
             <div><button className="btn primary" disabled={busy}>Enregistrer</button></div>
           </form>}
 

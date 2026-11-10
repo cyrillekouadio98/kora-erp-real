@@ -9,7 +9,7 @@ import { isUuid } from '../../common/ids';
 import type { AuthInfo } from '../../common/request-context';
 import { DatabaseService } from '../../db/database.service';
 import { AuditService } from '../audit/audit.service';
-import { ProvisioningService } from '../companies/provisioning.service';
+import { CompanyActivity, ProvisioningService } from '../companies/provisioning.service';
 import { MailService } from '../mail/mail.service';
 import { SessionService } from './session.service';
 
@@ -30,14 +30,14 @@ export class AuthService {
 
   hashPassword = (pw: string) => hash(pw, ARGON);
 
-  async signup(input: { fullName: string; email: string; password: string; companyName: string }, meta: { ip?: string | null; ua?: string | null }) {
+  async signup(input: { fullName: string; email: string; password: string; companyName: string; activity?: CompanyActivity }, meta: { ip?: string | null; ua?: string | null }) {
     return this.db.identity(async (trx) => {
       const exists = await trx.selectFrom('user_account').select('id').where('email', '=', input.email).executeTakeFirst();
       if (exists) throw conflict('Un compte existe déjà avec cette adresse e-mail. Connectez-vous.', 'email_taken');
       const user = await trx.insertInto('user_account').values({
         email: input.email, full_name: input.fullName.trim(), password_hash: await this.hashPassword(input.password), phone: null, totp_secret_enc: null,
       }).returning('id').executeTakeFirstOrThrow();
-      const { companyId } = await this.provisioning.provision(trx, user.id, { name: input.companyName }, meta.ip);
+      const { companyId } = await this.provisioning.provision(trx, user.id, { name: input.companyName, activity: input.activity }, meta.ip);
       const session = await this.sessions.create(trx, user.id, { mfaVerified: true, activeCompanyId: companyId, ip: meta.ip, userAgent: meta.ua });
       return { userId: user.id, companyId, session };
     });

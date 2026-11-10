@@ -20,7 +20,7 @@ export interface UserSessionTable {
 export interface CompanyTable {
   id: string; name: string; legal_form: string | null; rccm: string | null; tax_id: string | null; tax_regime: string | null;
   address: string | null; city: string | null; phone: string | null; email: string | null; country_code: Generated<string>;
-  currency: Generated<string>; logo_key: string | null; status: Generated<'active' | 'suspended' | 'closed'>; status_reason: string | null; accounting_locked_until: ColumnType<string | null, string | null | undefined, string | null>;
+  currency: Generated<string>; logo_key: string | null; activity: Generated<'trade' | 'services' | 'mixed'>; status: Generated<'active' | 'suspended' | 'closed'>; status_reason: string | null; accounting_locked_until: ColumnType<string | null, string | null | undefined, string | null>;
   created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 export interface CompanyMembershipTable {

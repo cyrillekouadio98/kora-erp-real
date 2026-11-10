@@ -5,6 +5,7 @@ import { Auth, PlatformRoles } from '../../common/decorators';
 import { AuthInfo, clientIp, KoraRequest } from '../../common/request-context';
 import { email, parse } from '../../common/validation';
 import { parseLogo } from '../companies/company-logo';
+import { ACTIVITIES } from '../companies/provisioning.service';
 import { SetupService } from './setup.service';
 
 const opt = (max: number) => z.string().trim().max(max).transform((v) => v || null).nullable().optional();
@@ -12,6 +13,7 @@ const CompanySchema = z.object({
   name: z.string().trim().min(2, { message: 'La raison sociale doit contenir au moins 2 caractères' }).max(160),
   legalForm: opt(40), rccm: opt(60), taxId: opt(40), taxRegime: opt(60), address: opt(300), city: opt(80), phone: opt(40),
   email: z.string().trim().toLowerCase().email({ message: 'Adresse e-mail invalide' }).nullable().optional().or(z.literal('').transform(() => null)),
+  activity: z.enum(ACTIVITIES).optional(),
 }).strict();
 const Plan = { planCode: z.string().trim().min(1).max(40), billingCycle: z.enum(['monthly', 'yearly']) };
 const SiteSchema = z.object({ name: z.string().trim().min(2).max(80), city: opt(80), address: opt(300), phone: opt(40) }).strict();

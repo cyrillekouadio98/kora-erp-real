@@ -1,7 +1,7 @@
 'use client';
 import { Fragment, useState } from 'react';
 import { errorMessage } from '@/lib/api';
-import { date, money } from '@/lib/format';
+import { Activity, ACTIVITIES, date, money } from '@/lib/format';
 
 export function Alert({ kind = 'err', children }: { kind?: 'err' | 'warn' | 'ok' | 'info'; children: React.ReactNode }) {
   if (!children) return null;
@@ -25,6 +25,17 @@ export function useAction() {
 
 export function Field({ label, ...props }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
   return <label className="field">{label}<input className="input" {...props} /></label>;
+}
+
+/** Choix de l'activité de l'entreprise (commerce, services ou les deux). */
+export function ActivityField({ value, onChange, disabled }: { value: string; onChange: (v: Activity) => void; disabled?: boolean }) {
+  const v = (value || 'mixed') as Activity;
+  return <label className="field">Activité
+    <select className="input" value={v} disabled={disabled} onChange={(e) => onChange(e.target.value as Activity)}>
+      {Object.entries(ACTIVITIES).map(([k, [l]]) => <option key={k} value={k}>{l}</option>)}
+    </select>
+    <span className="small muted">{ACTIVITIES[v][1]}</span>
+  </label>;
 }
 
 /** Lignes « Déjà réglé » d'une facture dans le bloc des totaux : une par paiement, datée. */

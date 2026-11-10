@@ -17,7 +17,7 @@ import { TreasuryService } from '../treasury/treasury.service';
 
 /** Validité des invitations envoyées à la remise : le client a le temps de s'organiser. */
 const HANDOVER_INVITE_DAYS = 30;
-const COMPANY_COLUMNS = { name: 'name', legalForm: 'legal_form', rccm: 'rccm', taxId: 'tax_id', taxRegime: 'tax_regime', address: 'address', city: 'city', phone: 'phone', email: 'email' } as const;
+const COMPANY_COLUMNS = { name: 'name', legalForm: 'legal_form', rccm: 'rccm', taxId: 'tax_id', taxRegime: 'tax_regime', address: 'address', city: 'city', phone: 'phone', email: 'email', activity: 'activity' } as const;
 
 export interface PlannedUser { name: string; email: string; roleKey: string; siteIds: string[] | null }
 export interface PeopleInput { owner: { name: string; email: string } | null; users: PlannedUser[]; notes?: string | null }

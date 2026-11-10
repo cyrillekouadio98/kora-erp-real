@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api, ApiError } from '@/lib/api';
 import { SUB_STATUS } from '@/lib/format';
-import { activeHref, AppIcon, appTone, currentApp } from './apps';
+import { activeHref, AppIcon, appLabel, appTone, currentApp } from './apps';
 import { Pill } from './ui';
 
 export interface Me {
@@ -13,7 +13,7 @@ export interface Me {
   companies: { companyId: string; name: string; status: string; isOwner: boolean }[];
 }
 export interface CompanyContext {
-  company: { id: string; name: string; currency: string; status: string };
+  company: { id: string; name: string; currency: string; status: string; activity: 'trade' | 'services' | 'mixed' };
   isOwner: boolean; permissions: string[]; readOnly: boolean; subscriptionStatus: string | null;
   entitlements: { modules: string[]; quotas: Record<string, number | null> };
   /** Sites proposés (ceux permis à l'utilisateur), site affiché (null : tous) et limite éventuelle. */
@@ -74,7 +74,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <header className="topbar">
           {home || !app
             ? <Link href="/app" className="brand" style={{ textDecoration: 'none', color: 'inherit' }}>Kora<span> ERP</span></Link>
-            : <Link href="/app" className="app-title" title="Revenir à toutes les applications"><span className="app-title-ico"><AppIcon name={app.key} size={24} /></span>{app.label}</Link>}
+            : <Link href="/app" className="app-title" title="Revenir à toutes les applications"><span className="app-title-ico"><AppIcon name={app.key} size={24} /></span>{appLabel(app, ctx?.company.activity)}</Link>}
           {pages.length > 1 && (
             <nav className="subnav" aria-label={`Menu ${app!.label}`}>
               {pages.map((p) => <Link key={p.href} href={p.href} className={p.href === activePage ? 'active' : ''} aria-current={p.href === activePage ? 'page' : undefined}>{p.label}</Link>)}

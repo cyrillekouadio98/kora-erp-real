@@ -3,6 +3,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { z } from 'zod';
+import { ACTIVITIES } from '../companies/provisioning.service';
 import { config } from '../../config';
 import { AllowPendingMfa, Auth, Public } from '../../common/decorators';
 import { AuthInfo, clientIp, KoraRequest } from '../../common/request-context';
@@ -13,6 +14,7 @@ const SignupSchema = z.object({
   fullName: z.string().trim().min(2, { message: 'Indiquez votre nom complet' }).max(120),
   email, password,
   companyName: z.string().trim().min(2, { message: "Indiquez le nom de l'entreprise" }).max(160),
+  activity: z.enum(ACTIVITIES).optional(),
 });
 const LoginSchema = z.object({ email, password: z.string().min(1).max(200), code: z.string().regex(/^\d{6}$/).optional() });
 const CodeSchema = z.object({ code: z.string().regex(/^\d{6}$/, { message: 'Le code comporte 6 chiffres' }) });

@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useState } from 'react';
-import { AppIcon, APPS } from '@/components/apps';
+import { AppIcon, appLabel, APPS } from '@/components/apps';
 import { useSession } from '@/components/session';
 
 /** Écran d'accueil : la grille des applications accessibles à l'utilisateur. */
@@ -10,7 +10,7 @@ export default function Home() {
   const [q, setQ] = useState('');
   const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   const apps = APPS.filter((a) => (!a.perm || can(a.perm)) && (!a.module || ctx?.entitlements.modules.includes(a.module)))
-    .filter((a) => norm(a.label).includes(norm(q.trim())));
+    .map((a) => ({ ...a, label: appLabel(a, ctx?.company.activity) })).filter((a) => norm(a.label).includes(norm(q.trim())));
   const company = me.companies.find((c) => c.companyId === me.activeCompanyId)?.name;
 
   return (

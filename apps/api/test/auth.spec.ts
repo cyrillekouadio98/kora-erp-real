@@ -18,6 +18,18 @@ describe('Authentification et sessions', () => {
     expect(audit.body.map((a: any) => a.action)).toContain('company.created');
   });
 
+  it("l'activité choisie à l'inscription (commerce, services) se retrouve dans le contexte et se modifie dans la fiche", async () => {
+    const agent = request.agent(app.getHttpServer());
+    const res = await agent.post('/auth/signup').send({ fullName: 'Awa Koné', email: uniqueEmail('services'), password: 'MotDePasse123', companyName: 'Cabinet Conseil Awa', activity: 'services' });
+    expect(res.status).toBe(201);
+    expect((await agent.get('/company/context')).body.company.activity).toBe('services');
+    expect((await agent.patch('/company').send({ activity: 'trade' })).body.activity).toBe('trade');
+    expect((await agent.patch('/company').send({ activity: 'industrie' })).status).toBe(400);
+    // Sans choix, l'entreprise fait les deux.
+    const other = await signup(app);
+    expect((await other.agent.get('/company/context')).body.company.activity).toBe('mixed');
+  });
+
   it("refuse une adresse déjà utilisée et un mot de passe trop court", async () => {
     const u = await signup(app);
     const dup = await request(app.getHttpServer()).post('/auth/signup').send({ fullName: 'X Y', email: u.email, password: 'MotDePasse123', companyName: 'Autre' });

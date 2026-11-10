@@ -10,7 +10,11 @@ import { DEFAULT_ROLES } from '../rbac/permissions';
 export interface NewCompany {
   name: string; legalForm?: string | null; taxId?: string | null; city?: string | null;
   rccm?: string | null; taxRegime?: string | null; address?: string | null; phone?: string | null; email?: string | null;
+  activity?: CompanyActivity;
 }
+/** Commerce, services ou les deux : le module Articles s'y adapte. */
+export type CompanyActivity = 'trade' | 'services' | 'mixed';
+export const ACTIVITIES = ['trade', 'services', 'mixed'] as const;
 export interface ProvisionOptions {
   /** false : entreprise préparée par l'éditeur, sans membre jusqu'à l'acceptation du propriétaire. */
   owner?: boolean; planCode?: string; billingCycle?: 'monthly' | 'yearly'; actorType?: 'user' | 'platform';
@@ -29,7 +33,7 @@ export class ProvisioningService {
     await t.insertInto('company').values({
       id: companyId, name: input.name.trim(), legal_form: input.legalForm ?? null, tax_id: input.taxId ?? null,
       city: input.city ?? null, created_by: userId, rccm: input.rccm ?? null, tax_regime: input.taxRegime ?? null, address: input.address ?? null,
-      phone: input.phone ?? null, email: input.email ?? null, logo_key: null, status_reason: null,
+      phone: input.phone ?? null, email: input.email ?? null, logo_key: null, status_reason: null, ...(input.activity ? { activity: input.activity } : {}),
     }).execute();
 
     const roles = await t.insertInto('role').values(DEFAULT_ROLES.map((r) => ({

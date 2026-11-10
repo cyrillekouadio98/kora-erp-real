@@ -161,6 +161,9 @@ export const APPS: App[] = [
   { key: 'manual', label: 'Manuel', href: '/app/manuel' },
 ];
 
+/** Nom affiché d'une application : « Articles » devient « Prestations » pour une entreprise de services. */
+export const appLabel = (a: { key: string; label: string }, activity?: string) => (a.key === 'products' && activity === 'services' ? 'Prestations' : a.label);
+
 /** Teinte (degrés HSL) de chaque application, reprise de la couleur dominante de son icône : elle colore l'intérieur du module. */
 export const APP_HUE: Record<string, number> = {
   dashboard: 262, sales: 22, purchases: 172, treasury: 40, reports: 222, accounting: 206, stock: 318, calendar: 214, products: 2,

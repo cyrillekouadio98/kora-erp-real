@@ -77,6 +77,13 @@ export const paymentMethods = (modules: string[]) => Object.entries(PAYMENT_METH
 export const DOC_LABEL = { quote: 'Devis', order: 'Bon de commande', invoice: 'Facture', credit_note: 'Avoir' } as const;
 export type DocType = keyof typeof DOC_LABEL;
 export const VAT_RATES = [18, 9, 0];
+/** Activité de l'entreprise : le module Articles s'y adapte (type par défaut, stock, prix d'achat, libellés). */
+export type Activity = 'trade' | 'services' | 'mixed';
+export const ACTIVITIES: Record<Activity, [string, string]> = {
+  trade: ['Commerce', 'Achat-revente de marchandises : articles stockés, prix d’achat et marge'],
+  services: ['Services', 'Prestations facturées (conseil, maintenance, transport…) : pas de stock'],
+  mixed: ['Commerce et services', 'Marchandises et prestations'],
+};
 
 export const PURCHASE_LABEL = { order: 'Bon de commande', invoice: 'Facture fournisseur' } as const;
 export const PURCHASE_STATUS: Record<string, [string, 'ok' | 'warn' | 'crit' | 'mute']> = {

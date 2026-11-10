@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { date, money, SETUP_STATUS } from '@/lib/format';
-import { Alert, Field, Pill, useAction } from '@/components/ui';
+import { ActivityField, Alert, Field, Pill, useAction } from '@/components/ui';
 
 /** Console : entreprises préparées pour des clients, et lancement d'une nouvelle préparation. */
 export default function PreparationList() {
@@ -19,7 +19,7 @@ export default function PreparationList() {
   return (
     <>
       <div className="page-head"><h1>Préparer une entreprise</h1>
-        <button className="btn primary" onClick={() => setForm({ name: '', legalForm: '', city: '', planCode: 'business', billingCycle: 'monthly' })}>Nouvelle entreprise</button></div>
+        <button className="btn primary" onClick={() => setForm({ name: '', legalForm: '', city: '', activity: 'trade', planCode: 'business', billingCycle: 'monthly' })}>Nouvelle entreprise</button></div>
       <p className="small muted" style={{ margin: 0 }}>
         Pour un client qui souhaite la solution : vous créez son entreprise, choisissez la formule, paramétrez la fiche, les sites, les comptes de trésorerie et les utilisateurs,
         puis vous la lui <b>remettez</b>. Il reçoit alors une invitation de propriétaire, et la console perd l&apos;accès au contenu de l&apos;entreprise.
@@ -52,6 +52,7 @@ export default function PreparationList() {
               <Field label="Forme juridique" placeholder="SARL, SA, SAS…" value={form.legalForm} onChange={(e) => setForm({ ...form, legalForm: e.target.value })} />
               <Field label="Ville" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
             </div>
+            <ActivityField value={form.activity} onChange={(activity) => setForm({ ...form, activity })} />
             <label className="field">Formule<select className="input" value={form.planCode} onChange={(e) => setForm({ ...form, planCode: e.target.value })}>
               {plans.map((p) => <option key={p.code} value={p.code}>{p.name} — {money(p.priceMonthly)} / mois · {p.entitlements.quotas.users ?? 'utilisateurs illimités'}{p.entitlements.quotas.users ? ' utilisateurs' : ''}</option>)}
             </select></label>
