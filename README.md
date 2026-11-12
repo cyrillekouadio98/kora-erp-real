@@ -72,6 +72,8 @@ Tests d'intégration sur une vraie base PostgreSQL (`kora_test`, recréée à ch
 
 ### Production
 
+Déploiement sur un serveur Ubuntu (Docker Compose, HTTPS automatique avec Caddy, sauvegardes nocturnes) : voir [infra/prod/README.md](infra/prod/README.md).
+
 Avec `NODE_ENV=production`, l'API refuse de démarrer si une variable obligatoire manque ou garde sa valeur de développement (`ENCRYPTION_KEY`, URL et mots de passe PostgreSQL, `WEB_URL`). Le prestataire de paiement de test n'y est jamais branché : `/webhooks/payments/sandbox` répond 404.
 
 `TRUST_PROXY` indique combien de proxys précèdent l'API (1 = l'interface Next.js seule, valeur par défaut ; 2 = un répartiteur de charge devant Next.js). Une valeur trop basse fait partager à tous les utilisateurs la même adresse IP, donc la même limite de tentatives de connexion.
@@ -86,7 +88,8 @@ apps/
     src/modules/       auth, companies, rbac, billing, audit, support, platform, exports
     test/              tests d'intégration
   web/                 interface Next.js (espace entreprise + console éditeur)
-infra/db/              création des rôles et des bases PostgreSQL
+infra/db/              création des rôles et des bases PostgreSQL (développement, CI)
+infra/prod/            production sur un serveur : Docker Compose, Caddy, sauvegardes
 .github/workflows/     intégration continue (types, tests, construction)
 ```
 

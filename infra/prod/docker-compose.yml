@@ -1,0 +1,98 @@
+# Kora ERP — production sur un serveur unique (Docker Compose).
+#
+#   Internet ──443──▶ caddy (HTTPS automatique) ──▶ web (Next.js) ──/api──▶ api (NestJS) ──▶ db (PostgreSQL)
+#
+# Seul Caddy publie des ports (80, 443). La base et l'API ne sont joignables que sur le réseau
+# interne de Docker : aucune connexion PostgreSQL ne transite par Internet.
+#
+# Toutes les valeurs viennent de infra/prod/.env (créé par generate-env.sh, jamais versionné).
+# Commandes : voir infra/prod/README.md (deploy.sh fait tout).
+name: kora
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "5" }   # journaux bornés : le disque ne se remplit pas
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?Lancez generate-env.sh}
+      # Lus par db-init.sh au premier démarrage (volume vide) pour créer les trois rôles de Kora.
+      KORA_OWNER_PASSWORD: ${KORA_OWNER_PASSWORD:?}
+      KORA_APP_PASSWORD: ${KORA_APP_PASSWORD:?}
+      KORA_PLATFORM_PASSWORD: ${KORA_PLATFORM_PASSWORD:?}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db-init.sh:/docker-entrypoint-initdb.d/10-kora.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kora"]
+      interval: 5s
+      retries: 30
+    logging: *logging
+
+  api:
+    build: { context: ../.., dockerfile: apps/api/Dockerfile }
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      WEB_URL: https://${DOMAIN:?}
+      DATABASE_OWNER_URL: postgres://kora_owner:${KORA_OWNER_PASSWORD}@db:5432/kora
+      DATABASE_APP_URL: postgres://kora_app:${KORA_APP_PASSWORD}@db:5432/kora
+      DATABASE_PLATFORM_URL: postgres://kora_platform:${KORA_PLATFORM_PASSWORD}@db:5432/kora
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?}
+      # Caddy puis Next.js précèdent l'API : 2 proxys de confiance pour lire la vraie IP du client.
+      TRUST_PROXY: "2"
+      SESSION_TTL_HOURS: "12"
+      JOBS_ENABLED: "true"
+      BILLING_INTERVAL_MS: "600000"
+      # Premier super administrateur (créé une fois ; à retirer de .env après la première connexion).
+      SEED_SUPERADMIN_EMAIL: ${SEED_SUPERADMIN_EMAIL:-}
+      SEED_SUPERADMIN_PASSWORD: ${SEED_SUPERADMIN_PASSWORD:-}
+    # Migrations et données de référence à chaque démarrage (idempotents), puis l'API.
+    command: ["sh", "-c", "node dist/db/migrate.js && node dist/db/seed.js && exec node dist/main.js"]
+    depends_on:
+      db: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 10s
+      start_period: 30s
+      retries: 6
+    logging: *logging
+
+  web:
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+      args: { API_URL: "http://api:3001" }   # adresse interne de l'API, figée au build (réécritures /api/*)
+    restart: unless-stopped
+    environment:
+      API_URL: http://api:3001
+    depends_on:
+      api: { condition: service_healthy }
+    logging: *logging
+
+  caddy:
+    image: caddy:2.8.4
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data        # certificats HTTPS : à conserver
+      - caddy_config:/config
+    depends_on: [web]
+    logging: *logging
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

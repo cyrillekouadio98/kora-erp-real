@@ -1,0 +1,18 @@
+# Point d'entrée HTTPS : certificat Let's Encrypt obtenu et renouvelé automatiquement pour {$DOMAIN}.
+# Le nom de domaine doit pointer (enregistrement DNS A) vers l'IP publique du serveur avant le premier démarrage.
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	# Toute l'application passe par l'interface Next.js, qui relaie /api/* vers l'API interne
+	# (même origine : cookies de session httpOnly, pas de CORS).
+	reverse_proxy web:3000
+}
