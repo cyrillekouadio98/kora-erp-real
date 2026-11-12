@@ -41,7 +41,7 @@ export default function LoginPage() {
           <Field label="Code de double authentification (6 chiffres)" inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" required autoFocus value={code} onChange={(e) => setCode(e.target.value)} />
         )}
         <button className="btn primary" disabled={busy}>{busy ? 'Connexion…' : step === 'password' ? 'Se connecter' : 'Valider le code'}</button>
-        <p className="small muted">Pas encore de compte ? <Link href="/inscription">Créer mon entreprise</Link></p>
+        <p className="small muted">{step === 'password' && <><Link href="/mot-de-passe-oublie">Mot de passe oublié ?</Link> · </>}Pas encore de compte ? <Link href="/inscription">Créer mon entreprise</Link></p>
       </form>
     </main>
   );

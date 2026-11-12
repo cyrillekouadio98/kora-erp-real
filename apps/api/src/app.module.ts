@@ -14,11 +14,49 @@ import { BillingScheduler } from './modules/billing/billing.scheduler';
 import { BillingService } from './modules/billing/billing.service';
 import { EntitlementService } from './modules/billing/entitlement.service';
 import { QuotaService } from './modules/billing/quota.service';
+import { ProductsController } from './modules/sales/products.controller';
+import { SalesController } from './modules/sales/sales.controller';
+import { SalesService } from './modules/sales/sales.service';
+import { PosController } from './modules/pos/pos.controller';
+import { PosService } from './modules/pos/pos.service';
+import { PurchasesController } from './modules/purchases/purchases.controller';
+import { PurchasesService } from './modules/purchases/purchases.service';
+import { TreasuryController } from './modules/treasury/treasury.controller';
+import { TreasuryService } from './modules/treasury/treasury.service';
+import { FormationService } from './modules/accounting/formation.service';
+import { AccountingController } from './modules/accounting/accounting.controller';
+import { AccountingService } from './modules/accounting/accounting.service';
+import { BalancesService } from './modules/accounting/balances.service';
+import { FinancialService } from './modules/accounting/financial.service';
+import { StockController } from './modules/stock/stock.controller';
+import { StockService } from './modules/stock/stock.service';
+import { PayrollController } from './modules/payroll/payroll.controller';
+import { PayrollInsightsService } from './modules/payroll/payroll-insights.service';
+import { PayrollService } from './modules/payroll/payroll.service';
+import { MailService } from './modules/mail/mail.service';
+import { EmailsController } from './modules/mail/emails.controller';
+import { PublicDocumentsController } from './modules/sales/public.controller';
+import { LeaveController } from './modules/leave/leave.controller';
+import { LeaveService } from './modules/leave/leave.service';
+import { DashboardController } from './modules/dashboard/dashboard.controller';
+import { DashboardService } from './modules/dashboard/dashboard.service';
+import { JobsController } from './modules/jobs/jobs.controller';
+import { ReportsController } from './modules/reports/reports.controller';
+import { ReportsService } from './modules/reports/reports.service';
+import { ContactsController } from './modules/contacts/contacts.controller';
+import { SitesController } from './modules/sites/sites.controller';
+import { SitesService } from './modules/sites/sites.service';
+import { CalendarController } from './modules/calendar/calendar.controller';
+import { CalendarService } from './modules/calendar/calendar.service';
+import { EvaluationsController } from './modules/evaluations/evaluations.controller';
+import { EvaluationsService } from './modules/evaluations/evaluations.service';
 import { CompaniesController } from './modules/companies/companies.controller';
 import { ProvisioningService } from './modules/companies/provisioning.service';
 import { ExportController } from './modules/exports/export.controller';
 import { HealthController } from './modules/platform/health.controller';
 import { PlatformController } from './modules/platform/platform.controller';
+import { SetupController } from './modules/platform/setup.controller';
+import { SetupService } from './modules/platform/setup.service';
 import { MembersController } from './modules/rbac/members.controller';
 import { RolesController } from './modules/rbac/roles.controller';
 import { PlatformSupportController, SupportAccessController } from './modules/support/support.controller';
@@ -30,10 +68,11 @@ import { PlatformSupportController, SupportAccessController } from './modules/su
   ],
   controllers: [
     HealthController, AuthController, CompaniesController, MembersController, RolesController, BillingController, WebhooksController,
-    DevController, AuditController, SupportAccessController, PlatformSupportController, PlatformController, ExportController,
+    DevController, AuditController, SupportAccessController, PlatformSupportController, PlatformController, SetupController, ExportController,
+    ContactsController, ProductsController, SalesController, PurchasesController, TreasuryController, AccountingController, StockController, PayrollController, PublicDocumentsController, EmailsController, LeaveController, DashboardController, JobsController, ReportsController, SitesController, CalendarController, EvaluationsController, PosController,
   ],
   providers: [
-    AuditService, SessionService, AuthService, ProvisioningService, EntitlementService, QuotaService, BillingService, BillingScheduler,
+    AuditService, SessionService, AuthService, ProvisioningService, EntitlementService, QuotaService, BillingService, BillingScheduler, SalesService, PurchasesService, TreasuryService, AccountingService, FinancialService, FormationService, BalancesService, StockService, PayrollService, PayrollInsightsService, MailService, LeaveService, DashboardService, ReportsService, CalendarService, EvaluationsService, SitesService, SetupService, PosService,
     { provide: APP_GUARD, useClass: AccessGuard },
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
   ],

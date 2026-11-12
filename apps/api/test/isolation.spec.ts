@@ -10,7 +10,7 @@ import { AppModule } from '../src/app.module';
 import { buildOpenApi } from '../src/bootstrap';
 import { META } from '../src/common/decorators';
 import { config } from '../src/config';
-import { createApp, ownerClient, platformUser, resetDb, signup } from './helpers';
+import { createApp, ownerClient, platformUser, resetDb, signup, TIERS } from './helpers';
 
 /** Routes liées au seul compte utilisateur (sans entreprise), revues une par une. */
 const ACCOUNT_ROUTES = new Set([
@@ -35,9 +35,37 @@ describe('Isolation des données entre entreprises', () => {
     const role = await B.agent.post('/company/roles').send({ name: 'Rôle secret Bêta', permissions: ['contacts.read'] });
     const inv = await B.agent.post('/company/invitations').send({ email: 'invite.beta@test.ci', roleIds: [role.body.id] });
     const members = await B.agent.get('/company/members');
+    const contact = await B.agent.post('/company/contacts').send({ ...TIERS, kind: 'customer', name: 'Client secret Bêta', email: 'client.beta@test.ci' });
+    const product = await B.agent.post('/company/products').send({ name: 'Article secret Bêta', salePrice: 1000, vatRate: 18 });
+    const quote = await B.agent.post('/company/sales/documents').send({ type: 'quote', contactId: contact.body.id, lines: [{ productId: product.body.id, description: 'Ligne secrète Bêta', quantity: 1, unitPrice: 1000, vatRate: 18 }] });
+    const invoice = await B.agent.post('/company/sales/documents').send({ type: 'invoice', contactId: contact.body.id, lines: [{ description: 'Ligne secrète Bêta', quantity: 1, unitPrice: 5000, vatRate: 18 }] });
+    await B.agent.post(`/company/sales/documents/${invoice.body.id}/validate`);
+    await B.agent.post(`/company/sales/documents/${invoice.body.id}/payments`).send({ amount: 1000, method: 'cash', reference: 'PAIEMENT-SECRET-BETA' });
+    await B.agent.post(`/company/sales/documents/${invoice.body.id}/reminders`).send({ channel: 'phone', note: 'RELANCE-SECRETE-BETA' });
+    const creditNote = await B.agent.post(`/company/sales/documents/${invoice.body.id}/credit-note`);
+    const supplier = await B.agent.post('/company/contacts').send({ ...TIERS, kind: 'supplier', name: 'Fournisseur secret Bêta' });
+    const order = await B.agent.post('/company/purchases/documents').send({ type: 'order', contactId: supplier.body.id, lines: [{ description: 'Achat secret Bêta', quantity: 1, unitPrice: 1000, vatRate: 18 }] });
+    const bill = await B.agent.post('/company/purchases/documents').send({ type: 'invoice', contactId: supplier.body.id, supplierRef: 'REF-SECRETE-BETA', lines: [{ description: 'Achat secret Bêta', quantity: 1, unitPrice: 9000, vatRate: 18 }] });
+    await B.agent.post(`/company/purchases/documents/${bill.body.id}/validate`);
+    await B.agent.post(`/company/purchases/documents/${bill.body.id}/payments`).send({ amount: 500, method: 'cash', reference: 'DECAISSEMENT-SECRET-BETA' });
+    const accounts = await B.agent.get('/company/treasury/accounts');
+    const bCash = accounts.body.find((a: any) => a.kind === 'cash');
+    await B.agent.patch(`/company/treasury/accounts/${bCash.id}`).send({ name: 'Caisse secrète Bêta' });
+    const expense = await B.agent.post('/company/treasury/movements').send({ kind: 'expense', accountId: bCash.id, amount: 100, category: 'fuel', label: 'Dépense secrète Bêta' });
+    const od = await B.agent.post('/company/accounting/entries').send({ date: new Date().toISOString().slice(0, 10), label: 'Écriture secrète Bêta', lines: [
+      { account: '622200', label: 'Ligne comptable secrète Bêta', debit: 100 }, { account: '401000', label: 'Ligne comptable secrète Bêta', credit: 100 }] });
+    await B.agent.post('/company/accounting/accounts').send({ code: '622900', name: 'Compte secret Bêta' });
+    await B.agent.post(`/company/stock/${product.body.id}/opening`).send({ quantity: 7, unitCost: 100 });
+    await B.agent.post(`/company/stock/${product.body.id}/count`).send({ counted: 6, reason: 'Inventaire secret Bêta' });
+    await B.agent.post('/company/subscription/change').send({ planCode: 'premium', billingCycle: 'monthly' });
+    const employee = await B.agent.post('/company/employees').send({ firstName: 'Employé', lastName: 'Secret Bêta', hireDate: '2025-01-01', baseSalary: 123456, bankDetails: 'RIB-SECRET-BETA' });
+    const payrollRun = await B.agent.post('/company/payroll/runs').send({ period: new Date().toISOString().slice(0, 7) });
+    const leave = await B.agent.post('/company/leave').send({ employeeId: employee.body.id, type: 'sick', startDate: '2025-06-02', endDate: '2025-06-03', reason: 'CONGE-SECRET-BETA' });
     const sessions = await B.agent.get('/auth/sessions');
     const support = await platformUser(app, 'support');
     const grant = await support.agent.post('/platform/support-access').send({ companyId: B.companyId, reason: 'Diagnostic de test isolation', scope: ['users'] });
+    for (const r of [contact, product, quote, invoice, creditNote, supplier, order, bill, expense, od, employee, payrollRun, leave]) if (r.status >= 300) throw new Error(`données de B : ${r.status} ${JSON.stringify(r.body)}`);
+    expect((await B.agent.get(`/company/sales/documents/${invoice.body.id}`)).body).toMatchObject({ status: 'partially_paid', paidAmount: 1000 });
     const c = await ownerClient();
     const sub = await c.query('SELECT id FROM subscription WHERE company_id = $1', [B.companyId]);
     const invB = await c.query(`INSERT INTO platform_invoice (number, company_id, subscription_id, kind, status, currency, amount, lines, due_at)
@@ -45,9 +73,9 @@ describe('Isolation des données entre entreprises', () => {
     await c.end();
     Object.assign(bIds, {
       company: B.companyId, role: role.body.id, invitation: inv.body.id, membership: members.body[0].id,
-      session: sessions.body[0].id, grant: grant.body.id, invoice: invB.rows[0].id,
+      session: sessions.body[0].id, grant: grant.body.id, invoice: invB.rows[0].id, contact: contact.body.id, product: product.body.id, quote: quote.body.id, salesInvoice: invoice.body.id, creditNote: creditNote.body.id, purchaseOrder: order.body.id, purchaseInvoice: bill.body.id, treasuryAccount: bCash.id, treasuryMovement: expense.body.id, journalEntry: od.body.id, employee: employee.body.id, payrollRun: payrollRun.body.id, payslip: payrollRun.body.payslips?.[0]?.id, leave: leave.body.id,
     });
-    bSecrets = [...Object.values(bIds), B.email, 'Entreprise Bêta', 'Rôle secret Bêta', 'invite.beta@test.ci'];
+    bSecrets = [...Object.values(bIds), B.email, 'Entreprise Bêta', 'Rôle secret Bêta', 'invite.beta@test.ci', 'Client secret Bêta', 'client.beta@test.ci', 'Article secret Bêta', 'Ligne secrète Bêta', 'PAIEMENT-SECRET-BETA', 'RELANCE-SECRETE-BETA', 'Fournisseur secret Bêta', 'Achat secret Bêta', 'REF-SECRETE-BETA', 'DECAISSEMENT-SECRET-BETA', 'Caisse secrète Bêta', 'Dépense secrète Bêta', 'Écriture secrète Bêta', 'Ligne comptable secrète Bêta', 'Compte secret Bêta', 'Inventaire secret Bêta', 'Secret Bêta', 'RIB-SECRET-BETA', 'CONGE-SECRET-BETA'];
   });
 
   afterAll(async () => { await app.close(); });

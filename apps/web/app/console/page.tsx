@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import { date, money, SUB_STATUS } from '@/lib/format';
 import { Alert, Pill, useAction } from '@/components/ui';
@@ -34,7 +35,7 @@ export default function ConsoleHome() {
       <div className="table-wrap"><table>
         <thead><tr><th>Entreprise</th><th>Formule</th><th>Abonnement</th><th className="n">Utilisateurs</th><th>Créée le</th><th></th></tr></thead>
         <tbody>{companies.map((c) => (
-          <tr key={c.id}><td><b>{c.name}</b>{c.status === 'suspended' && <> <Pill tone="crit">Suspendue</Pill><div className="small muted">{c.statusReason}</div></>}</td>
+          <tr key={c.id}><td><b>{c.name}</b>{c.preparing && <> <Link href={`/console/preparation/${c.id}`}><Pill tone="warn">En préparation</Pill></Link></>}{c.status === 'suspended' && <> <Pill tone="crit">Suspendue</Pill><div className="small muted">{c.statusReason}</div></>}</td>
             <td>{c.planCode}</td><td>{c.subscriptionStatus && <Pill tone={SUB_STATUS[c.subscriptionStatus]?.[1]}>{SUB_STATUS[c.subscriptionStatus]?.[0]}</Pill>}<div className="small muted">échéance {date(c.currentPeriodEnd)}</div></td>
             <td className="n">{c.activeUsers}</td><td className="small">{date(c.createdAt)}</td>
             <td className="n"><div className="row" style={{ justifyContent: 'flex-end' }}>

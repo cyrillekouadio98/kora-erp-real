@@ -52,6 +52,11 @@ services:
       SESSION_TTL_HOURS: "12"
       JOBS_ENABLED: "true"
       BILLING_INTERVAL_MS: "600000"
+      DB_POOL_MAX: "10"                          # connexions par rôle (PostgreSQL limité à 50 sur ce petit serveur)
+      # E-mails (invitations, mot de passe oublié, documents, rappels). Sans SMTP_URL, ils restent
+      # consultables dans Kora sans être envoyés. Ex. : smtp://utilisateur:motdepasse@smtp-relay.brevo.com:587
+      SMTP_URL: ${SMTP_URL:-}
+      MAIL_FROM: ${MAIL_FROM:-Kora ERP <no-reply@${DOMAIN}>}
       # Premier super administrateur (créé une fois ; à retirer de .env après la première connexion).
       SEED_SUPERADMIN_EMAIL: ${SEED_SUPERADMIN_EMAIL:-}
       SEED_SUPERADMIN_PASSWORD: ${SEED_SUPERADMIN_PASSWORD:-}

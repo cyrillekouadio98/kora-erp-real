@@ -33,9 +33,11 @@ export class PlatformController {
   @Get('companies')
   companies(@Query('q') q?: string) {
     return this.db.platform(async (trx) => {
-      let query = trx.selectFrom('company as c').leftJoin('subscription as s', 's.company_id', 'c.id')
+      let query = trx.selectFrom('company as c').leftJoin('subscription as s', 's.company_id', 'c.id').leftJoin('company_setup as cs', 'cs.company_id', 'c.id')
         .leftJoin('plan_version as v', 'v.id', 's.plan_version_id').leftJoin('plan as p', 'p.id', 'v.plan_id')
         .select((eb) => ['c.id', 'c.name', 'c.status', 'c.status_reason as statusReason', 'c.created_at as createdAt', 'p.code as planCode', 's.status as subscriptionStatus', 's.current_period_end as currentPeriodEnd',
+          // Entreprise préparée par l'éditeur : en préparation tant qu'elle n'est pas remise au client.
+          sql<boolean>`cs.company_id IS NOT NULL AND cs.handed_over_at IS NULL`.as('preparing'),
           eb.selectFrom('company_membership as m').whereRef('m.company_id', '=', 'c.id').where('m.status', '=', 'active').select(eb.fn.countAll<string>().as('n')).as('activeUsers')])
         .orderBy('c.created_at', 'desc').limit(500);
       if (q) query = query.where('c.name', 'ilike', `%${q.replace(/[%_]/g, '')}%`);

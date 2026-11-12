@@ -1,0 +1,139 @@
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
+import { z } from 'zod';
+import { AllowWhenReadOnly, Permission, Tenant } from '../../common/decorators';
+import { conflict, notFound } from '../../common/errors';
+import { isUuid } from '../../common/ids';
+import { nextNumber, peekNumber } from '../../common/numbering';
+import type { TenantInfo } from '../../common/request-context';
+import { parse } from '../../common/validation';
+import { DatabaseService, TenantTrx } from '../../db/database.service';
+import { AuditService } from '../audit/audit.service';
+
+/** Taux de TVA applicables en Côte d'Ivoire : normal, réduit, exonéré. */
+export const VAT_RATES = [18, 9, 0];
+
+const money = z.coerce.number().min(0, { message: 'Le montant ne peut pas être négatif' }).max(1e13);
+const ProductSchema = z.object({
+  kind: z.enum(['good', 'service']).optional(),
+  name: z.string().trim().min(2, { message: 'Le nom doit contenir au moins 2 caractères' }).max(160),
+  description: z.string().trim().max(2000).transform((v) => v || null).nullable().optional(),
+  unit: z.string().trim().min(1).max(20).optional(),
+  salePrice: money,
+  purchasePrice: money.nullable().optional(),
+  vatRate: z.coerce.number().refine((v) => VAT_RATES.includes(v), { message: 'Taux de TVA : 18 %, 9 % ou 0 %' }),
+  barcode: z.string().trim().max(40).regex(/^[A-Za-z0-9._-]*$/, { message: 'Code-barres : chiffres et lettres uniquement, sans espace' }).transform((v) => v || null).nullable().optional(),
+}).strict();
+
+const COLUMNS = { kind: 'kind', name: 'name', description: 'description', unit: 'unit', salePrice: 'sale_price', purchasePrice: 'purchase_price', vatRate: 'vat_rate', barcode: 'barcode' } as const;
+const SELECT = ['id', 'code', 'kind', 'name', 'description', 'unit', 'sale_price as salePrice', 'purchase_price as purchasePrice', 'vat_rate as vatRate', 'archived_at as archivedAt',
+  'track_stock as trackStock', 'stock_qty as stockQty', 'barcode'] as const;
+
+const toNumbers = <T extends { salePrice: string; purchasePrice: string | null; vatRate: string; stockQty: string }>(p: T) =>
+  ({ ...p, salePrice: Number(p.salePrice), purchasePrice: p.purchasePrice === null ? null : Number(p.purchasePrice), vatRate: Number(p.vatRate), stockQty: Number(p.stockQty) });
+
+@ApiTags('Articles')
+@Controller('company/products')
+export class ProductsController {
+  constructor(private readonly db: DatabaseService, private readonly audit: AuditService) {}
+
+  /** Code d'un nouvel article, toujours attribué par N° de séquence (ART-00001…) ; un code déjà pris (ancienne saisie manuelle) est sauté. */
+  private async nextCode(trx: TenantTrx, t: TenantInfo) {
+    const taken = async (c: string) => !!(await trx.selectFrom('product').select('id').where('code', '=', c).executeTakeFirst());
+    for (;;) {
+      const next = await nextNumber(trx, t.companyId, 'product', 'ART');
+      if (!(await taken(next))) return next;
+    }
+  }
+
+  /** Un code-barres désigne un seul article : la caisse doit savoir lequel vendre. */
+  private async assertBarcodeFree(trx: TenantTrx, barcode: string | null | undefined, exceptId?: string) {
+    if (!barcode) return;
+    const other = await trx.selectFrom('product').select(['code', 'name']).where('barcode', '=', barcode).$if(!!exceptId, (q) => q.where('id', '!=', exceptId!)).executeTakeFirst();
+    if (other) throw conflict(`Le code-barres ${barcode} est déjà celui de ${other.code} « ${other.name} ».`, 'barcode_taken');
+  }
+
+  /** Code que recevra le prochain article (aperçu du formulaire, rien n'est réservé). */
+  @Permission('products.read') @AllowWhenReadOnly()
+  @Get('next-code')
+  nextCodePreview(@Tenant() t: TenantInfo) {
+    return this.db.tenant(t.ctx, async (trx) => ({ code: await peekNumber(trx, 'product', 'ART') }));
+  }
+
+  @Permission('products.read') @AllowWhenReadOnly()
+  @Get()
+  async index(@Tenant() t: TenantInfo, @Query() query: unknown) {
+    const q = parse(z.object({ q: z.string().trim().max(100).optional(), archived: z.enum(['false', 'true', 'all']).default('false') }), query);
+    const rows = await this.db.tenant(t.ctx, (trx) => {
+      let qb = trx.selectFrom('product').select(SELECT).orderBy('name').limit(1000);
+      if (q.archived === 'false') qb = qb.where('archived_at', 'is', null);
+      if (q.archived === 'true') qb = qb.where('archived_at', 'is not', null);
+      if (q.q) {
+        const like = `%${q.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+        qb = qb.where((eb) => eb.or([eb('name', 'ilike', like), eb('code', 'ilike', like), eb('description', 'ilike', like), eb('barcode', '=', q.q!)]));
+      }
+      return qb.execute();
+    });
+    return rows.map(toNumbers);
+  }
+
+  @Permission('products.create')
+  @Post()
+  create(@Tenant() t: TenantInfo, @Body() body: unknown) {
+    const input = parse(ProductSchema, body);
+    return this.db.tenant(t.ctx, async (trx) => {
+      await this.assertBarcodeFree(trx, input.barcode);
+      const code = await this.nextCode(trx, t);
+      const values: Record<string, unknown> = {};
+      for (const [k, col] of Object.entries(COLUMNS)) if ((input as any)[k] !== undefined) values[col] = (input as any)[k];
+      // Les biens sont suivis en stock dès leur création ; les services ne le sont jamais.
+      const p = await trx.insertInto('product').values({ ...values, code, company_id: t.companyId, created_by: t.ctx.userId, track_stock: (input.kind ?? 'good') === 'good' } as any).returning(SELECT).executeTakeFirstOrThrow();
+      await this.audit.tenant(trx, t.ctx, { action: 'product.created', entityType: 'product', entityId: p.id, data: { code, name: p.name, salePrice: Number(p.salePrice) } });
+      return toNumbers(p);
+    });
+  }
+
+  @Permission('products.update')
+  @Patch(':id')
+  update(@Tenant() t: TenantInfo, @Param('id') id: string, @Body() body: unknown) {
+    if (!isUuid(id)) throw notFound('Article');
+    const input = parse(ProductSchema.partial(), body);
+    return this.db.tenant(t.ctx, async (trx) => {
+      const before = await trx.selectFrom('product').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
+      if (!before) throw notFound('Article');
+      if (before.archived_at) throw conflict('Cet article est archivé : restaurez-le avant de le modifier.', 'product_archived');
+      await this.assertBarcodeFree(trx, input.barcode, id);
+      const patch: Record<string, unknown> = {};
+      for (const [k, col] of Object.entries(COLUMNS)) if ((input as any)[k] !== undefined) patch[col] = (input as any)[k];
+      // Un bien est suivi en stock, un service jamais : changer de type n'est possible qu'à stock vide.
+      if (input.kind && input.kind !== before.kind) {
+        if (Number(before.stock_qty) !== 0) throw conflict(`« ${before.name} » a encore ${Number(before.stock_qty).toLocaleString('fr-FR')} en stock : soldez-le par un inventaire avant de changer son type.`, 'stock_not_empty');
+        patch.track_stock = input.kind === 'good';
+      }
+      if (!Object.keys(patch).length) return toNumbers(await trx.selectFrom('product').select(SELECT).where('id', '=', id).executeTakeFirstOrThrow());
+      const after = await trx.updateTable('product').set(patch).where('id', '=', id).returning(SELECT).executeTakeFirstOrThrow();
+      const changes = Object.fromEntries(Object.keys(patch).filter((c) => String((before as any)[c]) !== String(patch[c])).map((c) => [c, { from: (before as any)[c], to: patch[c] }]));
+      await this.audit.tenant(trx, t.ctx, { action: 'product.updated', entityType: 'product', entityId: id, data: { code: after.code, changes } });
+      return toNumbers(after);
+    });
+  }
+
+  @Permission('products.cancel') @HttpCode(200)
+  @Post(':id/archive')
+  archive(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.setArchived(t, id, true); }
+
+  @Permission('products.cancel') @HttpCode(200)
+  @Post(':id/restore')
+  restore(@Tenant() t: TenantInfo, @Param('id') id: string) { return this.setArchived(t, id, false); }
+
+  private setArchived(t: TenantInfo, id: string, archived: boolean) {
+    if (!isUuid(id)) throw notFound('Article');
+    return this.db.tenant(t.ctx, async (trx) => {
+      const p = await trx.updateTable('product').set({ archived_at: archived ? new Date() : null })
+        .where('id', '=', id).where('archived_at', archived ? 'is' : 'is not', null).returning(SELECT).executeTakeFirst();
+      if (!p) throw notFound('Article');
+      await this.audit.tenant(trx, t.ctx, { action: archived ? 'product.archived' : 'product.restored', entityType: 'product', entityId: id, data: { code: p.code, name: p.name } });
+      return toNumbers(p);
+    });
+  }
+}

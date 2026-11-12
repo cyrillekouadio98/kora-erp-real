@@ -5,6 +5,18 @@ import { date, money, SUB_STATUS } from '@/lib/format';
 import { useSession } from '@/components/session';
 import { Alert, Pill, useAction } from '@/components/ui';
 
+/** Modules de l'abonnement, dans l'ordre des formules, et les applications qu'ils ouvrent. */
+const PLAN_MODULES: [string, string, string][] = [
+  ['contacts', 'Contacts', 'et calendrier'],
+  ['sales', 'Ventes', 'devis, factures, articles, stocks'],
+  ['cash', 'Trésorerie', 'caisses et mobile money'],
+  ['purchases', 'Achats', 'commandes, factures fournisseurs, échéancier'],
+  ['bank', 'Banque', 'comptes bancaires, virements, chèques, cartes'],
+  ['accounting', 'Comptabilité', 'écritures, TVA, bilan'],
+  ['hr', 'Ressources humaines', 'employés, congés, évaluations'],
+  ['payroll', 'Paie', 'bulletins, CNPS, ITS'],
+];
+
 export default function SubscriptionPage() {
   const { can, refresh } = useSession();
   const admin = can('billing.admin');
@@ -97,11 +109,17 @@ export default function SubscriptionPage() {
             {plans.filter((p) => p.priceMonthly > 0).map((p) => {
               const current = p.code === sub.plan.code && cycle === sub.billingCycle;
               return (
-                <div key={p.code} className="card" style={{ display: 'grid', gap: 8 }}>
+                <div key={p.code} className="card plan-card">
                   <h3>{p.name}</h3>
                   <div style={{ fontSize: 20, fontWeight: 700 }}>{money(cycle === 'yearly' ? p.priceYearly : p.priceMonthly)}<span className="small muted"> / {cycle === 'yearly' ? 'an' : 'mois'}</span></div>
-                  <div className="small muted">{p.entitlements.quotas.users ?? 'Illimité'} utilisateurs · {p.entitlements.modules.length} modules{p.entitlements.modules.includes('payroll') ? ' · paie incluse' : ''}</div>
-                  <button className="btn sm" disabled={busy || current} onClick={() => setConfirm(p)}>{current ? 'Formule actuelle' : 'Choisir'}</button>
+                  <div className="small muted">{p.entitlements.quotas.users === null ? 'Utilisateurs illimités' : `${p.entitlements.quotas.users} utilisateurs`}
+                    {p.entitlements.quotas.companies !== 1 && ` · ${p.entitlements.quotas.companies ?? 'entreprises illimitées'}${p.entitlements.quotas.companies ? ' entreprises' : ''}`}</div>
+                  <ul className="plan-modules">{PLAN_MODULES.map(([k, label, detail]) => {
+                    const on = p.entitlements.modules.includes(k);
+                    return <li key={k} className={on ? 'on' : 'off'}><span aria-hidden>{on ? '✓' : '—'}</span>{on ? <span><b>{label}</b><span className="muted"> {detail}</span></span> : <span>{label} · non inclus</span>}</li>;
+                  })}</ul>
+                  {/* Confirmation avant tout changement (conséquence expliquée : immédiat, prorata ou à l'échéance). */}
+                  <button className="btn sm plan-choose" disabled={busy || current} onClick={() => setConfirm(p)}>{current ? 'Formule actuelle' : 'Choisir'}</button>
                 </div>
               );
             })}

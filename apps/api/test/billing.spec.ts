@@ -33,13 +33,13 @@ describe('Abonnements, facturation et paiements', () => {
     expect(sub.body.status).toBe('grace');
     expect(sub.body.openInvoices).toHaveLength(1);
     const inv = sub.body.openInvoices[0];
-    expect(inv.amount).toBe(35000);
+    expect(inv.amount).toBe(40000);
 
     // Le cycle est idempotent : pas de seconde facture
     await billing.runCycle(new Date(end.getTime() + 2000));
     expect((await u.agent.get('/company/invoices')).body).toHaveLength(1);
 
-    const payload = { event_id: 'evt-1', invoice_id: inv.id, reference: 'ref-1', amount: 35000, currency: 'XOF', status: 'succeeded' };
+    const payload = { event_id: 'evt-1', invoice_id: inv.id, reference: 'ref-1', amount: 40000, currency: 'XOF', status: 'succeeded' };
     expect((await webhook(app, payload, 'signature-invalide')).status).toBe(400);
     expect((await webhook(app, payload)).body.status).toBe('paid');
     expect((await webhook(app, payload)).body.status).toBe('duplicate');
@@ -68,14 +68,14 @@ describe('Abonnements, facturation et paiements', () => {
     expect(notif.rows[0].n).toBe(1);
     const billingUser = await platformUser(app, 'billing');
     const list = await billingUser.agent.get('/platform/payments/unapplied');
-    expect(list.body).toEqual(expect.arrayContaining([expect.objectContaining({ providerRef: 'ref-low', amount: 100, reason: 'amount_mismatch', invoiceAmount: 35000 })]));
+    expect(list.body).toEqual(expect.arrayContaining([expect.objectContaining({ providerRef: 'ref-low', amount: 100, reason: 'amount_mismatch', invoiceAmount: 40000 })]));
     const m = await billingUser.agent.get('/platform/metrics');
     expect(m.body.unappliedPayments.count).toBeGreaterThanOrEqual(1);
 
     // Le bon montant règle ensuite la facture normalement.
-    expect((await webhook(app, { event_id: 'evt-ok', invoice_id: inv.id, reference: 'ref-ok', amount: 35000, currency: 'XOF' })).body.status).toBe('paid');
+    expect((await webhook(app, { event_id: 'evt-ok', invoice_id: inv.id, reference: 'ref-ok', amount: 40000, currency: 'XOF' })).body.status).toBe('paid');
     // Un second paiement sur une facture déjà réglée est lui aussi conservé et signalé.
-    expect((await webhook(app, { event_id: 'evt-twice', invoice_id: inv.id, reference: 'ref-twice', amount: 35000, currency: 'XOF' })).body.status).toBe('invoice_not_open');
+    expect((await webhook(app, { event_id: 'evt-twice', invoice_id: inv.id, reference: 'ref-twice', amount: 40000, currency: 'XOF' })).body.status).toBe('invoice_not_open');
     const c2 = await ownerClient();
     const twice = await c2.query(`SELECT status, unapplied_reason FROM platform_payment WHERE provider_ref = 'ref-twice'`);
     await c2.end();
@@ -92,13 +92,13 @@ describe('Abonnements, facturation et paiements', () => {
     // Renouvellement émis à J-7 au prix de Business…
     await billing.runCycle(new Date(newEnd.getTime() - 6 * DAY));
     const old = (await u.agent.get('/company/subscription')).body.openInvoices;
-    expect(old.map((i: any) => i.amount)).toEqual([35000]);
+    expect(old.map((i: any) => i.amount)).toEqual([40000]);
 
     // …puis descente vers Starter : l'ancienne facture est annulée et remplacée.
     expect((await u.agent.post('/company/subscription/change').send({ planCode: 'starter', billingCycle: 'monthly' })).body.applied).toBe('at_period_end');
     await billing.runCycle(new Date(newEnd.getTime() - 6 * DAY + 1000));
     const sub = (await u.agent.get('/company/subscription')).body;
-    expect(sub.openInvoices.map((i: any) => i.amount)).toEqual([15000]);
+    expect(sub.openInvoices.map((i: any) => i.amount)).toEqual([20000]);
     const invoices = (await u.agent.get('/company/invoices')).body;
     expect(invoices.find((i: any) => i.id === old[0].id).status).toBe('void');
 
@@ -139,14 +139,14 @@ describe('Abonnements, facturation et paiements', () => {
     const newEnd = await periodEnd(u.companyId);
     await u.agent.post('/company/subscription/change').send({ planCode: 'starter', billingCycle: 'monthly' });
     await billing.runCycle(new Date(newEnd.getTime() - 6 * DAY));
-    expect((await u.agent.get('/company/subscription')).body.openInvoices.map((i: any) => i.amount)).toEqual([15000]);
+    expect((await u.agent.get('/company/subscription')).body.openInvoices.map((i: any) => i.amount)).toEqual([20000]);
 
     const keep = await u.agent.post('/company/subscription/change').send({ planCode: 'business', billingCycle: 'monthly' });
     expect(keep.body.applied).toBe('immediately');
     await billing.runCycle(new Date(newEnd.getTime() - 6 * DAY + 1000));
     const sub = (await u.agent.get('/company/subscription')).body;
     expect(sub.pendingChange).toBeNull();
-    expect(sub.openInvoices.map((i: any) => i.amount)).toEqual([35000]);
+    expect(sub.openInvoices.map((i: any) => i.amount)).toEqual([40000]);
     // Sans descente en attente, choisir la formule actuelle reste refusé.
     expect((await u.agent.post('/company/subscription/change').send({ planCode: 'business', billingCycle: 'monthly' })).body.error.code).toBe('same_plan');
   });
@@ -198,7 +198,7 @@ describe('Abonnements, facturation et paiements', () => {
     const change = await u.agent.post('/company/subscription/change').send({ planCode: 'premium', billingCycle: 'monthly' });
     expect(change.body.applied).toBe('on_payment');
     expect(change.body.invoice.amount).toBeGreaterThan(0);
-    expect(change.body.invoice.amount).toBeLessThanOrEqual(75000 - 35000);
+    expect(change.body.invoice.amount).toBeLessThanOrEqual(75000 - 40000);
     expect((await u.agent.get('/company/subscription')).body.plan.code).toBe('business');
     await u.agent.post(`/dev/sandbox/pay/${change.body.invoice.id}`);
     const after = await u.agent.get('/company/subscription');
@@ -221,7 +221,7 @@ describe('Abonnements, facturation et paiements', () => {
     const newEnd = new Date(sub.body.currentPeriodEnd);
     await billing.runCycle(new Date(newEnd.getTime() - 6 * DAY));
     const renewal = (await u.agent.get('/company/subscription')).body.openInvoices[0];
-    expect(renewal.amount).toBe(15000);
+    expect(renewal.amount).toBe(20000);
     await u.agent.post(`/dev/sandbox/pay/${renewal.id}`);
     expect((await u.agent.get('/company/subscription')).body.plan.code).toBe('starter');
   });
@@ -281,7 +281,7 @@ describe('Abonnements, facturation et paiements', () => {
     expect((await billingUser.agent.post(`/platform/invoices/${inv.id}/mark-paid`).send({ reference: 'VIR-2026-001' })).status).toBe(409);
     const m = await billingUser.agent.get('/platform/metrics');
     expect(m.body).toEqual(expect.objectContaining({ mrrEstimated: expect.any(Number), invoicedThisMonth: expect.any(Number), collectedThisMonth: expect.any(Number) }));
-    expect(m.body.mrrEstimated).toBeGreaterThanOrEqual(35000);
+    expect(m.body.mrrEstimated).toBeGreaterThanOrEqual(40000);
     // Le client voit le paiement dans son propre journal
     const audit = await u.agent.get('/company/audit');
     expect(audit.body.some((a: any) => a.action === 'subscription.payment_received')).toBe(true);

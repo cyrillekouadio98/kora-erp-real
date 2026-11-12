@@ -12,17 +12,18 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   if (!me) return <main className="auth"><p className="muted">Chargement…</p></main>;
   if (!me.platformRoles.length) return <main className="auth"><div className="alert err">Cette console est réservée à l'équipe de l'éditeur.</div></main>;
   return (
-    <div className="shell">
+    <div className="shell with-side">
       <aside className="side">
         <div className="brand">Kora<span> Console</span></div>
         <nav className="nav">
           <small>Éditeur</small>
           <Link href="/console" className={path === '/console' ? 'active' : ''}>Clients et indicateurs</Link>
+          <Link href="/console/preparation" className={path.startsWith('/console/preparation') ? 'active' : ''}>Préparer une entreprise</Link>
           <Link href="/console/factures" className={path === '/console/factures' ? 'active' : ''}>Factures d'abonnement</Link>
           {me.companies.length > 0 && <><small>Mon entreprise</small><Link href="/app">Espace entreprise</Link></>}
         </nav>
         <div className="foot"><div className="muted">{me.user.fullName}<br />Rôles : {me.platformRoles.join(', ')}</div>
-          {!me.user.mfaEnabled && <Link href="/app/securite" className="small">Activer la double authentification (obligatoire)</Link>}
+          {!me.user.mfaEnabled && <Link href="/app/securite" className="small">Activer la double authentification{me.platformMfaRequired ? ' (obligatoire)' : ' (recommandée)'}</Link>}
           <button className="btn sm" onClick={async () => { await api('/auth/logout', { method: 'POST', body: {} }); router.replace('/connexion'); }}>Se déconnecter</button></div>
       </aside>
       <main className="main"><div className="wrap">{children}</div></main>

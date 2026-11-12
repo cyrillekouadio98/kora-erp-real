@@ -1,0 +1,491 @@
+import { Injectable } from '@nestjs/common';
+import { assertSiteAccess, inScope, workingSite } from '../../common/sites';
+import { parseImage } from '../../common/images';
+import { decrypt, encrypt } from '../../common/crypto';
+import { badRequest, conflict, forbidden, notFound } from '../../common/errors';
+import { isUuid } from '../../common/ids';
+import { nextNumber } from '../../common/numbering';
+import type { TenantInfo } from '../../common/request-context';
+import { DatabaseService, TenantTrx } from '../../db/database.service';
+import { AccountingService } from '../accounting/accounting.service';
+import { AuditService } from '../audit/audit.service';
+import { LeaveService } from '../leave/leave.service';
+import { TreasuryService } from '../treasury/treasury.service';
+import { computePayslip, DEFAULT_PAYROLL_PARAMS, familyParts, MaritalStatus, netToGross, PayrollParams } from './payroll.calc';
+
+export interface EmployeeInput {
+  firstName: string; lastName: string; jobTitle?: string | null; department?: string | null; hireDate: string; endDate?: string | null;
+  contractType?: 'cdi' | 'cdd' | 'stage' | 'journalier'; cnpsNumber?: string | null; maritalStatus?: MaritalStatus; children?: number; partsOverride?: number | null;
+  baseSalary?: number; housingAllowance?: number; transportAllowance?: number; otherAllowances?: number;
+  category?: string | null; targetNet?: number | null; extraSalary?: number;
+  paymentMethod?: 'cash' | 'bank_transfer' | 'mobile_money'; bankDetails?: string | null; phone?: string | null; email?: string | null;
+  siteId?: string;
+}
+export interface PayslipInputs { overtime: number; bonus: number; absenceDays: number; advanceDeduction: number; otherDeduction: number }
+const NO_INPUTS: PayslipInputs = { overtime: 0, bonus: 0, absenceDays: 0, advanceDeduction: 0, otherDeduction: 0 };
+
+const COLUMNS: Record<string, string> = {
+  firstName: 'first_name', lastName: 'last_name', jobTitle: 'job_title', department: 'department', hireDate: 'hire_date', endDate: 'end_date',
+  contractType: 'contract_type', cnpsNumber: 'cnps_number', maritalStatus: 'marital_status', children: 'children', partsOverride: 'parts_override',
+  baseSalary: 'base_salary', housingAllowance: 'housing_allowance', transportAllowance: 'transport_allowance', otherAllowances: 'other_allowances',
+  category: 'category', targetNet: 'target_net', extraSalary: 'extra_salary',
+  paymentMethod: 'payment_method', phone: 'phone', email: 'email', siteId: 'site_id',
+};
+const SALARY_FIELDS = ['baseSalary', 'housingAllowance', 'transportAllowance', 'otherAllowances', 'targetNet', 'extraSalary'];
+const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+export const periodLabel = (p: string) => `${MONTHS[Number(p.slice(5, 7)) - 1]} ${p.slice(0, 4)}`;
+const periodEnd = (p: string) => new Date(Date.UTC(Number(p.slice(0, 4)), Number(p.slice(5, 7)), 0)).toISOString().slice(0, 10);
+const today = () => new Date().toISOString().slice(0, 10);
+
+type EmployeeRow = Awaited<ReturnType<PayrollService['employeeRow']>>;
+
+@Injectable()
+export class PayrollService {
+  constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly accounting: AccountingService, private readonly treasury: TreasuryService, private readonly leave: LeaveService) {}
+
+  /** Les montants de paie ne sont visibles qu'avec la permission sensible « voir les salaires ». */
+  private assertSalaries(t: TenantInfo) {
+    if (!t.permissions.has('payroll.salaries')) throw forbidden('Consulter les salaires demande la permission « voir les salaires et bulletins ».', 'salaries_forbidden');
+  }
+
+  // ------------------------------------------------------------------ paramètres
+  async params(trx: TenantTrx): Promise<PayrollParams> {
+    const s = await trx.selectFrom('payroll_settings').select('params').executeTakeFirst();
+    return { ...DEFAULT_PAYROLL_PARAMS, ...((s?.params as object) ?? {}) };
+  }
+  async getSettings(t: TenantInfo) {
+    return this.db.tenant(t.ctx, async (trx) => ({ params: await this.params(trx), defaults: DEFAULT_PAYROLL_PARAMS }));
+  }
+  async updateSettings(t: TenantInfo, patch: Partial<PayrollParams>) {
+    return this.db.tenant(t.ctx, async (trx) => {
+      const before = await this.params(trx);
+      const params = { ...before, ...patch };
+      await trx.insertInto('payroll_settings').values({ company_id: t.companyId, params: JSON.stringify(params), updated_by: t.ctx.userId })
+        .onConflict((oc) => oc.column('company_id').doUpdateSet({ params: JSON.stringify(params), updated_by: t.ctx.userId, updated_at: new Date() })).execute();
+      const changes = Object.fromEntries(Object.keys(patch).map((k) => [k, { from: (before as any)[k], to: (params as any)[k] }]));
+      await this.audit.tenant(trx, t.ctx, { action: 'payroll.settings_updated', data: { changes } });
+      return { params };
+    });
+  }
+
+  // ------------------------------------------------------------------ employés
+  private async employeeRow(trx: TenantTrx, id: string) {
+    if (!isUuid(id)) throw notFound('Employé');
+    const e = await trx.selectFrom('employee').selectAll().where('id', '=', id).executeTakeFirst();
+    if (!e) throw notFound('Employé');
+    return e;
+  }
+
+  private present(t: TenantInfo, e: EmployeeRow, photo?: Date | null) {
+    const salaries = t.permissions.has('payroll.salaries');
+    const bank = t.permissions.has('employees.bank_details');
+    const parts = e.parts_override !== null ? Number(e.parts_override) : familyParts(e.marital_status, e.children);
+    return {
+      id: e.id, number: e.number, firstName: e.first_name, lastName: e.last_name, fullName: `${e.first_name} ${e.last_name}`, jobTitle: e.job_title, department: e.department,
+      hireDate: e.hire_date, endDate: e.end_date, contractType: e.contract_type, cnpsNumber: e.cnps_number, maritalStatus: e.marital_status, children: e.children,
+      partsOverride: e.parts_override === null ? null : Number(e.parts_override), parts, category: e.category, paymentMethod: e.payment_method, phone: e.phone, email: e.email,
+      active: !e.end_date || e.end_date >= today(), linked: !!e.user_id, siteId: e.site_id,
+      photo: photo ? `/company/employees/${e.id}/photo?v=${new Date(photo).getTime()}` : null,
+      ...(salaries ? { baseSalary: Number(e.base_salary), extraSalary: Number(e.extra_salary), targetNet: e.target_net === null ? null : Number(e.target_net),
+        housingAllowance: Number(e.housing_allowance), transportAllowance: Number(e.transport_allowance), otherAllowances: Number(e.other_allowances) } : {}),
+      bankDetails: bank ? (e.bank_details_enc ? decrypt(e.bank_details_enc) : null) : e.bank_details_enc ? '••••' : null,
+    };
+  }
+
+  /** Salaires et RIB : chaque catégorie de donnée exige sa permission sensible. */
+  private assertFieldRights(t: TenantInfo, input: Partial<EmployeeInput>) {
+    if (SALARY_FIELDS.some((f) => (input as any)[f] !== undefined)) this.assertSalaries(t);
+    if (input.bankDetails !== undefined && !t.permissions.has('employees.bank_details')) {
+      throw forbidden('Modifier les coordonnées bancaires demande la permission « coordonnées bancaires des employés ».', 'bank_details_forbidden');
+    }
+  }
+
+  /** Site d'affectation : un site actif de l'entreprise. */
+  private async assertSite(trx: TenantTrx, siteId: string | undefined) {
+    if (siteId && !(await trx.selectFrom('site').select('id').where('id', '=', siteId).where('archived_at', 'is', null).executeTakeFirst())) {
+      throw badRequest('Site introuvable ou archivé.', undefined, 'unknown_site');
+    }
+  }
+
+  private columns(input: Partial<EmployeeInput>) {
+    const out: Record<string, unknown> = {};
+    for (const [k, col] of Object.entries(COLUMNS)) if ((input as any)[k] !== undefined) out[col] = (input as any)[k];
+    if (input.bankDetails !== undefined) out.bank_details_enc = input.bankDetails ? encrypt(input.bankDetails) : null;
+    return out;
+  }
+
+  async employees(t: TenantInfo, f: { includeLeft?: boolean; q?: string }) {
+    return this.db.tenant(t.ctx, async (trx) => {
+      let q = trx.selectFrom('employee').selectAll('employee')
+        .leftJoin('employee_photo as ph', (j) => j.onRef('ph.employee_id', '=', 'employee.id').onRef('ph.company_id', '=', 'employee.company_id'))
+        .select('ph.updated_at as photo_at').orderBy('last_name').orderBy('first_name');
+      q = inScope(q, t, 'employee.site_id');
+      if (!f.includeLeft) q = q.where((eb) => eb.or([eb('end_date', 'is', null), eb('end_date', '>=', today())]));
+      if (f.q) {
+        const like = `%${f.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+        q = q.where((eb) => eb.or([eb('first_name', 'ilike', like), eb('last_name', 'ilike', like), eb('number', 'ilike', like), eb('job_title', 'ilike', like)]));
+      }
+      return (await q.execute()).map((e) => this.present(t, e, e.photo_at));
+    });
+  }
+
+  async getEmployee(t: TenantInfo, id: string) {
+    return this.db.tenant(t.ctx, async (trx) => {
+      const e = this.present(t, await this.employeeRow(trx, id), await this.photoAt(trx, id));
+      if (!t.permissions.has('payroll.salaries')) return e;
+      // Augmentation approuvée dont le mois d'effet n'est pas encore arrivé : la fiche l'annonce.
+      const planned = await trx.selectFrom('evaluation as v').innerJoin('evaluation_campaign as c', (j) => j.onRef('c.id', '=', 'v.campaign_id').onRef('c.company_id', '=', 'v.company_id'))
+        .select(['v.id', 'v.new_base_salary', 'v.raise_period', 'c.name']).where('v.employee_id', '=', id).where('v.status', '=', 'approved')
+        .where('v.raise_applied_at', 'is', null).where('v.new_base_salary', 'is not', null).orderBy('v.raise_period').execute();
+      return { ...e, plannedRaises: planned.map((r) => ({ evaluationId: r.id, newBaseSalary: Number(r.new_base_salary), period: r.raise_period, campaignName: r.name })) };
+    });
+  }
+
+  private async photoAt(trx: TenantTrx, id: string) {
+    return (await trx.selectFrom('employee_photo').select('updated_at').where('employee_id', '=', id).executeTakeFirst())?.updated_at ?? null;
+  }
+
+  async photo(t: TenantInfo, id: string) {
+    if (!isUuid(id)) throw notFound('Photo');
+    const p = await this.db.tenant(t.ctx, (trx) => trx.selectFrom('employee_photo').select(['mime', 'data']).where('employee_id', '=', id).executeTakeFirst());
+    if (!p) throw notFound('Photo');
+    return p;
+  }
+
+  /** Photo envoyée en data URL (déjà réduite par le navigateur) ; null la retire. */
+  async setPhoto(t: TenantInfo, id: string, dataUrl: string | null) {
+    return this.db.tenant(t.ctx, async (trx) => {
+      const e = await this.employeeRow(trx, id);
+      if (dataUrl) {
+        const { mime, data } = parseImage(dataUrl);
+        await trx.insertInto('employee_photo').values({ company_id: t.companyId, employee_id: id, mime, data })
+          .onConflict((oc) => oc.columns(['company_id', 'employee_id']).doUpdateSet({ mime, data, updated_at: new Date() })).execute();
+      } else {
+        await trx.deleteFrom('employee_photo').where('employee_id', '=', id).execute();
+      }
+      await this.audit.tenant(trx, t.ctx, { action: dataUrl ? 'employee.photo_updated' : 'employee.photo_removed', entityType: 'employee', entityId: id, data: { number: e.number } });
+      return this.present(t, e, await this.photoAt(trx, id));
+    });
+  }
+
+  async createEmployee(t: TenantInfo, input: EmployeeInput) {
+    this.assertFieldRights(t, input);
+    input = { ...input, siteId: input.siteId ?? workingSite(t) ?? undefined };
+    assertSiteAccess(t, input.siteId);
+    return this.db.tenant(t.ctx, async (trx) => {
+      await this.assertSite(trx, input.siteId);
+      const number = await nextNumber(trx, t.companyId, 'employee', 'EMP');
+      const e = await trx.insertInto('employee').values({ ...this.columns(input), number, company_id: t.companyId, created_by: t.ctx.userId } as any)
+        .returningAll().executeTakeFirstOrThrow();
+      await this.audit.tenant(trx, t.ctx, { action: 'employee.created', entityType: 'employee', entityId: e.id, data: { number, name: `${e.first_name} ${e.last_name}` } });
+      return this.present(t, e);
+    });
+  }
+
+  async updateEmployee(t: TenantInfo, id: string, input: Partial<EmployeeInput>) {
+    this.assertFieldRights(t, input);
+    assertSiteAccess(t, input.siteId);
+    return this.db.tenant(t.ctx, async (trx) => {
+      const before = await this.employeeRow(trx, id);
+      await this.assertSite(trx, input.siteId);
+      const patch = this.columns(input);
+      if (input.endDate !== undefined && input.endDate && input.endDate < (input.hireDate ?? before.hire_date)) throw badRequest("La date de sortie précède la date d'embauche.", undefined, 'end_before_hire');
+      const after = Object.keys(patch).length ? await trx.updateTable('employee').set(patch).where('id', '=', id).returningAll().executeTakeFirstOrThrow() : before;
+      // Le journal ne garde que la liste des champs modifiés : ni salaire ni RIB en clair.
+      await this.audit.tenant(trx, t.ctx, { action: 'employee.updated', entityType: 'employee', entityId: id, data: { number: before.number, fields: Object.keys(input) } });
+      return this.present(t, after, await this.photoAt(trx, id));
+    });
+  }
+
+  /** « Calculer la fiche » : salaire de base et sursalaire qui donnent le net demandé, avec le bulletin correspondant. */
+  async netToGross(t: TenantInfo, input: {
+    targetNet: number; category?: string | null; housingAllowance: number; transportAllowance: number; otherAllowances: number;
+    maritalStatus: MaritalStatus; children: number; partsOverride?: number | null;
+  }) {
+    this.assertSalaries(t);
+    return this.db.tenant(t.ctx, async (trx) => {
+      const p = await this.params(trx);
+      const fcfa = (n: number) => `${n.toLocaleString('fr-FR')} FCFA`;
+      const cat = input.category ? p.categories.find((c) => c.code === input.category) : undefined;
+      if (input.category && !cat) throw badRequest(`Catégorie « ${input.category} » absente de la grille de l'entreprise.`, undefined, 'unknown_category');
+      const parts = input.partsOverride ?? familyParts(input.maritalStatus, input.children);
+      const cmuBeneficiaries = 1 + (input.maritalStatus === 'married' ? 1 : 0) + input.children;
+      const r = netToGross(input.targetNet, cat?.minSalary ?? 0, {
+        housingAllowance: input.housingAllowance, transportAllowance: input.transportAllowance, otherAllowances: input.otherAllowances, parts, cmuBeneficiaries,
+      }, p);
+      if (!r.ok) {
+        throw badRequest(r.reason === 'below_category'
+          ? `Le salaire catégoriel de la ${cat!.label} (${fcfa(cat!.minSalary)}) donne déjà un net de ${fcfa(r.minNet)} : le net demandé ne peut pas être plus bas.`
+          : `Les indemnités saisies donnent déjà un net de ${fcfa(r.minNet)} : le net demandé ne peut pas être plus bas.`, undefined, 'net_too_low');
+      }
+      const warnings: string[] = [];
+      if (cat && !cat.minSalary) warnings.push(`Le salaire catégoriel de la ${cat.label} n'est pas renseigné (Paie › Paramètres de calcul) : tout le complément est porté au salaire de base, sans sursalaire.`);
+      if (r.baseSalary < p.smig) warnings.push(`Le salaire de base (${fcfa(r.baseSalary)}) est inférieur au SMIG (${fcfa(p.smig)}).`);
+      const { lines, gross, taxable, net, totals } = r.result;
+      return { baseSalary: r.baseSalary, extraSalary: r.extraSalary, parts, category: cat ?? null, warnings, payslip: { lines, gross, taxable, net, totals, employerCost: totals.employerCost } };
+    });
+  }
+
+  // ------------------------------------------------------------------ paies mensuelles
+  private async run(trx: TenantTrx, id: string, lock = false) {
+    if (!isUuid(id)) throw notFound('Paie');
+    const r = await trx.selectFrom('payroll_run').selectAll().where('id', '=', id).$if(lock, (q) => q.forUpdate()).executeTakeFirst();
+    if (!r) throw notFound('Paie');
+    return r;
+  }
+
+  /** Calcule le bulletin d'un employé pour la période à partir de sa fiche et des éléments variables. */
+  private slip(e: EmployeeRow, inputs: PayslipInputs, params: PayrollParams) {
+    const parts = e.parts_override !== null ? Number(e.parts_override) : familyParts(e.marital_status, e.children);
+    const beneficiaries = 1 + (e.marital_status === 'married' ? 1 : 0) + e.children;
+    const result = computePayslip({
+      baseSalary: Number(e.base_salary), extraSalary: Number(e.extra_salary), housingAllowance: Number(e.housing_allowance), otherAllowances: Number(e.other_allowances), transportAllowance: Number(e.transport_allowance),
+      ...inputs, parts, cmuBeneficiaries: beneficiaries,
+    }, params);
+    if (result.net < 0) throw badRequest(`Le net à payer de ${e.first_name} ${e.last_name} serait négatif : réduisez les retenues.`, undefined, 'negative_net');
+    const employee = { number: e.number, name: `${e.first_name} ${e.last_name}`, jobTitle: e.job_title, department: e.department, hireDate: e.hire_date,
+      contractType: e.contract_type, cnpsNumber: e.cnps_number, maritalStatus: e.marital_status, children: e.children, parts, paymentMethod: e.payment_method, category: e.category };
+    return { employee, result };
+  }
+
+  private async writeSlip(trx: TenantTrx, t: TenantInfo, runId: string, e: EmployeeRow, inputs: PayslipInputs, params: PayrollParams) {
+    const { employee, result } = this.slip(e, inputs, params);
+    const values = {
+      employee: JSON.stringify(employee), inputs: JSON.stringify(inputs), lines: JSON.stringify(result.lines), totals: JSON.stringify(result.totals),
+      gross: result.gross, taxable: result.taxable, net: result.net, employer_cost: result.totals.employerCost,
+    };
+    await trx.insertInto('payslip').values({ company_id: t.companyId, run_id: runId, employee_id: e.id, paid_at: null, ...values })
+      .onConflict((oc) => oc.columns(['company_id', 'run_id', 'employee_id']).doUpdateSet(values)).execute();
+  }
+
+  async runs(t: TenantInfo) {
+    this.assertSalaries(t);
+    return this.db.tenant(t.ctx, async (trx) => {
+      const runs = await trx.selectFrom('payroll_run').select(['id', 'period', 'status', 'validated_at as validatedAt']).orderBy('period', 'desc').execute();
+      const slips = await trx.selectFrom('payslip').select(['run_id', 'gross', 'net', 'employer_cost', 'paid_at']).execute();
+      return runs.map((r) => {
+        const mine = slips.filter((s) => s.run_id === r.id);
+        const sum = (k: 'gross' | 'net' | 'employer_cost') => mine.reduce((s, x) => s + Number(x[k]), 0);
+        return { ...r, label: periodLabel(r.period), employees: mine.length, gross: sum('gross'), net: sum('net'), employerCost: sum('employer_cost'), paid: mine.filter((s) => s.paid_at).length };
+      });
+    });
+  }
+
+  /** La paie couvre toute l'entreprise : un utilisateur limité à certains sites ne la prépare ni ne la valide. */
+  private assertWholeCompany(t: TenantInfo) {
+    if (t.allowedSiteIds) throw forbidden("La paie se prépare pour toute l'entreprise : elle demande un accès à tous les sites.", 'site_restricted');
+  }
+
+  async createRun(t: TenantInfo, period: string) {
+    this.assertWholeCompany(t);
+    if (period > today().slice(0, 7)) throw badRequest('On ne prépare pas la paie d’un mois futur.', undefined, 'future_period');
+    const id = await this.db.tenant(t.ctx, async (trx) => {
+      if (await trx.selectFrom('payroll_run').select('id').where('period', '=', period).executeTakeFirst()) throw conflict(`La paie de ${periodLabel(period)} existe déjà.`, 'run_exists');
+      await this.applyDueRaises(trx, t, period);
+      const params = await this.params(trx);
+      const bonuses = await this.evaluationBonuses(trx, period);
+      const employees = await trx.selectFrom('employee').selectAll().where('hire_date', '<=', periodEnd(period))
+        .where((eb) => eb.or([eb('end_date', 'is', null), eb('end_date', '>=', `${period}-01`)])).execute();
+      if (!employees.length) throw badRequest('Aucun employé présent sur cette période.', undefined, 'no_employees');
+      const r = await trx.insertInto('payroll_run').values({ company_id: t.companyId, period, params: JSON.stringify(params), validated_by: null, created_by: t.ctx.userId })
+        .returning('id').executeTakeFirstOrThrow();
+      // Les congés sans solde validés du mois sont repris comme absences, les primes d'évaluation approuvées comme primes (modifiables ensuite).
+      for (const e of employees) await this.writeSlip(trx, t, r.id, e, { ...NO_INPUTS, absenceDays: await this.leave.unpaidDays(trx, e.id, period), bonus: bonuses.get(e.id) ?? 0 }, params);
+      await this.audit.tenant(trx, t.ctx, { action: 'payroll.run_created', entityType: 'payroll_run', entityId: r.id, data: { period, employees: employees.length } });
+      return r.id;
+    });
+    return this.getRun(t, id);
+  }
+
+  async getRun(t: TenantInfo, id: string) {
+    this.assertSalaries(t);
+    return this.db.tenant(t.ctx, async (trx) => {
+      const r = await this.run(trx, id);
+      const slips = await trx.selectFrom('payslip').selectAll().where('run_id', '=', id).execute();
+      const payslips = (await Promise.all(slips.map(async (s) => ({
+        id: s.id, employeeId: s.employee_id, employee: s.employee as any, inputs: s.inputs as PayslipInputs, lines: s.lines, totals: s.totals as any,
+        gross: Number(s.gross), taxable: Number(s.taxable), net: Number(s.net), employerCost: Number(s.employer_cost), paidAt: s.paid_at,
+        ...(await this.leave.payslipExtras(trx, s.employee_id, r.period, r.id)),
+      })))).sort((a, b) => a.employee.name.localeCompare(b.employee.name));
+      const sum = (f: (p: (typeof payslips)[number]) => number) => payslips.reduce((s, p) => s + f(p), 0);
+      const tot = (k: string) => sum((p) => Number(p.totals[k] ?? 0));
+      return {
+        id: r.id, period: r.period, label: periodLabel(r.period), status: r.status, validatedAt: r.validated_at, params: r.params, payslips,
+        totals: { gross: sum((p) => p.gross), net: sum((p) => p.net), employerCost: sum((p) => p.employerCost), paid: payslips.filter((p) => p.paidAt).length },
+        // Récapitulatif des déclarations du mois
+        declarations: {
+          cnps: { retirementEmployee: tot('cnpsEmployee'), retirementEmployer: tot('cnpsEmployer'), familyBenefits: tot('familyBenefits'), workAccident: tot('workAccident'),
+            total: tot('cnpsEmployee') + tot('cnpsEmployer') + tot('familyBenefits') + tot('workAccident') },
+          cmu: { employee: tot('cmuEmployee'), employer: tot('cmuEmployer'), total: tot('cmuEmployee') + tot('cmuEmployer') },
+          its: { withheld: tot('its'), employerTax: tot('employerTax'), apprenticeship: tot('apprenticeship'), training: tot('training'),
+            total: tot('its') + tot('employerTax') + tot('apprenticeship') + tot('training') },
+        },
+      };
+    });
+  }
+
+  /** Éléments variables d'un bulletin (heures sup., primes, absences, retenues), recalculé aussitôt. */
+  async updatePayslip(t: TenantInfo, runId: string, payslipId: string, inputs: Partial<PayslipInputs>) {
+    this.assertSalaries(t);
+    await this.db.tenant(t.ctx, async (trx) => {
+      const r = await this.run(trx, runId, true);
+      if (r.status !== 'draft') throw conflict('Cette paie est validée : ses bulletins ne se modifient plus.', 'run_validated');
+      if (!isUuid(payslipId)) throw notFound('Bulletin');
+      const s = await trx.selectFrom('payslip').select(['employee_id', 'inputs']).where('id', '=', payslipId).where('run_id', '=', runId).executeTakeFirst();
+      if (!s) throw notFound('Bulletin');
+      const merged = { ...NO_INPUTS, ...(s.inputs as object), ...inputs };
+      await this.writeSlip(trx, t, runId, await this.employeeRow(trx, s.employee_id), merged, await this.params(trx));
+    });
+    return this.getRun(t, runId);
+  }
+
+  // ------------------------------------------------------------------ évaluations : primes et augmentations
+  /** Primes d'évaluation approuvées à verser avec la paie du mois, par employé. */
+  private async evaluationBonuses(trx: TenantTrx, period: string) {
+    const rows = await trx.selectFrom('evaluation').select('employee_id').select((eb) => eb.fn.sum<string>('bonus_amount').as('total'))
+      .where('status', '=', 'approved').where('bonus_period', '=', period).groupBy('employee_id').execute();
+    return new Map(rows.map((r) => [r.employee_id, Number(r.total)]));
+  }
+
+  /** Bulletins en brouillon d'un employé à partir d'un mois : recalculés d'après sa fiche, avec leurs éléments variables. */
+  private async rewriteDraftSlips(trx: TenantTrx, t: TenantInfo, employeeId: string, fromPeriod: string) {
+    const slips = await trx.selectFrom('payslip as s').innerJoin('payroll_run as r', (j) => j.onRef('r.id', '=', 's.run_id').onRef('r.company_id', '=', 's.company_id'))
+      .select(['s.run_id', 's.inputs']).where('s.employee_id', '=', employeeId).where('r.status', '=', 'draft').where('r.period', '>=', fromPeriod).execute();
+    if (!slips.length) return;
+    const e = await this.employeeRow(trx, employeeId);
+    const params = await this.params(trx);
+    for (const s of slips) await this.writeSlip(trx, t, s.run_id, e, { ...NO_INPUTS, ...(s.inputs as object) }, params);
+  }
+
+  /** Dernier mois dont la paie est validée (null si aucune) : rien ne peut plus y être ajouté. */
+  async lastValidatedPeriod(trx: TenantTrx) {
+    return (await trx.selectFrom('payroll_run').select((eb) => eb.fn.max<string>('period').as('p')).where('status', '=', 'validated').executeTakeFirst())?.p ?? null;
+  }
+
+  /** Augmentations approuvées dont le mois d'effet est arrivé : le salaire de base de la fiche change. */
+  async applyDueRaises(trx: TenantTrx, t: TenantInfo, upTo: string) {
+    const due = await trx.selectFrom('evaluation').select(['id', 'employee_id', 'new_base_salary', 'raise_period'])
+      .where('status', '=', 'approved').where('raise_applied_at', 'is', null).where('new_base_salary', 'is not', null).where('raise_period', '<=', upTo).orderBy('raise_period').execute();
+    for (const r of due) {
+      // Le net visé de la fiche ne correspond plus au nouveau salaire : il est effacé.
+      await trx.updateTable('employee').set({ base_salary: Number(r.new_base_salary), target_net: null }).where('id', '=', r.employee_id).execute();
+      await trx.updateTable('evaluation').set({ raise_applied_at: new Date() }).where('id', '=', r.id).execute();
+      await this.audit.tenant(trx, t.ctx, { action: 'employee.raise_applied', entityType: 'employee', entityId: r.employee_id, data: { evaluationId: r.id, from: r.raise_period } });
+      await this.rewriteDraftSlips(trx, t, r.employee_id, r.raise_period!);
+    }
+    return due.length;
+  }
+
+  /**
+   * Ajoute (delta > 0) ou retire une prime d'évaluation au bulletin du mois s'il est en brouillon.
+   * Sans paie pour ce mois, la prime sera reprise à sa création. Une paie validée ne bouge plus.
+   */
+  async adjustDraftBonus(trx: TenantTrx, t: TenantInfo, period: string, employeeId: string, delta: number) {
+    const r = await trx.selectFrom('payroll_run').select(['id', 'status']).where('period', '=', period).forUpdate().executeTakeFirst();
+    if (!r) return false;
+    if (r.status !== 'draft') throw conflict(`La paie de ${periodLabel(period)} est déjà validée : choisissez un mois suivant pour la prime.`, 'run_validated');
+    const s = await trx.selectFrom('payslip').select('inputs').where('run_id', '=', r.id).where('employee_id', '=', employeeId).executeTakeFirst();
+    if (!s) return false;
+    const inputs = { ...NO_INPUTS, ...(s.inputs as object) };
+    inputs.bonus = Math.max(0, inputs.bonus + delta);
+    await this.writeSlip(trx, t, r.id, await this.employeeRow(trx, employeeId), inputs, await this.params(trx));
+    return true;
+  }
+
+  /** Recalcule tous les bulletins d'une paie en brouillon d'après les fiches et paramètres actuels. */
+  async recompute(t: TenantInfo, runId: string) {
+    this.assertSalaries(t);
+    await this.db.tenant(t.ctx, async (trx) => {
+      const r = await this.run(trx, runId, true);
+      if (r.status !== 'draft') throw conflict('Cette paie est validée.', 'run_validated');
+      const params = await this.params(trx);
+      await trx.updateTable('payroll_run').set({ params: JSON.stringify(params) }).where('id', '=', runId).execute();
+      for (const s of await trx.selectFrom('payslip').select(['employee_id', 'inputs']).where('run_id', '=', runId).execute()) {
+        await this.writeSlip(trx, t, runId, await this.employeeRow(trx, s.employee_id), { ...NO_INPUTS, ...(s.inputs as object) }, params);
+      }
+    });
+    return this.getRun(t, runId);
+  }
+
+  async deleteRun(t: TenantInfo, runId: string) {
+    return this.db.tenant(t.ctx, async (trx) => {
+      const r = await this.run(trx, runId, true);
+      if (r.status !== 'draft') throw conflict('Une paie validée ne se supprime pas.', 'run_validated');
+      await trx.deleteFrom('payroll_run').where('id', '=', runId).execute();
+      await this.audit.tenant(trx, t.ctx, { action: 'payroll.run_deleted', entityType: 'payroll_run', entityId: runId, data: { period: r.period } });
+      return { ok: true };
+    });
+  }
+
+  /**
+   * Validation : la paie devient intangible et passe en comptabilité au dernier jour du mois :
+   * D 661 salaires bruts, 664 charges sociales, 641 taxes sur salaires / C 422 net à payer, 431 CNPS,
+   * 438 CMU, 447 ITS et taxes, 421 avances et retenues.
+   */
+  async validate(t: TenantInfo, runId: string) {
+    this.assertSalaries(t);
+    this.assertWholeCompany(t);
+    const run = await this.getRun(t, runId);
+    if (run.status !== 'draft') throw conflict('Cette paie est déjà validée.', 'run_validated');
+    await this.db.tenant(t.ctx, async (trx) => {
+      await this.run(trx, runId, true);
+      const d = run.declarations;
+      const tot = (k: string) => run.payslips.reduce((s, p) => s + Number(p.totals[k] ?? 0), 0);
+      const label = `Paie de ${run.label}`;
+      const entry = await this.accounting.postEntry(trx, t, {
+        journal: 'OD', date: periodEnd(run.period), label, sourceType: 'payroll_run', sourceId: runId, lines: [
+          { account: '661000', label: `${label} — salaires bruts`, debit: run.totals.gross },
+          { account: '664000', label: `${label} — charges sociales patronales`, debit: d.cnps.retirementEmployer + d.cnps.familyBenefits + d.cnps.workAccident + d.cmu.employer },
+          { account: '641000', label: `${label} — taxes sur salaires`, debit: d.its.employerTax + d.its.apprenticeship + d.its.training },
+          { account: '422000', label: `${label} — net à payer`, credit: run.totals.net },
+          { account: '431000', label: `${label} — CNPS`, credit: d.cnps.total },
+          { account: '438000', label: `${label} — CMU`, credit: d.cmu.total },
+          { account: '447000', label: `${label} — ITS et taxes`, credit: d.its.total },
+          { account: '421000', label: `${label} — avances et retenues`, credit: tot('advances') + tot('otherDeductions') },
+        ],
+      });
+      await trx.updateTable('payroll_run').set({ status: 'validated', validated_at: new Date(), validated_by: t.ctx.userId }).where('id', '=', runId).execute();
+      await this.audit.tenant(trx, t.ctx, { action: 'payroll.run_validated', entityType: 'payroll_run', entityId: runId, data: { period: run.period, net: run.totals.net, entry: entry.number } });
+    });
+    return this.getRun(t, runId);
+  }
+
+  /** Remet une paie validée en brouillon tant qu'aucun salaire n'est payé : son écriture est contre-passée, les bulletins redeviennent modifiables. */
+  async resetToDraft(t: TenantInfo, runId: string) {
+    this.assertSalaries(t);
+    await this.db.tenant(t.ctx, async (trx) => {
+      const r = await this.run(trx, runId, true);
+      if (r.status !== 'validated') throw conflict('Cette paie est déjà en brouillon.', 'run_draft');
+      const paid = await trx.selectFrom('payslip').select('id').where('run_id', '=', runId).where('paid_at', 'is not', null).executeTakeFirst();
+      if (paid) throw conflict(`Des salaires de ${periodLabel(r.period)} sont déjà payés : la paie ne peut plus être remise en brouillon.`, 'run_paid');
+      const entry = await this.accounting.reverseSource(trx, t, 'payroll_run', runId, `paie de ${periodLabel(r.period)} remise en brouillon`);
+      await trx.updateTable('payroll_run').set({ status: 'draft', validated_at: null, validated_by: null }).where('id', '=', runId).execute();
+      await this.audit.tenant(trx, t.ctx, { action: 'payroll.run_reset_to_draft', entityType: 'payroll_run', entityId: runId, data: { period: r.period, reversal: entry?.number ?? null } });
+    });
+    return this.getRun(t, runId);
+  }
+
+  /** Paiement des salaires : un décaissement par bulletin (D 422 / C 5x). La caisse refuse un paiement qu'elle ne peut couvrir. */
+  async pay(t: TenantInfo, runId: string, input: { accountId: string; date?: string; payslipIds?: string[] }) {
+    this.assertSalaries(t);
+    await this.db.tenant(t.ctx, async (trx) => {
+      const r = await this.run(trx, runId);
+      if (r.status !== 'validated') throw conflict('Validez la paie avant de payer les salaires.', 'run_not_validated');
+      let q = trx.selectFrom('payslip').selectAll().where('run_id', '=', runId).where('paid_at', 'is', null);
+      if (input.payslipIds?.length) q = q.where('id', 'in', input.payslipIds);
+      const slips = await q.execute();
+      if (!slips.length) throw conflict('Tous les salaires sélectionnés sont déjà payés.', 'already_paid');
+      const date = input.date ?? today();
+      for (const s of slips) {
+        const name = (s.employee as any).name;
+        if (Number(s.net) > 0) {
+          await this.treasury.record(trx, t, { accountId: input.accountId, date, direction: 'out', amount: Number(s.net), category: 'net_salary',
+            label: `Salaire de ${periodLabel(r.period)} — ${name}`, sourceType: 'payroll', sourceId: s.id });
+        }
+        await trx.updateTable('payslip').set({ paid_at: date }).where('id', '=', s.id).execute();
+      }
+      await this.audit.tenant(trx, t.ctx, { action: 'payroll.salaries_paid', entityType: 'payroll_run', entityId: runId, data: { period: r.period, count: slips.length, total: slips.reduce((s, x) => s + Number(x.net), 0) } });
+    });
+    return this.getRun(t, runId);
+  }
+}

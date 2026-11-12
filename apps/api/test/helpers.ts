@@ -21,6 +21,10 @@ export async function ownerClient() {
 
 /** Base de test vierge : schéma recréé, migrations et données de référence appliquées. */
 export async function resetDb() {
+  // Garde-fou : ce reset supprime tout le schéma, il ne doit jamais toucher la base de développement.
+  if (!new URL(config.db.ownerUrl).pathname.endsWith('_test')) {
+    throw new Error(`Les tests refusent de s'exécuter hors d'une base *_test (reçu : ${config.db.ownerUrl}).`);
+  }
   const c = await ownerClient();
   await c.query('DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;');
   await c.end();
@@ -38,6 +42,9 @@ export async function createApp(extraControllers: Type<unknown>[] = []): Promise
 }
 
 let n = 0;
+/** Champs obligatoires d'un contact entreprise, à compléter ou remplacer dans chaque test. */
+export const TIERS = { phone: '+225 07 00 00 00 00', email: 'contact@tiers.ci', taxId: '1234567A', rccm: 'CI-ABJ-2026-B-0001', paymentTermsDays: 0 };
+
 export function uniqueEmail(prefix = 'user') { n += 1; return `${prefix}.${Date.now()}.${n}@test.ci`; }
 
 export async function signup(app: INestApplication, opts: { companyName?: string; email?: string } = {}) {

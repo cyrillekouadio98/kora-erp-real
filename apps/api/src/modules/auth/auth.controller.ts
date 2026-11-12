@@ -3,6 +3,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { z } from 'zod';
+import { ACTIVITIES } from '../companies/provisioning.service';
 import { config } from '../../config';
 import { AllowPendingMfa, Auth, Public } from '../../common/decorators';
 import { AuthInfo, clientIp, KoraRequest } from '../../common/request-context';
@@ -13,6 +14,7 @@ const SignupSchema = z.object({
   fullName: z.string().trim().min(2, { message: 'Indiquez votre nom complet' }).max(120),
   email, password,
   companyName: z.string().trim().min(2, { message: "Indiquez le nom de l'entreprise" }).max(160),
+  activity: z.enum(ACTIVITIES).optional(),
 });
 const LoginSchema = z.object({ email, password: z.string().min(1).max(200), code: z.string().regex(/^\d{6}$/).optional() });
 const CodeSchema = z.object({ code: z.string().regex(/^\d{6}$/, { message: 'Le code comporte 6 chiffres' }) });
@@ -41,6 +43,22 @@ export class AuthController {
     const r = await this.auth.login(parse(LoginSchema, body), { ip: clientIp(req), ua: req.headers['user-agent'] ?? null });
     setSessionCookie(res, r.session.token, r.session.expiresAt);
     return { mfaRequired: r.mfaRequired };
+  }
+
+  /** Mot de passe oublié : envoie un lien de réinitialisation (réponse identique si le compte n'existe pas). */
+  @Public() @UseGuards(ThrottlerGuard) @HttpCode(200)
+  @Post('password-reset')
+  async requestReset(@Body() body: unknown, @Req() req: KoraRequest) {
+    await this.auth.requestPasswordReset(parse(z.object({ email }), body).email, clientIp(req));
+    return { ok: true };
+  }
+
+  @Public() @UseGuards(ThrottlerGuard) @HttpCode(200)
+  @Post('password-reset/confirm')
+  async confirmReset(@Body() body: unknown) {
+    const b = parse(z.object({ token: z.string().min(20).max(200), password }), body);
+    await this.auth.confirmPasswordReset(b.token, b.password);
+    return { ok: true };
   }
 
   @AllowPendingMfa() @UseGuards(ThrottlerGuard) @HttpCode(200)

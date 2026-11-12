@@ -1,5 +1,5 @@
 -- =====================================================================
--- Kora ERP — Migration 0002 : paiements reçus mais non affectés
+-- Kora ERP — Migration 0037 : paiements reçus mais non affectés
 -- Un paiement dont le montant ou la devise ne correspond pas à la facture, ou qui arrive
 -- sur une facture déjà réglée ou annulée, est conservé (l'argent a bien été reçu) sous le
 -- statut « unapplied », avec son motif, pour traitement par le gestionnaire de facturation.

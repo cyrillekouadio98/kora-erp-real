@@ -15,6 +15,11 @@ export default function UsersPage() {
   const [roleId, setRoleId] = useState('');
   const [link, setLink] = useState('');
   const [editing, setEditing] = useState<any>(null);
+  const [inviteSite, setInviteSite] = useState('');
+  // Sites : choix proposé dès qu'il y en a plusieurs, ou que l'administrateur est lui-même limité.
+  const sites = ctx?.sites ?? [];
+  const multi = sites.length > 1 || !!ctx?.siteRestricted;
+  const siteNames = (ids: string[] | null) => (ids ? ids.map((id) => sites.find((s) => s.id === id)?.name ?? 'Site archivé').join(', ') : 'Tous les sites');
   const { busy, error, run } = useAction();
 
   const load = useCallback(async () => {
@@ -35,28 +40,33 @@ export default function UsersPage() {
       {admin && (
         <div className="card">
           <header><h2>Inviter un collaborateur</h2><span className="small muted">L'invitation est valable 7 jours.</span></header>
-          <form className="row" onSubmit={(e) => { e.preventDefault(); run(async () => { const r = await api('/company/invitations', { body: { email, roleIds: [roleId] } }); setLink(r.inviteUrl); setEmail(''); await load(); }); }}>
+          <form className="row" onSubmit={(e) => { e.preventDefault(); run(async () => { const r = await api('/company/invitations', { body: { email, roleIds: [roleId], ...(inviteSite ? { siteIds: [inviteSite] } : {}) } }); setLink(r.inviteUrl); setEmail(''); await load(); }); }}>
             <div style={{ flex: 2, minWidth: 220 }}><Field label="Adresse e-mail" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></div>
             <label className="field" style={{ flex: 1, minWidth: 180 }}>Rôle
               <select className="input" value={roleId} onChange={(e) => setRoleId(e.target.value)}>{roles.map((r) => <option key={r.id} value={r.id} disabled={locked(r)}>{r.name}{locked(r) ? ' (propriétaire uniquement)' : ''}</option>)}</select>
             </label>
+            {multi && <label className="field" style={{ flex: 1, minWidth: 180 }}>Site
+              <select className="input" value={inviteSite} onChange={(e) => setInviteSite(e.target.value)}>
+                <option value="">{ctx?.siteRestricted ? 'Mes sites' : 'Tous les sites'}</option>{sites.map((s) => <option key={s.id} value={s.id}>{s.name} seulement</option>)}</select>
+            </label>}
             <button className="btn primary" disabled={busy} style={{ alignSelf: 'flex-end' }}>Inviter</button>
           </form>
-          {link && <Alert kind="ok">Invitation créée. Transmettez ce lien à la personne (l'envoi automatique par e-mail sera branché prochainement) :<br /><code className="k" style={{ wordBreak: 'break-all' }}>{link}</code></Alert>}
+          {link && <Alert kind="ok">Invitation envoyée par e-mail. Vous pouvez aussi transmettre ce lien directement (WhatsApp…) :<br /><code className="k" style={{ wordBreak: 'break-all' }}>{link}</code></Alert>}
         </div>
       )}
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Nom</th><th>Rôles</th><th>Statut</th><th>Double auth.</th><th>Accès jusqu'au</th>{admin && <th></th>}</tr></thead>
+          <thead><tr><th>Nom</th><th>Rôles</th>{multi && <th>Sites</th>}<th>Statut</th><th>Double auth.</th><th>Accès jusqu'au</th>{admin && <th></th>}</tr></thead>
           <tbody>
             {members.map((m) => (
               <tr key={m.id}>
                 <td><b>{m.fullName}</b>{m.isOwner && <> <Pill tone="ok">Propriétaire</Pill></>}<div className="small muted">{m.email}</div></td>
                 <td>{m.roles.map((r: any) => r.name).join(', ')}</td>
+                {multi && <td className="small">{m.isOwner ? 'Tous les sites' : siteNames(m.siteIds)}</td>}
                 <td><Pill tone={m.status === 'active' ? 'ok' : 'mute'}>{m.status === 'active' ? 'Actif' : 'Désactivé'}</Pill></td>
                 <td>{m.mfaEnabled ? <Pill tone="ok">Activée</Pill> : <Pill tone="warn">Non</Pill>}</td>
                 <td>{m.validUntil ? date(m.validUntil) : '—'}</td>
-                {admin && <td>{m.email !== me.user.email && <button className="btn sm" onClick={() => setEditing({ ...m, roleIds: m.roles.map((r: any) => r.id) })}>Modifier</button>}</td>}
+                {admin && <td>{m.email !== me.user.email && <button className="btn sm" onClick={() => setEditing({ ...m, roleIds: m.roles.map((r: any) => r.id), sites: m.siteIds ?? [], allSites: !m.siteIds })}>Modifier</button>}</td>}
               </tr>
             ))}
           </tbody>
@@ -74,18 +84,28 @@ export default function UsersPage() {
       {editing && (
         <div className="modal-back" onClick={() => setEditing(null)}>
           <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); run(async () => {
-            await api(`/company/members/${editing.id}`, { method: 'PATCH', body: { roleIds: editing.roleIds, status: editing.status, validUntil: editing.validUntil || null } });
+            const siteIds = editing.allSites ? null : editing.sites;
+            const changed = JSON.stringify(siteIds) !== JSON.stringify(editing.siteIds ?? null);
+            await api(`/company/members/${editing.id}`, { method: 'PATCH', body: { roleIds: editing.roleIds, status: editing.status, validUntil: editing.validUntil || null, ...(changed ? { siteIds } : {}) } });
             setEditing(null); await load(); }); }}>
             <h2>{editing.fullName}</h2>
             <Alert>{error}</Alert>
             <fieldset style={{ border: 0, padding: 0, display: 'grid', gap: 6 }}><legend className="small muted" style={{ marginBottom: 6 }}>Rôles</legend>
               {roles.map((r) => <label key={r.id} className="row small"><input type="checkbox" checked={editing.roleIds.includes(r.id)} disabled={locked(r) && !editing.roleIds.includes(r.id)} onChange={(e) => setEditing({ ...editing, roleIds: e.target.checked ? [...editing.roleIds, r.id] : editing.roleIds.filter((x: string) => x !== r.id) })} /> {r.name} <span className="muted">— {r.description}{locked(r) ? ' (propriétaire uniquement)' : ''}</span></label>)}
             </fieldset>
+            {multi && !editing.isOwner && <fieldset style={{ border: 0, padding: 0, display: 'grid', gap: 6 }}><legend className="small muted" style={{ marginBottom: 6 }}>Sites visibles</legend>
+              {!ctx?.siteRestricted && <label className="row small"><input type="radio" checked={editing.allSites} onChange={() => setEditing({ ...editing, allSites: true })} /> Tous les sites</label>}
+              <label className="row small"><input type="radio" checked={!editing.allSites} onChange={() => setEditing({ ...editing, allSites: false })} /> Seulement :</label>
+              {!editing.allSites && <div className="row" style={{ paddingLeft: 24 }}>{sites.map((s) => (
+                <label key={s.id} className="row small" style={{ gap: 6 }}><input type="checkbox" checked={editing.sites.includes(s.id)}
+                  onChange={(e) => setEditing({ ...editing, sites: e.target.checked ? [...editing.sites, s.id] : editing.sites.filter((x: string) => x !== s.id) })} /> {s.name}</label>))}</div>}
+              <span className="small muted">Un utilisateur limité ne voit et ne saisit que les ventes, achats, stocks, caisses et employés de ses sites ; il ne prépare pas la paie.</span>
+            </fieldset>}
             <div className="grid2">
               <label className="field">Statut<select className="input" value={editing.status} onChange={(e) => setEditing({ ...editing, status: e.target.value })}><option value="active">Actif</option><option value="disabled">Désactivé</option></select></label>
               <Field label="Accès jusqu'au (auditeur, consultant)" type="date" value={editing.validUntil ?? ''} onChange={(e) => setEditing({ ...editing, validUntil: e.target.value })} />
             </div>
-            <div className="row"><button className="btn primary" disabled={busy || !editing.roleIds.length}>Enregistrer</button><button type="button" className="btn" onClick={() => setEditing(null)}>Annuler</button></div>
+            <div className="row"><button className="btn primary" disabled={busy || !editing.roleIds.length || (!editing.allSites && !editing.sites.length)}>Enregistrer</button><button type="button" className="btn" onClick={() => setEditing(null)}>Annuler</button></div>
           </form>
         </div>
       )}

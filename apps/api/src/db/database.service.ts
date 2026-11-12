@@ -10,11 +10,23 @@ types.setTypeParser(1082, (v) => v);
 
 export type Trx = Transaction<DB>;
 
+/**
+ * Connexions inactives rendues avant que la base ne les coupe (une base hébergée se met en veille) ;
+ * une connexion coupée malgré tout est signalée sans arrêter l'API, et la suivante est rouverte.
+ */
+function pool(connectionString: string, max: number) {
+  const p = new Pool({ connectionString, max, idleTimeoutMillis: 30_000 });
+  p.on('error', (e) => console.error('Connexion PostgreSQL perdue :', e.message));
+  return p;
+}
+
 /** Contexte d'une requête liée à une entreprise. Seul AccessGuard le construit. */
 export interface TenantContext {
   companyId: string;
   userId: string;
-  actorType: 'user' | 'support';
+  actorType: 'user' | 'support' | 'platform';
+  /** Sites auxquels l'utilisateur est limité (absent ou null : tous) ; la base filtre en conséquence. */
+  siteIds?: string[] | null;
   ip?: string | null;
 }
 
@@ -30,15 +42,17 @@ export class DatabaseService implements OnModuleDestroy {
   readonly platformDb: Kysely<DB>;
 
   constructor() {
-    this.app = new Kysely<DB>({ dialect: new PostgresDialect({ pool: new Pool({ connectionString: config.db.appUrl, max: 20 }) }) });
-    this.platformDb = new Kysely<DB>({ dialect: new PostgresDialect({ pool: new Pool({ connectionString: config.db.platformUrl, max: 5 }) }) });
+    this.app = new Kysely<DB>({ dialect: new PostgresDialect({ pool: pool(config.db.appUrl, config.dbPoolMax) }) });
+    this.platformDb = new Kysely<DB>({ dialect: new PostgresDialect({ pool: pool(config.db.platformUrl, Math.max(2, Math.ceil(config.dbPoolMax / 4))) }) });
   }
 
   /** Transaction isolée sur une entreprise : la base filtre toutes les lignes par app.company_id. */
   async tenant<T>(ctx: TenantContext, fn: (trx: TenantTrx) => Promise<T>): Promise<T> {
     if (!ctx.companyId || !ctx.userId) throw new Error('Contexte entreprise incomplet');
     return this.app.transaction().execute(async (trx) => {
-      await sql`select set_config('app.company_id', ${ctx.companyId}, true), set_config('app.user_id', ${ctx.userId}, true)`.execute(trx);
+      // Limite vide (sites tous archivés) : un identifiant qui ne correspond à rien, pour ne rien montrer.
+      const sites = ctx.siteIds ? (ctx.siteIds.length ? ctx.siteIds.join(',') : '00000000-0000-0000-0000-000000000000') : '';
+      await sql`select set_config('app.company_id', ${ctx.companyId}, true), set_config('app.user_id', ${ctx.userId}, true), set_config('app.site_ids', ${sites}, true)`.execute(trx);
       return fn(trx as TenantTrx);
     });
   }

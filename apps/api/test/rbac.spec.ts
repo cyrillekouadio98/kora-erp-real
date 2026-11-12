@@ -51,14 +51,14 @@ describe('Rôles, permissions et quotas', () => {
   });
 
   it("le quota d'utilisateurs compte les invitations en attente et bloque la création, sans rien supprimer", async () => {
-    const owner = await signup(app); // essai Business : 5 utilisateurs
+    const owner = await signup(app); // essai Business : 10 utilisateurs
     const roles = await owner.agent.get('/company/roles');
     const role = roles.body.find((r: any) => r.key === 'sales_rep');
-    for (let i = 0; i < 4; i++) expect((await owner.agent.post('/company/invitations').send({ email: uniqueEmail('q'), roleIds: [role.id] })).status).toBe(201);
+    for (let i = 0; i < 9; i++) expect((await owner.agent.post('/company/invitations').send({ email: uniqueEmail('q'), roleIds: [role.id] })).status).toBe(201);
     const over = await owner.agent.post('/company/invitations').send({ email: uniqueEmail('q'), roleIds: [role.id] });
     expect(over.status).toBe(402);
     expect(over.body.error.code).toBe('quota_users');
-    expect((await owner.agent.get('/company/invitations')).body).toHaveLength(4);
+    expect((await owner.agent.get('/company/invitations')).body).toHaveLength(9);
   });
 
   it("seul un propriétaire attribue des permissions sensibles", async () => {

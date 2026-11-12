@@ -4,6 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api, ApiError } from '@/lib/api';
 import { SUB_STATUS } from '@/lib/format';
+import { activeHref, AppIcon, appLabel, appTone, currentApp } from './apps';
 import { Pill } from './ui';
 
 export interface Me {
@@ -12,24 +13,16 @@ export interface Me {
   companies: { companyId: string; name: string; status: string; isOwner: boolean }[];
 }
 export interface CompanyContext {
-  company: { id: string; name: string; currency: string; status: string };
+  company: { id: string; name: string; currency: string; status: string; activity: 'trade' | 'services' | 'mixed' };
   isOwner: boolean; permissions: string[]; readOnly: boolean; subscriptionStatus: string | null;
   entitlements: { modules: string[]; quotas: Record<string, number | null> };
+  /** Sites proposés (ceux permis à l'utilisateur), site affiché (null : tous) et limite éventuelle. */
+  sites: { id: string; code: string; name: string; isDefault: boolean }[]; siteId: string | null; siteRestricted: boolean;
 }
 
 const Ctx = createContext<{ me: Me; ctx: CompanyContext | null; can: (p: string) => boolean; refresh: () => Promise<void> } | null>(null);
 export const useSession = () => useContext(Ctx)!;
 
-const NAV: { href: string; label: string; perm?: string; group: string }[] = [
-  { href: '/app', label: 'Tableau de bord', group: 'Entreprise' },
-  { href: '/app/entreprise', label: 'Fiche entreprise', group: 'Entreprise' },
-  { href: '/app/utilisateurs', label: 'Utilisateurs', perm: 'users.read', group: 'Administration' },
-  { href: '/app/roles', label: 'Rôles et permissions', perm: 'users.read', group: 'Administration' },
-  { href: '/app/abonnement', label: 'Abonnement', perm: 'billing.read', group: 'Administration' },
-  { href: '/app/journal', label: "Journal d'audit", perm: 'audit.read', group: 'Administration' },
-  { href: '/app/support', label: 'Accès du support', perm: 'settings.admin', group: 'Administration' },
-  { href: '/app/securite', label: 'Ma sécurité', group: 'Mon compte' },
-];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -40,8 +33,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const refresh = useCallback(async () => {
     try {
       const m = await api<Me>('/auth/me');
+      // Utilisateur et droits de l'entreprise sont posés ensemble : une page ne s'affiche jamais sans ses droits.
+      const c = m.activeCompanyId ? await api<CompanyContext>('/company/context').catch(() => null) : null;
+      setCtx(c);
       setMe(m);
-      setCtx(m.activeCompanyId ? await api<CompanyContext>('/company/context').catch(() => null) : null);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) router.replace('/connexion');
     }
@@ -53,33 +48,47 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const switchTo = async (companyId: string) => { await api('/auth/switch-company', { body: { companyId } }); await refresh(); router.push('/app'); };
   const logout = async () => { await api('/auth/logout', { method: 'POST', body: {} }); router.replace('/connexion'); };
   const status = ctx?.subscriptionStatus ? SUB_STATUS[ctx.subscriptionStatus] : null;
-  let group = '';
+  const home = path === '/app';
+  const app = currentApp(path);
+  const allowed = (x: { perm?: string; module?: string }) => (!x.perm || can(x.perm)) && (!x.module || !!ctx?.entitlements.modules.includes(x.module));
+  const pages = app?.pages?.filter(allowed) ?? [];
+  const activePage = activeHref(path, pages.map((p) => p.href));
+  // Site affiché : filtre toute l'application ; la page est rechargée pour que chaque écran relise ses données.
+  const switchSite = async (siteId: string) => { await api('/company/sites/active', { body: { siteId: siteId || null } }); window.location.reload(); };
+  const sites = ctx?.sites ?? [];
+  const siteSelect = sites.length > 1 ? (
+    <select className="input site-select" value={ctx!.siteId ?? ''} onChange={(e) => switchSite(e.target.value)} aria-label="Site affiché">
+      {!(ctx!.siteRestricted && sites.length === 1) && <option value="">{ctx!.siteRestricted ? 'Tous mes sites' : 'Tous les sites'}</option>}
+      {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+    </select>
+  ) : ctx?.siteRestricted && sites[0] ? <span className="small site-badge" title="Vous êtes rattaché à ce site">{sites[0].name}</span> : null;
+  const companySelect = me.companies.length > 0 && (
+    <select className="input" value={me.activeCompanyId ?? ''} onChange={(e) => switchTo(e.target.value)} aria-label="Changer d'entreprise">
+      {me.companies.map((c) => <option key={c.companyId} value={c.companyId}>{c.name}</option>)}
+    </select>
+  );
 
   return (
     <Ctx.Provider value={{ me, ctx, can, refresh }}>
-      <div className="shell">
-        <aside className="side">
-          <div className="brand">Kora<span> ERP</span></div>
-          {me.companies.length > 0 && (
-            <label className="field" style={{ padding: '0 8px' }}>Entreprise active
-              <select className="input" value={me.activeCompanyId ?? ''} onChange={(e) => switchTo(e.target.value)} aria-label="Changer d'entreprise">
-                {me.companies.map((c) => <option key={c.companyId} value={c.companyId}>{c.name}</option>)}
-              </select>
-            </label>
+      <div className={home ? 'shell home' : app ? 'shell module' : 'shell'} style={!home && app ? appTone(app.key) : undefined}>
+        <header className="topbar">
+          {home || !app
+            ? <Link href="/app" className="brand" style={{ textDecoration: 'none', color: 'inherit' }}>Kora<span> ERP</span></Link>
+            : <Link href="/app" className="app-title" title="Revenir à toutes les applications"><span className="app-title-ico"><AppIcon name={app.key} size={24} /></span>{appLabel(app, ctx?.company.activity)}</Link>}
+          {pages.length > 1 && (
+            <nav className="subnav" aria-label={`Menu ${app!.label}`}>
+              {pages.map((p) => <Link key={p.href} href={p.href} className={p.href === activePage ? 'active' : ''} aria-current={p.href === activePage ? 'page' : undefined}>{p.label}</Link>)}
+            </nav>
           )}
-          <nav className="nav" aria-label="Navigation principale">
-            {NAV.filter((n) => !n.perm || can(n.perm)).map((n) => {
-              const head = n.group !== group ? <small key={`g-${n.group}`}>{(group = n.group)}</small> : null;
-              return [head, <Link key={n.href} href={n.href} className={path === n.href ? 'active' : ''}>{n.label}</Link>];
-            })}
-            {me.platformRoles.length > 0 && [<small key="g-p">Éditeur</small>, <Link key="console" href="/console">Console éditeur</Link>]}
-          </nav>
-          <div className="foot">
-            {status && <div><Pill tone={status[1]}>{status[0]}</Pill></div>}
-            <div className="muted">{me.user.fullName}<br />{me.user.email}</div>
+          <div className="row topbar-end">
+            {status && <Pill tone={status[1]}>{status[0]}</Pill>}
+            {companySelect && <div style={{ width: 200 }}>{companySelect}</div>}
+            {siteSelect}
+            {me.platformRoles.length > 0 && <Link className="btn sm" href="/console">Console éditeur</Link>}
+            <span className="small muted who">{me.user.fullName}</span>
             <button className="btn sm" onClick={logout}>Se déconnecter</button>
           </div>
-        </aside>
+        </header>
         <main className="main"><div className="wrap">
           {ctx?.readOnly && (
             <div className="alert warn">Votre espace est en <b>lecture seule</b> ({status?.[0].toLowerCase() ?? 'compte suspendu'}). Vous pouvez consulter et exporter vos données. {can('billing.admin') && <Link href="/app/abonnement">Régler l'abonnement</Link>}</div>

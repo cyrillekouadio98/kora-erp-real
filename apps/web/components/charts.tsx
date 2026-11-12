@@ -1,0 +1,247 @@
+'use client';
+import { useEffect, useRef, useState } from 'react';
+
+/**
+ * Graphiques du tableau de bord, dessinés en SVG.
+ * Règles suivies : un seul axe, traits fins (barres ≤ 24 px, bouts arrondis côté valeur,
+ * carrés côté ligne de base, 2 px d'écart), légende dès deux séries, texte jamais dans la
+ * couleur des données, infobulle au survol et au clavier, vue en tableau pour chaque graphique.
+ */
+
+const compact = new Intl.NumberFormat('fr-FR', { notation: 'compact', maximumFractionDigits: 1 });
+const full = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
+export const fcfa = (n: number) => `${full.format(Math.round(n))} FCFA`;
+const axisLabel = (n: number) => (Math.abs(n) >= 10_000 ? compact.format(n) : full.format(n));
+
+/** « 2026-10 » → « oct. » (avec l'année sur janvier et sur le premier mois affiché). */
+export function monthTick(p: string, first: boolean) {
+  const d = new Date(Date.UTC(Number(p.slice(0, 4)), Number(p.slice(5, 7)) - 1, 1));
+  const m = d.toLocaleDateString('fr-FR', { month: 'short', timeZone: 'UTC' });
+  return first || p.endsWith('-01') ? `${m} ${p.slice(2, 4)}` : m;
+}
+export const monthLong = (p: string) => new Date(Date.UTC(Number(p.slice(0, 4)), Number(p.slice(5, 7)) - 1, 1)).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+/** Graduations « rondes » de 0 au maximum (et au minimum s'il est négatif). */
+function niceScale(min: number, max: number, ticks = 4) {
+  const lo = Math.min(0, min), hi = Math.max(0, max);
+  if (lo === hi) return { lo: 0, hi: 1, steps: [0, 1] };
+  const raw = (hi - lo) / ticks;
+  const pow = 10 ** Math.floor(Math.log10(raw));
+  // Pas d'au moins 1 : les petites séries (effectifs) gardent des graduations entières et distinctes.
+  const step = raw <= 1 ? 1 : [1, 2, 2.5, 5, 10].map((m) => m * pow).find((s) => s >= raw)!;
+  const a = Math.floor(lo / step) * step, b = Math.ceil(hi / step) * step;
+  const steps = [];
+  for (let v = a; v <= b + step / 2; v += step) steps.push(Math.round(v));
+  return { lo: a, hi: b, steps };
+}
+
+function useWidth<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  const [width, setWidth] = useState(600);
+  useEffect(() => {
+    if (!ref.current) return;
+    const ro = new ResizeObserver(([e]) => setWidth(Math.max(260, Math.floor(e.contentRect.width))));
+    ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, []);
+  return { ref, width };
+}
+
+/** Rectangle à bout arrondi côté valeur, carré sur la ligne de base. */
+function barPath(x: number, w: number, yBase: number, yVal: number) {
+  const h = Math.abs(yBase - yVal);
+  if (h < 0.5) return '';
+  const r = Math.min(4, w / 2, h);
+  if (yVal < yBase) return `M${x},${yBase} V${yVal + r} Q${x},${yVal} ${x + r},${yVal} H${x + w - r} Q${x + w},${yVal} ${x + w},${yVal + r} V${yBase} Z`;
+  return `M${x},${yBase} V${yVal - r} Q${x},${yVal} ${x + r},${yVal} H${x + w - r} Q${x + w},${yVal} ${x + w},${yVal - r} V${yBase} Z`;
+}
+
+export interface Series { key: string; label: string; color: string; values: (number | null)[] }
+
+/** Enveloppe commune : titre, légende, bascule graphique / tableau. */
+export function ChartCard({ title, subtitle, legend, table, children }: {
+  title: string; subtitle?: string; legend?: { label: string; color: string; kind: 'box' | 'line' }[];
+  table: { head: string[]; rows: (string | number)[][] }; children: React.ReactNode;
+}) {
+  const [asTable, setAsTable] = useState(false);
+  return (
+    <figure className="card" style={{ margin: 0, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', alignContent: 'start', gap: 10 }}>
+      <header style={{ marginBottom: 0 }}>
+        <div><h2>{title}</h2>{subtitle && <div className="small muted">{subtitle}</div>}</div>
+        <button className="btn sm" onClick={() => setAsTable(!asTable)} aria-pressed={asTable}>{asTable ? 'Graphique' : 'Tableau'}</button>
+      </header>
+      {legend && legend.length > 1 && !asTable && (
+        <div className="legend">{legend.map((l) => <span key={l.label}><span className={l.kind === 'box' ? 'sw' : 'ln'} style={{ background: l.color }} />{l.label}</span>)}</div>
+      )}
+      {asTable ? (
+        <div className="table-wrap"><table>
+          <thead><tr>{table.head.map((h, i) => <th key={h} className={i ? 'n' : undefined}>{h}</th>)}</tr></thead>
+          <tbody>{table.rows.map((r, i) => <tr key={i}>{r.map((c, j) => <td key={j} className={j ? 'n' : undefined}>{c}</td>)}</tr>)}</tbody>
+        </table></div>
+      ) : children}
+    </figure>
+  );
+}
+
+/** Colonnes groupées par mois (une à trois séries comparées sur un même axe). */
+/**
+ * stacked : une colonne par période, séries empilées (2 px d'écart entre segments, bout arrondi au sommet).
+ * tick / long / format : libellés et valeurs (par défaut mois et FCFA).
+ */
+export function ColumnChart({ categories, series, height = 220, stacked = false, tick = monthTick, long = monthLong, format = fcfa }: {
+  categories: string[]; series: Series[]; height?: number; stacked?: boolean;
+  tick?: (c: string, first: boolean) => string; long?: (c: string) => string; format?: (n: number) => string;
+}) {
+  const { ref, width } = useWidth<HTMLDivElement>();
+  const [hover, setHover] = useState<number | null>(null);
+  const m = { top: 8, right: 4, bottom: 24, left: 44 };
+  const plotW = width - m.left - m.right, plotH = height - m.top - m.bottom;
+  const all = stacked ? categories.map((_, i) => series.reduce((t, s) => t + (s.values[i] ?? 0), 0)) : series.flatMap((s) => s.values.filter((v): v is number => v !== null));
+  const { lo, hi, steps } = niceScale(Math.min(0, ...all), Math.max(0, ...all));
+  const y = (v: number) => m.top + plotH - ((v - lo) / (hi - lo)) * plotH;
+  const band = plotW / categories.length;
+  const bars = stacked ? 1 : series.length;
+  const barW = Math.max(3, Math.min(stacked ? 40 : 24, (band * 0.7 - 2 * (bars - 1)) / bars));
+  const groupW = barW * bars + 2 * (bars - 1);
+  const every = band < 34 ? 2 : 1;
+  return (
+    <div className="chart" ref={ref} onMouseLeave={() => setHover(null)}>
+      <svg width={width} height={height} role="img" aria-label={series.map((s) => s.label).join(' et ') + ' par mois'}>
+        {steps.map((s) => <g key={s}><line x1={m.left} x2={width - m.right} y1={y(s)} y2={y(s)} stroke={s === 0 ? 'var(--chart-axis)' : 'var(--chart-grid)'} strokeWidth={1} />
+          <text x={m.left - 6} y={y(s) + 4} textAnchor="end">{axisLabel(s)}</text></g>)}
+        {categories.map((c, i) => {
+          const x0 = m.left + i * band + (band - groupW) / 2;
+          return <g key={c}>
+            {hover === i && <rect x={m.left + i * band} y={m.top} width={band} height={plotH} fill="var(--surface-2)" opacity={0.6} />}
+            {stacked ? stack(series, i).map((seg) => (
+              <path key={seg.key} fill={seg.color} d={seg.top ? barPath(x0, barW, y(seg.from) - (seg.first ? 0 : 2), y(seg.to)) : `M${x0},${y(seg.from) - (seg.first ? 0 : 2)} V${y(seg.to)} H${x0 + barW} V${y(seg.from) - (seg.first ? 0 : 2)} Z`} />))
+              : series.map((s, k) => s.values[i] ? <path key={s.key} d={barPath(x0 + k * (barW + 2), barW, y(0), y(s.values[i]!))} fill={s.color} /> : null)}
+            {i % every === 0 && <text x={m.left + i * band + band / 2} y={height - 6} textAnchor="middle">{tick(c, i === 0)}</text>}
+            {/* Zone de survol : toute la colonne du mois, pas seulement les barres */}
+            <rect x={m.left + i * band} y={m.top} width={band} height={plotH} fill="transparent" tabIndex={0}
+              aria-label={`${long(c)} : ${series.map((s) => `${s.label} ${format(s.values[i] ?? 0)}`).join(', ')}`}
+              onMouseEnter={() => setHover(i)} onFocus={() => setHover(i)} onBlur={() => setHover(null)} />
+          </g>;
+        })}
+      </svg>
+      {hover !== null && (
+        <div className="chart-tip" style={{ left: Math.min(width - 244, Math.max(0, m.left + hover * band + band / 2 - 120)), top: 0 }}>
+          <div className="t">{long(categories[hover])}</div>
+          {series.map((s) => <div key={s.key} className="r"><span><span className="k" style={{ background: s.color }} />{s.label}</span><b>{format(s.values[hover] ?? 0)}</b></div>)}
+          {stacked && series.length > 1 && <div className="r"><span>Total</span><b>{format(series.reduce((t, s) => t + (s.values[hover] ?? 0), 0))}</b></div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Segments empilés d'une colonne : de bas en haut, le dernier segment non nul porte le bout arrondi. */
+function stack(series: Series[], i: number) {
+  let cum = 0;
+  const segs = series.filter((s) => (s.values[i] ?? 0) > 0).map((s, k) => ({ key: s.key, color: s.color, from: cum, to: (cum += s.values[i]!), first: k === 0, top: false }));
+  if (segs.length) segs[segs.length - 1].top = true;
+  return segs;
+}
+
+/** Courbe d'une seule série (fond léger), avec réticule qui se cale sur le mois le plus proche. */
+export function LineChart({ categories, values, color, label, height = 200, tick = monthTick, long = (c: string) => `fin ${monthLong(c)}`, format = fcfa }: {
+  categories: string[]; values: (number | null)[]; color: string; label: string; height?: number;
+  tick?: (c: string, first: boolean) => string; long?: (c: string) => string; format?: (n: number) => string;
+}) {
+  const { ref, width } = useWidth<HTMLDivElement>();
+  const [hover, setHover] = useState<number | null>(null);
+  const m = { top: 12, right: 12, bottom: 24, left: 44 };
+  const plotW = width - m.left - m.right, plotH = height - m.top - m.bottom;
+  const known = values.map((v, i) => ({ v, i })).filter((p): p is { v: number; i: number } => p.v !== null);
+  const { lo, hi, steps } = niceScale(Math.min(0, ...known.map((p) => p.v)), Math.max(0, ...known.map((p) => p.v)));
+  const x = (i: number) => m.left + (categories.length === 1 ? plotW / 2 : (i / (categories.length - 1)) * plotW);
+  const y = (v: number) => m.top + plotH - ((v - lo) / (hi - lo)) * plotH;
+  const line = known.map((p, k) => `${k ? 'L' : 'M'}${x(p.i)},${y(p.v)}`).join(' ');
+  const area = known.length ? `${line} L${x(known[known.length - 1].i)},${y(0)} L${x(known[0].i)},${y(0)} Z` : '';
+  const last = known[known.length - 1];
+  const band = plotW / categories.length;
+  const every = band < 22 ? 3 : band < 34 ? 2 : 1;
+  const onMove = (e: React.MouseEvent<SVGRectElement>) => {
+    const px = e.clientX - (e.currentTarget.ownerSVGElement!.getBoundingClientRect().left);
+    const i = Math.round(((px - m.left) / plotW) * (categories.length - 1));
+    setHover(Math.max(0, Math.min(categories.length - 1, i)));
+  };
+  return (
+    <div className="chart" ref={ref} onMouseLeave={() => setHover(null)}>
+      <svg width={width} height={height} role="img" aria-label={label}>
+        {steps.map((s) => <g key={s}><line x1={m.left} x2={width - m.right} y1={y(s)} y2={y(s)} stroke={s === 0 ? 'var(--chart-axis)' : 'var(--chart-grid)'} strokeWidth={1} />
+          <text x={m.left - 6} y={y(s) + 4} textAnchor="end">{axisLabel(s)}</text></g>)}
+        {/* Premier et dernier libellés calés sur les bords, pour ne pas être coupés */}
+        {categories.map((c, i) => i % every === 0 && <text key={c} x={x(i)} y={height - 6} textAnchor={categories.length > 1 && i === 0 ? 'start' : categories.length > 1 && i === categories.length - 1 ? 'end' : 'middle'}>{tick(c, i === 0)}</text>)}
+        <path d={area} fill={color} opacity={0.1} />
+        <path d={line} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+        {hover !== null && <line x1={x(hover)} x2={x(hover)} y1={m.top} y2={m.top + plotH} stroke="var(--chart-axis)" strokeWidth={1} />}
+        {[hover !== null && values[hover] !== null ? hover : null, last?.i].filter((i): i is number => i !== null && i !== undefined).map((i) => (
+          <circle key={i} cx={x(i)} cy={y(values[i]!)} r={4} fill={color} stroke="var(--surface)" strokeWidth={2} />))}
+        <rect x={m.left} y={m.top} width={plotW} height={plotH} fill="transparent" onMouseMove={onMove} />
+      </svg>
+      {hover !== null && (
+        <div className="chart-tip" style={{ left: Math.min(width - 244, Math.max(0, x(hover) - 120)), top: 0 }}>
+          <div className="t">{long(categories[hover])}</div>
+          <div className="r"><span><span className="k" style={{ background: color }} />{label}</span><b>{values[hover] === null ? '—' : format(values[hover]!)}</b></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Barres horizontales classées, une seule teinte, valeur au bout de la barre. */
+export function RankedBars({ items }: { items: { label: string; value: number; detail?: string }[] }) {
+  const max = Math.max(...items.map((i) => i.value), 1);
+  return (
+    <div className="ranked">
+      {items.map((i) => (
+        <div key={i.label} className="row2" title={`${i.label} : ${fcfa(i.value)}`}>
+          <div className="lbl"><span>{i.label}{i.detail && <span className="muted small"> · {i.detail}</span>}</span><b>{fcfa(i.value)}</b></div>
+          <div className="track"><div className="bar" style={{ width: `${(i.value / max) * 100}%` }} /></div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Anneau des parts d'un total (5 parts au plus), 2 px d'écart entre les parts ; chaque part garde sa couleur
+ * quel que soit son rang. La légende porte libellé, montant et pourcentage : la couleur n'est jamais seule.
+ */
+export function Donut({ items, label, format = fcfa }: { items: { key: string; label: string; value: number; color: string }[]; label: string; format?: (n: number) => string }) {
+  const [hover, setHover] = useState<string | null>(null);
+  const total = items.reduce((s, i) => s + i.value, 0);
+  const size = 180, r = 78, w = 22, c = size / 2;
+  let angle = -Math.PI / 2;
+  const gap = items.length > 1 ? 2 / r : 0;
+  const arcs = items.map((i) => {
+    const a = (i.value / total) * Math.PI * 2;
+    const start = angle + gap / 2, end = angle + a - gap / 2;
+    angle += a;
+    const big = end - start > Math.PI ? 1 : 0;
+    const p = (t: number, rr: number) => `${c + rr * Math.cos(t)},${c + rr * Math.sin(t)}`;
+    const d = items.length === 1
+      ? `M${c},${c - r} A${r},${r} 0 1 1 ${c - 0.01},${c - r} L${c - 0.01},${c - r + w} A${r - w},${r - w} 0 1 0 ${c},${c - r + w} Z`
+      : `M${p(start, r)} A${r},${r} 0 ${big} 1 ${p(end, r)} L${p(end, r - w)} A${r - w},${r - w} 0 ${big} 0 ${p(start, r - w)} Z`;
+    return { ...i, d };
+  });
+  const shown = items.find((i) => i.key === hover);
+  return (
+    <div className="donut">
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${label} : ${items.map((i) => `${i.label} ${format(i.value)}`).join(', ')}`}>
+        {arcs.map((a) => <path key={a.key} d={a.d} fill={a.color} opacity={hover && hover !== a.key ? 0.35 : 1}
+          onMouseEnter={() => setHover(a.key)} onMouseLeave={() => setHover(null)} />)}
+        <text x={c} y={c - 4} textAnchor="middle" className="donut-total">{shown ? `${Math.round((shown.value / total) * 100)} %` : compact.format(total)}</text>
+        <text x={c} y={c + 14} textAnchor="middle" className="donut-sub">{shown ? shown.label : 'FCFA'}</text>
+      </svg>
+      <ul className="donut-legend">
+        {items.map((i) => (
+          <li key={i.key} onMouseEnter={() => setHover(i.key)} onMouseLeave={() => setHover(null)} className={hover === i.key ? 'on' : undefined}>
+            <span className="sw" style={{ background: i.color }} /><span>{i.label}</span>
+            <b>{format(i.value)}</b><span className="muted small">{Math.round((i.value / total) * 100)} %</span>
+          </li>))}
+      </ul>
+    </div>
+  );
+}

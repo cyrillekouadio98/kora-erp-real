@@ -4,13 +4,14 @@ import { authenticator } from 'otplib';
 import QRCode from 'qrcode';
 import { sql } from 'kysely';
 import { config } from '../../config';
-import { decrypt, encrypt } from '../../common/crypto';
+import { decrypt, encrypt, randomToken, sha256 } from '../../common/crypto';
 import { badRequest, conflict, forbidden, locked, notFound, unauthorized } from '../../common/errors';
 import { isUuid } from '../../common/ids';
 import type { AuthInfo } from '../../common/request-context';
 import { DatabaseService, Trx } from '../../db/database.service';
 import { AuditService } from '../audit/audit.service';
-import { ProvisioningService } from '../companies/provisioning.service';
+import { CompanyActivity, ProvisioningService } from '../companies/provisioning.service';
+import { MailService } from '../mail/mail.service';
 import { SessionService } from './session.service';
 
 authenticator.options = { window: 1 };
@@ -51,18 +52,19 @@ export class AuthService {
     private readonly sessions: SessionService,
     private readonly provisioning: ProvisioningService,
     private readonly audit: AuditService,
+    private readonly mail: MailService,
   ) {}
 
   hashPassword = (pw: string) => hash(pw, ARGON);
 
-  async signup(input: { fullName: string; email: string; password: string; companyName: string }, meta: { ip?: string | null; ua?: string | null }) {
+  async signup(input: { fullName: string; email: string; password: string; companyName: string; activity?: CompanyActivity }, meta: { ip?: string | null; ua?: string | null }) {
     return this.db.identity(async (trx) => {
       const exists = await trx.selectFrom('user_account').select('id').where('email', '=', input.email).executeTakeFirst();
       if (exists) throw conflict('Un compte existe déjà avec cette adresse e-mail. Connectez-vous.', 'email_taken');
       const user = await trx.insertInto('user_account').values({
         email: input.email, full_name: input.fullName.trim(), password_hash: await this.hashPassword(input.password), phone: null, totp_secret_enc: null,
       }).returning('id').executeTakeFirstOrThrow();
-      const { companyId } = await this.provisioning.provision(trx, user.id, { name: input.companyName }, meta.ip);
+      const { companyId } = await this.provisioning.provision(trx, user.id, { name: input.companyName, activity: input.activity }, meta.ip);
       const session = await this.sessions.create(trx, user.id, { mfaVerified: true, activeCompanyId: companyId, ip: meta.ip, userAgent: meta.ua });
       return { userId: user.id, companyId, session };
     });
@@ -158,7 +160,7 @@ export class AuthService {
         .where('m.user_id', '=', auth.userId).where('m.status', '=', 'active').orderBy('c.name').execute();
       return {
         user: { id: u.id, email: u.email, fullName: u.full_name, phone: u.phone, mfaEnabled: u.mfa_enabled },
-        platformRoles: auth.platformRoles, activeCompanyId: auth.activeCompanyId, mfaVerified: auth.mfaVerified, companies: memberships,
+        platformRoles: auth.platformRoles, platformMfaRequired: config.platformMfaRequired, activeCompanyId: auth.activeCompanyId, mfaVerified: auth.mfaVerified, companies: memberships,
       };
     });
   }
@@ -169,7 +171,7 @@ export class AuthService {
       const m = await trx.selectFrom('company_membership').select(['id', 'valid_until']).where('company_id', '=', companyId)
         .where('user_id', '=', auth.userId).where('status', '=', 'active').executeTakeFirst();
       if (!m || (m.valid_until && m.valid_until < new Date().toISOString().slice(0, 10))) throw notFound('Entreprise');
-      await trx.updateTable('user_session').set({ active_company_id: companyId }).where('id', '=', auth.sessionId).execute();
+      await trx.updateTable('user_session').set({ active_company_id: companyId, active_site_id: null }).where('id', '=', auth.sessionId).execute();
     });
     await this.db.tenant({ companyId, userId: auth.userId, actorType: 'user', ip }, (t) =>
       this.audit.tenant(t, { companyId, userId: auth.userId, actorType: 'user', ip }, { action: 'session.company_selected' }));
@@ -193,6 +195,39 @@ export class AuthService {
 
   async logout(auth: AuthInfo) {
     await this.db.asUser(auth.userId, (trx) => this.sessions.revoke(trx, auth.sessionId));
+  }
+
+  /**
+   * Mot de passe oublié : la réponse est identique que le compte existe ou non (aucune énumération).
+   * Le lien est valable une heure et ne sert qu'une fois ; seule son empreinte est conservée.
+   */
+  async requestPasswordReset(email: string, ip?: string | null) {
+    await this.db.identity(async (trx) => {
+      const u = await trx.selectFrom('user_account').select(['id', 'full_name']).where('email', '=', email).executeTakeFirst();
+      if (!u) return;
+      const recent = await trx.selectFrom('password_reset').select('id').where('user_id', '=', u.id).where('created_at', '>', new Date(Date.now() - 60_000)).executeTakeFirst();
+      if (recent) return; // une demande par minute au plus
+      const secret = randomToken(32);
+      await trx.insertInto('password_reset').values({ user_id: u.id, token_hash: sha256(secret), expires_at: new Date(Date.now() + 3600_000), ip: ip ?? null, used_at: null }).execute();
+      await this.mail.enqueue(trx, {
+        companyId: null, to: email, kind: 'password_reset', subject: 'Réinitialisation de votre mot de passe Kora ERP',
+        paragraphs: [`Bonjour ${u.full_name},`, "Une réinitialisation du mot de passe de votre compte Kora ERP a été demandée. Le lien ci-dessous est valable une heure et ne peut servir qu'une fois.",
+          "Si vous n'êtes pas à l'origine de cette demande, ignorez ce message : votre mot de passe reste inchangé."],
+        action: { label: 'Choisir un nouveau mot de passe', url: `${config.webUrl}/mot-de-passe?token=${secret}` },
+      });
+    });
+  }
+
+  async confirmPasswordReset(token: string, password: string) {
+    await this.db.identity(async (trx) => {
+      const r = await trx.selectFrom('password_reset').selectAll().where('token_hash', '=', sha256(token)).forUpdate().executeTakeFirst();
+      if (!r || r.used_at || new Date(r.expires_at) < new Date()) throw badRequest('Ce lien de réinitialisation est invalide ou a expiré. Faites une nouvelle demande.', undefined, 'invalid_reset_token');
+      await trx.updateTable('password_reset').set({ used_at: new Date() }).where('id', '=', r.id).execute();
+      // Les autres liens encore valides de ce compte deviennent inutilisables.
+      await trx.updateTable('password_reset').set({ used_at: new Date() }).where('user_id', '=', r.user_id).where('used_at', 'is', null).execute();
+      await trx.updateTable('user_account').set({ password_hash: await this.hashPassword(password), failed_logins: 0, locked_until: null }).where('id', '=', r.user_id).execute();
+      await trx.updateTable('user_session').set({ revoked_at: new Date() }).where('user_id', '=', r.user_id).where('revoked_at', 'is', null).execute();
+    });
   }
 
   async changePassword(auth: AuthInfo, current: string, next: string) {

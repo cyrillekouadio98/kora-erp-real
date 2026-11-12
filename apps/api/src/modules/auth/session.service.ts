@@ -23,7 +23,7 @@ export class SessionService {
     if (!token || token.length > 200) return null;
     return this.db.identity(async (trx) => {
       const s = await trx.selectFrom('user_session as s').innerJoin('user_account as u', 'u.id', 's.user_id')
-        .select(['s.id', 's.user_id', 's.active_company_id', 's.mfa_verified', 's.expires_at', 's.revoked_at', 's.last_seen_at', 'u.email', 'u.mfa_enabled'])
+        .select(['s.id', 's.user_id', 's.active_company_id', 's.active_site_id', 's.mfa_verified', 's.expires_at', 's.revoked_at', 's.last_seen_at', 'u.email', 'u.mfa_enabled'])
         .where('s.token_hash', '=', sha256(token)).executeTakeFirst();
       if (!s || s.revoked_at || new Date(s.expires_at) <= new Date()) return null;
       if (Date.now() - new Date(s.last_seen_at).getTime() > 5 * 60_000) {
@@ -31,7 +31,7 @@ export class SessionService {
       }
       const roles = await trx.selectFrom('platform_role_assignment').select('role').where('user_id', '=', s.user_id).execute();
       return {
-        userId: s.user_id, sessionId: s.id, email: s.email, activeCompanyId: s.active_company_id,
+        userId: s.user_id, sessionId: s.id, email: s.email, activeCompanyId: s.active_company_id, activeSiteId: s.active_site_id,
         mfaEnabled: s.mfa_enabled, mfaVerified: s.mfa_verified, platformRoles: roles.map((r) => r.role),
       };
     });

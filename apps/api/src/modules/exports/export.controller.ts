@@ -7,7 +7,7 @@ import type { TenantInfo } from '../../common/request-context';
 import { DatabaseService } from '../../db/database.service';
 import { AuditService } from '../audit/audit.service';
 
-function toCsv(rows: Record<string, unknown>[]): string {
+export function toCsv(rows: Record<string, unknown>[]): string {
   if (!rows.length) return '﻿';
   const cols = Object.keys(rows[0]);
   const cell = (v: unknown) => {
@@ -39,6 +39,28 @@ export class ExportController {
         invitations: await trx.selectFrom('invitation').select(['id', 'email', 'role_ids', 'expires_at', 'accepted_at', 'revoked_at', 'created_at']).execute(),
         subscription: await trx.selectFrom('subscription').selectAll().execute(),
         invoices: await trx.selectFrom('platform_invoice').selectAll().execute(),
+        contacts: await trx.selectFrom('contact').selectAll().orderBy('code').execute(),
+        products: await trx.selectFrom('product').selectAll().orderBy('code').execute(),
+        sales_documents: await trx.selectFrom('sales_document').selectAll().orderBy('created_at').execute(),
+        sales_document_lines: await trx.selectFrom('sales_document_line').selectAll().orderBy('document_id').orderBy('position').execute(),
+        sales_payments: await trx.selectFrom('sales_payment').selectAll().orderBy('paid_on').execute(),
+        sales_reminders: await trx.selectFrom('sales_reminder').selectAll().orderBy('created_at').execute(),
+        purchase_documents: await trx.selectFrom('purchase_document').selectAll().orderBy('created_at').execute(),
+        purchase_document_lines: await trx.selectFrom('purchase_document_line').selectAll().orderBy('document_id').orderBy('position').execute(),
+        purchase_payments: await trx.selectFrom('purchase_payment').selectAll().orderBy('paid_on').execute(),
+        treasury_accounts: await trx.selectFrom('treasury_account').selectAll().orderBy('created_at').execute(),
+        treasury_movements: await trx.selectFrom('treasury_movement').selectAll().orderBy('date').orderBy('created_at').execute(),
+        ledger_accounts: await trx.selectFrom('ledger_account').selectAll().orderBy('code').execute(),
+        journal_entries: await trx.selectFrom('journal_entry').selectAll().orderBy('date').orderBy('number').execute(),
+        journal_lines: await trx.selectFrom('journal_line').selectAll().orderBy('entry_id').orderBy('position').execute(),
+        stock_movements: await trx.selectFrom('stock_movement').selectAll().orderBy('date').orderBy('created_at').execute(),
+        // Le RIB chiffré des employés n'est pas exporté en clair.
+        employees: await trx.selectFrom('employee').select(['id', 'number', 'first_name', 'last_name', 'job_title', 'department', 'hire_date', 'end_date', 'contract_type',
+          'cnps_number', 'marital_status', 'children', 'parts_override', 'base_salary', 'housing_allowance', 'transport_allowance', 'other_allowances', 'payment_method', 'phone', 'email']).execute(),
+        payroll_runs: await trx.selectFrom('payroll_run').selectAll().orderBy('period').execute(),
+        payslips: await trx.selectFrom('payslip').selectAll().orderBy('run_id').execute(),
+        fiscal_year_closings: await trx.selectFrom('fiscal_year_closing').selectAll().orderBy('year').execute(),
+        leave_requests: await trx.selectFrom('leave_request').selectAll().orderBy('start_date').execute(),
         audit_log: await trx.selectFrom('audit_log').selectAll().orderBy('id').execute(),
       };
       await this.audit.tenant(trx, t.ctx, { action: 'data.exported', data: { tables: Object.keys(out) } });
@@ -51,7 +73,7 @@ export class ExportController {
     zip.pipe(res);
     zip.append(JSON.stringify(data, null, 2), { name: 'donnees-completes.json' });
     for (const [name, rows] of Object.entries(data)) zip.append(toCsv(rows as Record<string, unknown>[]), { name: `csv/${name}.csv` });
-    zip.append(`Export Kora ERP du ${stamp}\nEntreprise : ${t.companyId}\nFichiers CSV séparés par des points-virgules, encodés en UTF-8.\nLes modules métier (ventes, comptabilité, paie) seront ajoutés à cet export au fil des phases.\n`, { name: 'LISEZ-MOI.txt' });
+    zip.append(`Export Kora ERP du ${stamp}\nEntreprise : ${t.companyId}\nFichiers CSV séparés par des points-virgules, encodés en UTF-8.\nLes coordonnées bancaires des employés, chiffrées, ne sont pas exportées.\n`, { name: 'LISEZ-MOI.txt' });
     await zip.finalize();
   }
 }
