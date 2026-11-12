@@ -14,7 +14,8 @@ export default function RolesPage() {
   const [edit, setEdit] = useState<any>(null);
   const { busy, error, run } = useAction();
   const load = useCallback(async () => { setRoles(await api('/company/roles')); setCatalog(await api('/permissions')); }, []);
-  useEffect(() => { load(); }, [load]);
+  // Chargement initial via run : une erreur (accès refusé, réseau) s'affiche au lieu de laisser la page vide.
+  useEffect(() => { run(load); }, [load]);
 
   const toggle = (p: string) => setEdit({ ...edit, permissions: edit.permissions.includes(p) ? edit.permissions.filter((x: string) => x !== p) : [...edit.permissions, p] });
   const save = () => run(async () => {
@@ -30,7 +31,7 @@ export default function RolesPage() {
       <div className="table-wrap"><table>
         <thead><tr><th>Rôle</th><th>Description</th><th className="n">Permissions</th><th className="n">Utilisateurs</th>{admin && <th></th>}</tr></thead>
         <tbody>{roles.map((r) => (
-          <tr key={r.id}><td><b>{r.name}</b> {r.isSystem && <Pill>Standard</Pill>}</td><td className="small muted">{r.description}</td><td className="n">{r.permissions.length}</td><td className="n">{r.memberCount}</td>
+          <tr key={r.id}><td><b>{r.name}</b> {r.isSystem && <Pill>Standard</Pill>} {r.ownerOnly && r.key !== 'owner' && <Pill tone="warn">Attribué par un propriétaire</Pill>}</td><td className="small muted">{r.description}</td><td className="n">{r.permissions.length}</td><td className="n">{r.memberCount}</td>
             {admin && <td className="n"><div className="row" style={{ justifyContent: 'flex-end' }}>
               {r.key !== 'owner' && <button className="btn sm" onClick={() => setEdit({ ...r })}>Modifier</button>}
               {!r.isSystem && <button className="btn sm danger" onClick={() => run(async () => { await api(`/company/roles/${r.id}`, { method: 'DELETE' }); await load(); })}>Supprimer</button>}

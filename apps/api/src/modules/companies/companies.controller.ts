@@ -60,8 +60,13 @@ export class CompaniesController {
     return this.db.tenant(t.ctx, async (trx) => {
       const before = await trx.selectFrom('company').selectAll().where('id', '=', t.companyId).executeTakeFirstOrThrow();
       const after = await trx.updateTable('company').set(patch).where('id', '=', t.companyId).returningAll().executeTakeFirstOrThrow();
-      const changes = Object.fromEntries(Object.keys(patch).map((c) => [c, { from: (before as any)[c], to: (after as any)[c] }]));
-      await this.audit.tenant(trx, t.ctx, { action: 'company.updated', entityType: 'company', entityId: t.companyId, data: { changes } });
+      // Seuls les champs dont la valeur a réellement changé sont inscrits au journal ; rien n'est inscrit si rien n'a changé.
+      const changes = Object.fromEntries(Object.keys(patch)
+        .filter((c) => JSON.stringify((before as any)[c] ?? null) !== JSON.stringify((after as any)[c] ?? null))
+        .map((c) => [c, { from: (before as any)[c], to: (after as any)[c] }]));
+      if (Object.keys(changes).length) {
+        await this.audit.tenant(trx, t.ctx, { action: 'company.updated', entityType: 'company', entityId: t.companyId, data: { changes } });
+      }
       return after;
     });
   }

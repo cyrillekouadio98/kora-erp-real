@@ -22,8 +22,11 @@ export default function UsersPage() {
     const r = await api('/company/roles'); setRoles(r); setRoleId((v) => v || r.find((x: any) => x.key === 'sales_rep')?.id || r[0]?.id);
     if (can('users.admin')) setInvites((await api('/company/invitations')).filter((i: any) => !i.acceptedAt && !i.revokedAt));
   }, [can]);
-  useEffect(() => { load(); }, [load]);
+  // Chargement initial via run : une erreur (accès refusé, réseau) s'affiche au lieu de laisser la page vide.
+  useEffect(() => { run(load); }, [load]);
   const roleName = (id: string) => roles.find((r) => r.id === id)?.name ?? '—';
+  /** Rôle que seul un propriétaire peut attribuer (permissions sensibles) : grisé pour les autres administrateurs. */
+  const locked = (r: any) => r.ownerOnly && !ctx?.isOwner;
 
   return (
     <>
@@ -35,7 +38,7 @@ export default function UsersPage() {
           <form className="row" onSubmit={(e) => { e.preventDefault(); run(async () => { const r = await api('/company/invitations', { body: { email, roleIds: [roleId] } }); setLink(r.inviteUrl); setEmail(''); await load(); }); }}>
             <div style={{ flex: 2, minWidth: 220 }}><Field label="Adresse e-mail" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></div>
             <label className="field" style={{ flex: 1, minWidth: 180 }}>Rôle
-              <select className="input" value={roleId} onChange={(e) => setRoleId(e.target.value)}>{roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
+              <select className="input" value={roleId} onChange={(e) => setRoleId(e.target.value)}>{roles.map((r) => <option key={r.id} value={r.id} disabled={locked(r)}>{r.name}{locked(r) ? ' (propriétaire uniquement)' : ''}</option>)}</select>
             </label>
             <button className="btn primary" disabled={busy} style={{ alignSelf: 'flex-end' }}>Inviter</button>
           </form>
@@ -76,7 +79,7 @@ export default function UsersPage() {
             <h2>{editing.fullName}</h2>
             <Alert>{error}</Alert>
             <fieldset style={{ border: 0, padding: 0, display: 'grid', gap: 6 }}><legend className="small muted" style={{ marginBottom: 6 }}>Rôles</legend>
-              {roles.map((r) => <label key={r.id} className="row small"><input type="checkbox" checked={editing.roleIds.includes(r.id)} onChange={(e) => setEditing({ ...editing, roleIds: e.target.checked ? [...editing.roleIds, r.id] : editing.roleIds.filter((x: string) => x !== r.id) })} /> {r.name} <span className="muted">— {r.description}</span></label>)}
+              {roles.map((r) => <label key={r.id} className="row small"><input type="checkbox" checked={editing.roleIds.includes(r.id)} disabled={locked(r) && !editing.roleIds.includes(r.id)} onChange={(e) => setEditing({ ...editing, roleIds: e.target.checked ? [...editing.roleIds, r.id] : editing.roleIds.filter((x: string) => x !== r.id) })} /> {r.name} <span className="muted">— {r.description}{locked(r) ? ' (propriétaire uniquement)' : ''}</span></label>)}
             </fieldset>
             <div className="grid2">
               <label className="field">Statut<select className="input" value={editing.status} onChange={(e) => setEditing({ ...editing, status: e.target.value })}><option value="active">Actif</option><option value="disabled">Désactivé</option></select></label>

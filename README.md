@@ -8,12 +8,12 @@ ERP SaaS multi-entreprises pour les PME d'Afrique de l'Ouest : gestion commercia
 
 | Domaine | Fonctionnalités |
 | --- | --- |
-| Comptes | Inscription avec création de l'entreprise et essai gratuit, connexion, double authentification (TOTP), verrouillage après 5 échecs, sessions révocables, changement de mot de passe |
+| Comptes | Inscription avec création de l'entreprise et essai gratuit, connexion, double authentification (TOTP, codes à usage unique), verrouillage après 5 échecs (mot de passe ou code, y compris à l'acceptation d'une invitation), sessions révocables, changement de mot de passe |
 | Multi-entreprises | Un utilisateur peut appartenir à plusieurs entreprises, avec un rôle différent dans chacune, et changer d'entreprise active sans se reconnecter |
 | Rôles et permissions | 10 rôles standard (propriétaire, directeur, comptable, caissier, RH, paie, auditeur…), rôles personnalisés, 7 actions par module, permissions sensibles réservées au propriétaire, accès limités dans le temps |
 | Invitations | Lien d'invitation valable 7 jours, à usage unique, création de compte ou rattachement d'un compte existant |
 | Abonnements | Formules versionnées (Starter, Business, Premium, Cabinet, Enterprise), droits et quotas vérifiés côté serveur, essai, renouvellement, prorata, période de grâce, suspension, résiliation, archivage, factures et rappels |
-| Paiements | Interface commune aux prestataires, prestataire de test signé (HMAC), notifications traitées une seule fois, virements saisis par l'éditeur |
+| Paiements | Interface commune aux prestataires, prestataire de test signé (HMAC, jamais branché en production), notifications traitées une seule fois, virements saisis par l'éditeur, paiements non conformes (montant, devise, facture déjà réglée) conservés comme « non affectés » et signalés dans la console |
 | Console éditeur | Clients, indicateurs (revenu récurrent estimé, facturé, encaissé, impayés), suspension motivée, gestion des formules |
 | Support | Accès aux données d'un client uniquement après son accord, pour une durée et un périmètre limités, chaque consultation étant inscrite dans son journal |
 | Réversibilité | Export complet des données de l'entreprise (JSON + CSV), toujours possible même en cas de suspension |
@@ -68,7 +68,13 @@ Le super administrateur doit activer la double authentification (menu « Ma séc
 npm test
 ```
 
-41 tests d'intégration sur une vraie base PostgreSQL (`kora_test`, recréée à chaque fichier) : authentification, rôles et quotas, abonnements et paiements, console éditeur et support, isolation multi-entreprises.
+Tests d'intégration sur une vraie base PostgreSQL (`kora_test`, recréée à chaque fichier) : authentification, rôles et quotas, abonnements et paiements, console éditeur et support, isolation multi-entreprises. S'y ajoutent les tests de configuration de production (`config.spec.ts`, sans base) : secrets de développement refusés, prestataire de paiement de test absent.
+
+### Production
+
+Avec `NODE_ENV=production`, l'API refuse de démarrer si une variable obligatoire manque ou garde sa valeur de développement (`ENCRYPTION_KEY`, URL et mots de passe PostgreSQL, `WEB_URL`). Le prestataire de paiement de test n'y est jamais branché : `/webhooks/payments/sandbox` répond 404.
+
+`TRUST_PROXY` indique combien de proxys précèdent l'API (1 = l'interface Next.js seule, valeur par défaut ; 2 = un répartiteur de charge devant Next.js). Une valeur trop basse fait partager à tous les utilisateurs la même adresse IP, donc la même limite de tentatives de connexion.
 
 ## Organisation du code
 
@@ -83,6 +89,12 @@ apps/
 infra/db/              création des rôles et des bases PostgreSQL
 .github/workflows/     intégration continue (types, tests, construction)
 ```
+
+## Limites connues
+
+- **Export des données** : l'archive est construite en mémoire. C'est sans conséquence sur les données du socle, mais l'export devra être produit en flux (lecture par lots) quand les modules métier (écritures, paie) y seront ajoutés.
+- **Contexte RLS** : `app.company_id` est posé par l'API elle-même dans chaque transaction. La RLS protège donc contre un oubli de filtre dans le code, pas contre une injection SQL, qui pourrait modifier ce contexte : toutes les requêtes passent par Kysely, sans SQL concaténé.
+- **Rôles réservés au propriétaire** : les rôles standard Comptable et Gestionnaire de paie contiennent des permissions sensibles (clôture, contre-passation, salaires). Seul un propriétaire peut les attribuer ; l'interface les signale.
 
 ## Décisions encore ouvertes
 

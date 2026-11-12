@@ -28,7 +28,11 @@ const monthlyEquivalent = (v: { price_monthly: string; price_yearly: string }, c
 
 /** Rappels envoyés avant et après l'échéance (jours relatifs). */
 const REMINDERS = [-7, -1, 0, 3, 10];
+
+type LockedSubscription = Awaited<ReturnType<BillingService['lockSub']>>;
 const ARCHIVE_AFTER_DAYS = 90;
+/** Nom du verrou consultatif PostgreSQL qui sérialise le cycle de facturation entre instances. */
+const BILLING_CYCLE_LOCK = 'kora:billing-cycle';
 
 @Injectable()
 export class BillingService {
@@ -110,11 +114,62 @@ export class BillingService {
     }).returningAll().executeTakeFirstOrThrow();
   }
 
+  /**
+   * Facture de renouvellement de la période qui suit l'échéance, au prix de la formule qui s'appliquera
+   * alors (descente de gamme programmée comprise). La formule et le cycle facturés sont inscrits sur la
+   * ligne : c'est la facture réglée qui fait foi, pas l'état de l'abonnement au moment du paiement.
+   */
+  private async issueRenewal(trx: Trx, s: LockedSubscription) {
+    const end = new Date(s.current_period_end);
+    const pending = (s.overrides as any)?.pending_change;
+    const v = pending
+      ? await trx.selectFrom('plan_version').select(['id', 'price_monthly', 'price_yearly']).where('id', '=', pending.plan_version_id).executeTakeFirstOrThrow()
+      : { id: s.plan_version_id, price_monthly: s.price_monthly, price_yearly: s.price_yearly };
+    const c: Cycle = pending?.billing_cycle ?? (s.billing_cycle as Cycle);
+    const amount = price(v, c);
+    return this.createInvoice(trx, { id: s.id, company_id: s.company_id, currency: s.currency }, {
+      amount, periodStart: end, periodEnd: addCycle(end, c), dueAt: end,
+      lines: [{ type: 'renewal', label: `Abonnement ${pending?.plan_code ?? s.plan_code} (${c === 'yearly' ? 'annuel' : 'mensuel'})`, amount,
+        applies_pending_change: !!pending, plan_version_id: v.id, billing_cycle: c }],
+    });
+  }
+
+  /** La facture de renouvellement d'un abonnement actif est émise à J-7. */
+  private renewalDue(s: LockedSubscription, now: Date) {
+    return s.status === 'active' && !s.cancel_at_period_end && now.getTime() >= new Date(s.current_period_end).getTime() - 7 * DAY;
+  }
+
+  /** Annule les factures ouvertes de l'abonnement (devenues caduques après un changement décidé par le client). */
+  private async voidOpenInvoices(trx: Trx, subscriptionId: string) {
+    await trx.updateTable('platform_invoice').set({ status: 'void' }).where('subscription_id', '=', subscriptionId).where('status', '=', 'open').execute();
+  }
+
+  /**
+   * Remplace les factures ouvertes par une facture de renouvellement à jour, si elle est déjà due.
+   * Appelé après tout changement qui modifie ce que le prochain renouvellement doit facturer.
+   */
+  private async refreshRenewal(trx: Trx, companyId: string, now = new Date()) {
+    const s = await this.lockSub(trx, companyId);
+    // Hors abonnement actif, la facture ouverte est celle qui permet de régulariser : on n'y touche pas.
+    if (s.status !== 'active') return null;
+    await this.voidOpenInvoices(trx, s.id);
+    return this.renewalDue(s, now) ? this.issueRenewal(trx, s) : null;
+  }
+
   async changePlan(t: TenantInfo, input: { planCode: string; billingCycle: Cycle }) {
     return this.db.platform(async (trx) => {
       const s = await this.lockSub(trx, t.companyId);
       const target = await this.latestVersion(trx, input.planCode);
-      if (target.id === s.plan_version_id && input.billingCycle === s.billing_cycle) throw conflict('Vous êtes déjà sur cette formule.', 'same_plan');
+      if (target.id === s.plan_version_id && input.billingCycle === s.billing_cycle) {
+        // Revenir à la formule actuelle annule une descente de gamme programmée.
+        if (s.status !== 'active' || !(s.overrides as any)?.pending_change) throw conflict('Vous êtes déjà sur cette formule.', 'same_plan');
+        const { pending_change, ...rest } = s.overrides as any;
+        await trx.updateTable('subscription').set({ overrides: JSON.stringify(rest) }).where('id', '=', s.id).execute();
+        await this.refreshRenewal(trx, t.companyId);
+        await this.event(trx, s, 'downgrade_withdrawn', s.status, s.status, { kept: input.planCode });
+        await this.audit.platform(trx, t.ctx.userId, { companyId: t.companyId, actorType: 'user', action: 'subscription.downgrade_withdrawn', entityType: 'subscription', entityId: s.id, data: { kept: input.planCode } });
+        return { applied: 'immediately', invoice: null, warnings: [] as string[] };
+      }
       const targetEnt = normalizeEntitlements(target.entitlements);
       const usage = await this.quotas.usage(trx, t.companyId, { includePending: false });
       const warnings = targetEnt.quotas.users !== null && usage.users > targetEnt.quotas.users
@@ -136,13 +191,16 @@ export class BillingService {
       if (s.status === 'active' && !isUpgrade) {
         const overrides = { ...(s.overrides as object), pending_change: { plan_version_id: target.id, plan_code: input.planCode, billing_cycle: input.billingCycle } };
         await trx.updateTable('subscription').set({ overrides: JSON.stringify(overrides) }).where('id', '=', s.id).execute();
+        // Une facture de renouvellement déjà émise (J-7) l'a été au prix de l'ancienne formule, et une montée
+        // de gamme non réglée contredit ce nouveau choix : elles sont remplacées, la dernière décision fait foi.
+        const renewal = await this.refreshRenewal(trx, t.companyId, now);
         await this.event(trx, s, 'downgrade_scheduled', s.status, s.status, { to: input.planCode, at: s.current_period_end });
-        await auditUser('subscription.downgrade_scheduled', { to: input.planCode, cycle: input.billingCycle, effective_at: s.current_period_end });
+        await auditUser('subscription.downgrade_scheduled', { to: input.planCode, cycle: input.billingCycle, effective_at: s.current_period_end, renewal_invoice: renewal?.number ?? null });
         return { applied: 'at_period_end', effectiveAt: s.current_period_end, invoice: null, warnings };
       }
 
       // Montée de gamme (ou reprise après suspension) : facture immédiate, changement appliqué au paiement.
-      await trx.updateTable('platform_invoice').set({ status: 'void' }).where('subscription_id', '=', s.id).where('status', '=', 'open').execute();
+      await this.voidOpenInvoices(trx, s.id);
       let amount: number; let periodStart: Date; let periodEnd: Date;
       const remaining = Math.min(1, Math.max(0, (new Date(s.current_period_end).getTime() - now.getTime()) / (new Date(s.current_period_end).getTime() - new Date(s.current_period_start).getTime())));
       if (s.status === 'active' && input.billingCycle === oldCycle) {
@@ -170,6 +228,8 @@ export class BillingService {
         await this.setStatus(trx, s, 'cancelled', { cancelled_at: new Date() }, { reason: 'trial_cancelled' });
       } else if (s.status === 'active') {
         await trx.updateTable('subscription').set({ cancel_at_period_end: true }).where('id', '=', s.id).execute();
+        // La période suivante ne sera pas facturée : une facture de renouvellement déjà émise devient caduque.
+        await this.voidOpenInvoices(trx, s.id);
         await this.event(trx, s, 'cancel_scheduled', s.status, s.status, { at: s.current_period_end });
       } else throw conflict("L'abonnement ne peut pas être résilié dans son état actuel.", 'invalid_state');
       await this.audit.platform(trx, t.ctx.userId, { companyId: t.companyId, actorType: 'user', action: 'subscription.cancel_requested', entityType: 'subscription', entityId: s.id });
@@ -182,9 +242,10 @@ export class BillingService {
       const s = await this.lockSub(trx, t.companyId);
       if (s.status === 'active' && s.cancel_at_period_end) {
         await trx.updateTable('subscription').set({ cancel_at_period_end: false }).where('id', '=', s.id).execute();
+        const renewal = await this.refreshRenewal(trx, t.companyId);
         await this.event(trx, s, 'cancel_withdrawn', s.status, s.status);
         await this.audit.platform(trx, t.ctx.userId, { companyId: t.companyId, actorType: 'user', action: 'subscription.cancel_withdrawn', entityType: 'subscription', entityId: s.id });
-        return { ok: true, invoice: null };
+        return { ok: true, invoice: renewal ? { id: renewal.id, number: renewal.number, amount: Number(renewal.amount), currency: renewal.currency } : null };
       }
       throw conflict('Rien à reprendre : pour réactiver un abonnement suspendu ou résilié, choisissez une formule et réglez la facture.', 'invalid_state');
     });
@@ -223,17 +284,30 @@ export class BillingService {
     if (!isUuid(p.invoiceId)) return 'unknown_invoice';
     const inv = await trx.selectFrom('platform_invoice').selectAll().where('id', '=', p.invoiceId).forUpdate().executeTakeFirst();
     if (!inv) return 'unknown_invoice';
+
+    // L'argent reçu est toujours enregistré. S'il ne peut pas régler la facture (montant ou devise différents,
+    // facture déjà réglée ou annulée), il reste « non affecté » : jamais compté comme encaissé, signalé à l'éditeur.
+    const unappliedReason = inv.status !== 'open' ? 'invoice_not_open'
+      : Math.round(p.amount) !== Math.round(Number(inv.amount)) || p.currency !== inv.currency ? 'amount_mismatch' : null;
     const inserted = await trx.insertInto('platform_payment').values({
-      invoice_id: inv.id, company_id: inv.company_id, provider: p.provider, provider_ref: p.providerRef, amount: p.amount, currency: p.currency, status: 'succeeded',
+      invoice_id: inv.id, company_id: inv.company_id, provider: p.provider, provider_ref: p.providerRef, amount: p.amount, currency: p.currency,
+      status: unappliedReason ? 'unapplied' : 'succeeded', unapplied_reason: unappliedReason,
     }).onConflict((oc) => oc.columns(['provider', 'provider_ref']).doNothing()).returning('id').executeTakeFirst();
     if (!inserted) return 'duplicate_payment';
-    if (inv.status !== 'open') return 'invoice_not_open';
-    if (Math.round(p.amount) !== Math.round(Number(inv.amount)) || p.currency !== inv.currency) return 'amount_mismatch';
+    if (unappliedReason) {
+      const data = { payment_id: inserted.id, number: inv.number, invoice_status: inv.status, expected: { amount: Number(inv.amount), currency: inv.currency },
+        received: { amount: p.amount, currency: p.currency }, provider: p.provider, provider_ref: p.providerRef, reason: unappliedReason };
+      await this.notify(trx, inv.company_id, 'payment_unapplied', `payment_unapplied:${inserted.id}`, data);
+      await this.audit.platform(trx, actorId, { companyId: inv.company_id, actorType: actorId ? 'platform' : 'system', action: 'subscription.payment_unapplied', entityType: 'platform_invoice', entityId: inv.id, data });
+      this.logger.warn(`Paiement non affecté (${unappliedReason}) : ${p.provider}/${p.providerRef} sur la facture ${inv.number}`);
+      return unappliedReason;
+    }
 
     await trx.updateTable('platform_invoice').set({ status: 'paid', paid_at: new Date() }).where('id', '=', inv.id).execute();
     const s = await this.lockSub(trx, inv.company_id);
     const lines = (inv.lines as any[]) ?? [];
     const change = lines.find((l) => l.change)?.change;
+    const renewal = lines.find((l) => l.type === 'renewal');
     const patch: Record<string, unknown> = { grace_until: null, cancel_at_period_end: false, cancelled_at: null };
     if (change) {
       patch.plan_version_id = change.plan_version_id;
@@ -244,10 +318,17 @@ export class BillingService {
       patch.current_period_start = inv.period_start;
       patch.current_period_end = inv.period_end;
     }
+    // La formule réglée est celle inscrite sur la facture de renouvellement (factures antérieures : descente en attente).
     const pending = (s.overrides as any)?.pending_change;
-    if (pending && lines.some((l) => l.type === 'renewal' && l.applies_pending_change)) {
+    if (renewal?.plan_version_id) {
+      patch.plan_version_id = renewal.plan_version_id;
+      patch.billing_cycle = renewal.billing_cycle;
+    } else if (pending && renewal?.applies_pending_change) {
       patch.plan_version_id = pending.plan_version_id;
       patch.billing_cycle = pending.billing_cycle;
+    }
+    // Une montée de gamme réglée annule la descente programmée ; un renouvellement qui l'appliquait la solde.
+    if (pending && (change || renewal?.applies_pending_change)) {
       const { pending_change, ...rest } = s.overrides as any;
       patch.overrides = JSON.stringify(rest);
     }
@@ -255,6 +336,9 @@ export class BillingService {
     if (s.status !== 'active') await this.event(trx, s, 'status_changed', s.status, 'active', { invoice: inv.number });
     await trx.updateTable('subscription').set({ status: 'active' }).where('id', '=', s.id).execute();
     await this.event(trx, s, 'payment_received', s.status, 'active', { invoice: inv.number, amount: p.amount, provider: p.provider });
+    // Après un changement de formule, une facture de renouvellement émise entre-temps (ancienne formule
+    // ou descente annulée) est remplacée par une facture au prix de la nouvelle formule.
+    if (change) await this.refreshRenewal(trx, inv.company_id);
     await this.audit.platform(trx, actorId, { companyId: inv.company_id, actorType: actorId ? 'platform' : 'system', action: 'subscription.payment_received', entityType: 'platform_invoice', entityId: inv.id, data: { number: inv.number, amount: p.amount, provider: p.provider } });
     return 'paid';
   }
@@ -265,29 +349,37 @@ export class BillingService {
       .onConflict((oc) => oc.column('dedupe_key').doNothing()).execute();
   }
 
-  /** Fait avancer tous les abonnements : factures de renouvellement, rappels, grâce, suspension, archivage. Idempotent. */
+  /**
+   * Fait avancer tous les abonnements : factures de renouvellement, rappels, grâce, suspension, archivage. Idempotent.
+   * Un verrou consultatif PostgreSQL garantit qu'un seul cycle tourne à la fois, quel que soit le nombre d'instances
+   * de l'API (ou si un cycle dure plus longtemps que l'intervalle) ; un cycle qui ne l'obtient pas est simplement sauté.
+   */
   async runCycle(now = new Date()) {
+    return this.db.platformDb.connection().execute(async (conn) => {
+      const got = await sql<{ locked: boolean }>`select pg_try_advisory_lock(hashtext(${BILLING_CYCLE_LOCK})) as locked`.execute(conn);
+      if (!got.rows[0]?.locked) return { skipped: true as const };
+      try {
+        return { skipped: false as const, ...(await this.runCycleLocked(now)) };
+      } finally {
+        await sql`select pg_advisory_unlock(hashtext(${BILLING_CYCLE_LOCK}))`.execute(conn);
+      }
+    });
+  }
+
+  private async runCycleLocked(now: Date) {
     const summary = { renewalsInvoiced: 0, toGrace: 0, suspended: 0, cancelled: 0, archived: 0, reminders: 0 };
     const subs = await this.db.platformDb.selectFrom('subscription').select('company_id').where('status', 'in', ['trialing', 'active', 'grace', 'cancelled']).execute();
     for (const { company_id } of subs) {
       await this.db.platform(async (trx) => {
         const s = await this.lockSub(trx, company_id);
         const end = new Date(s.current_period_end);
-        const cycle = s.billing_cycle as Cycle;
         const openRenewal = await trx.selectFrom('platform_invoice').select(['id', 'number', 'due_at']).where('subscription_id', '=', s.id)
           .where('status', '=', 'open').where('period_start', '=', end).executeTakeFirst();
 
         // Facture de renouvellement à J-7 (ou dès la fin d'essai).
         if ((s.status === 'active' && !s.cancel_at_period_end && now.getTime() >= end.getTime() - 7 * DAY) || (s.status === 'trialing' && now >= end)) {
           if (!openRenewal) {
-            const pending = (s.overrides as any)?.pending_change;
-            const v = pending ? await trx.selectFrom('plan_version').select(['price_monthly', 'price_yearly']).where('id', '=', pending.plan_version_id).executeTakeFirstOrThrow() : s;
-            const c: Cycle = pending?.billing_cycle ?? cycle;
-            const periodStart = end;
-            await this.createInvoice(trx, { id: s.id, company_id, currency: s.currency }, {
-              amount: price(v, c), periodStart, periodEnd: addCycle(periodStart, c), dueAt: end,
-              lines: [{ type: 'renewal', label: `Abonnement ${pending?.plan_code ?? s.plan_code} (${c === 'yearly' ? 'annuel' : 'mensuel'})`, amount: price(v, c), applies_pending_change: !!pending }],
-            });
+            await this.issueRenewal(trx, s);
             summary.renewalsInvoiced++;
           }
         }

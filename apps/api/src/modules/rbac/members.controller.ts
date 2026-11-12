@@ -1,12 +1,12 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import type { Response } from 'express';
-import { verify } from '@node-rs/argon2';
 import { z } from 'zod';
 import { config } from '../../config';
 import { Permission, Public, Tenant } from '../../common/decorators';
 import { randomToken, safeEqual, sha256 } from '../../common/crypto';
-import { badRequest, conflict, forbidden, notFound, unauthorized } from '../../common/errors';
+import { badRequest, conflict, forbidden, locked, notFound, unauthorized } from '../../common/errors';
 import { isUuid } from '../../common/ids';
 import { clientIp, KoraRequest, TenantInfo } from '../../common/request-context';
 import { email, parse, password } from '../../common/validation';
@@ -154,7 +154,7 @@ export class MembersController {
     return inv;
   }
 
-  @Public()
+  @Public() @UseGuards(ThrottlerGuard)
   @Get('invitations/preview')
   preview(@Query('token') raw: string) {
     const tk = this.parseToken(raw);
@@ -166,20 +166,37 @@ export class MembersController {
     });
   }
 
-  @Public()
+  @Public() @UseGuards(ThrottlerGuard)
   @Post('invitations/accept')
   async accept(@Body() body: unknown, @Req() req: KoraRequest, @Res({ passthrough: true }) res: Response) {
     const input = parse(z.object({ token: z.string().max(400), fullName: z.string().trim().min(2).max(120).optional(), password: z.string().max(200).optional() }), body);
     const tk = this.parseToken(input.token);
+    // Session déjà pleinement authentifiée (double authentification comprise) du compte invité.
+    const signedInUserId = req.auth && (!req.auth.mfaEnabled || req.auth.mfaVerified) ? req.auth.userId : null;
+
+    // Compte existant : son mot de passe est vérifié avec le même compteur d'échecs et le même verrouillage
+    // qu'à la connexion, dans une transaction validée avant de répondre (sinon l'échec serait annulé).
+    const check = await this.db.identity(async (trx) => {
+      const t = await setTenantContext(trx, tk.companyId, '00000000-0000-0000-0000-000000000000');
+      const inv = await this.loadInvitation(t, tk);
+      const user = await trx.selectFrom('user_account').select(['id', 'password_hash', 'failed_logins', 'locked_until']).where('email', '=', inv.email).executeTakeFirst();
+      if (!user || user.id === signedInUserId) return { status: 'ok' as const, verifiedUserId: user?.id ?? null };
+      if (!input.password) return { status: 'auth_required' as const };
+      const r = await this.auth.passwordAttempt(trx, user, input.password);
+      return r === 'ok' ? { status: 'ok' as const, verifiedUserId: user.id } : { status: r === 'locked' ? 'locked' as const : 'auth_required' as const };
+    });
+    if (check.status === 'locked') throw locked('Trop de tentatives échouées. Réessayez dans quelques minutes.', 'account_locked');
+    if (check.status === 'auth_required') throw unauthorized('Connectez-vous avec le compte invité ou saisissez son mot de passe.', 'invitation_auth_required');
+
     const result = await this.db.identity(async (trx) => {
       let t = await setTenantContext(trx, tk.companyId, '00000000-0000-0000-0000-000000000000');
       const inv = await this.loadInvitation(t, tk);
-      let user = await trx.selectFrom('user_account').select(['id', 'password_hash', 'mfa_enabled']).where('email', '=', inv.email).executeTakeFirst();
+      let user = await trx.selectFrom('user_account').select(['id', 'mfa_enabled']).where('email', '=', inv.email).executeTakeFirst();
       let userId: string;
       let mfaEnabled = false;
       if (user) {
-        const sameUser = req.auth?.userId === user.id;
-        if (!sameUser && !(input.password && (await verify(user.password_hash, input.password).catch(() => false)))) {
+        // Le compte a pu être créé entre les deux transactions : il doit être celui qui vient d'être vérifié.
+        if (user.id !== check.verifiedUserId) {
           throw unauthorized('Connectez-vous avec le compte invité ou saisissez son mot de passe.', 'invitation_auth_required');
         }
         userId = user.id;
@@ -194,7 +211,8 @@ export class MembersController {
       t = await setTenantContext(trx, tk.companyId, userId);
       const { entitlements } = await this.entitlements.forCompany(t, tk.companyId);
       await this.quotas.assertUsers(t, tk.companyId, entitlements, { includePending: false });
-      const existing = await t.selectFrom('company_membership').select(['id', 'status']).where('user_id', '=', userId).executeTakeFirst();
+      // Filtre explicite sur l'entreprise : la RLS laisse aussi voir à l'utilisateur ses adhésions dans ses autres entreprises.
+      const existing = await t.selectFrom('company_membership').select(['id', 'status']).where('company_id', '=', tk.companyId).where('user_id', '=', userId).executeTakeFirst();
       let membershipId = existing?.id;
       if (existing?.status === 'active') throw conflict('Vous avez déjà accès à cette entreprise.', 'already_member');
       if (existing) await t.updateTable('company_membership').set({ status: 'active' }).where('id', '=', existing.id).execute();
@@ -206,7 +224,7 @@ export class MembersController {
       const ctx = { companyId: tk.companyId, userId, actorType: 'user' as const, ip: clientIp(req) };
       await this.audit.tenant(t, ctx, { action: 'invitation.accepted', entityType: 'invitation', entityId: inv.id, data: { membership_id: membershipId } });
       let session = null;
-      if (!req.auth || req.auth.userId !== userId) {
+      if (!req.auth || signedInUserId !== userId) {
         session = await this.sessions.create(trx, userId, { mfaVerified: !mfaEnabled, activeCompanyId: tk.companyId, ip: clientIp(req), userAgent: req.headers['user-agent'] ?? null });
       } else {
         await trx.updateTable('user_session').set({ active_company_id: tk.companyId }).where('id', '=', req.auth.sessionId).execute();

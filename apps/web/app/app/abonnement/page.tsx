@@ -13,21 +13,50 @@ export default function SubscriptionPage() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [cycle, setCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [notice, setNotice] = useState('');
+  /** Formule choisie, en attente de confirmation. */
+  const [confirm, setConfirm] = useState<any>(null);
   const { busy, error, run } = useAction();
   const load = useCallback(async () => {
     const s = await api('/company/subscription'); setSub(s); setCycle(s.billingCycle);
     setPlans(await api('/plans')); setInvoices(await api('/company/invoices'));
   }, []);
-  useEffect(() => { load(); }, [load]);
-  if (!sub) return <p className="muted">Chargement…</p>;
+  // Chargement initial via run : une erreur (accès refusé, réseau) s'affiche au lieu de laisser la page vide.
+  useEffect(() => { run(load); }, [load]);
+  if (!sub) return error ? <><div className="page-head"><h1>Abonnement</h1></div><Alert>{error}</Alert></> : <p className="muted">Chargement…</p>;
+  /** Nom commercial d'une formule (« Starter »), à partir de son code (« starter »). */
+  const planName = (code: string) => plans.find((p) => p.code === code)?.name ?? code;
   const st = SUB_STATUS[sub.status];
 
   const pay = (id: string) => run(async () => { const r = await api(`/company/invoices/${id}/checkout`, { body: { provider: 'sandbox' } }); window.location.href = r.checkoutUrl; });
   const change = (code: string) => run(async () => {
+    setConfirm(null);
     const r = await api('/company/subscription/change', { body: { planCode: code, billingCycle: cycle } });
     setNotice([r.applied === 'immediately' ? 'Formule changée.' : r.applied === 'at_period_end' ? `Changement programmé pour le ${date(r.effectiveAt)}.` : 'Une facture a été émise : la nouvelle formule sera active dès son paiement.', ...(r.warnings ?? [])].join(' '));
     await load(); await refresh();
   });
+  /** Revenir à la formule actuelle annule la descente de gamme programmée (rien n'est facturé). */
+  const keepCurrent = () => run(async () => {
+    await api('/company/subscription/change', { body: { planCode: sub.plan.code, billingCycle: sub.billingCycle } });
+    setNotice(`Changement annulé : vous restez sur la formule ${sub.plan.name}.`);
+    await load(); await refresh();
+  });
+
+  /** Conséquence du changement vers une formule, expliquée avant confirmation. */
+  const monthly = (p: { priceMonthly: number; priceYearly: number }, c: string) => (c === 'yearly' ? p.priceYearly / 12 : p.priceMonthly);
+  const consequence = (p: any) => {
+    const lines: string[] = [];
+    if (sub.status === 'trialing') lines.push("Pendant l'essai, le changement est immédiat et rien n'est facturé.");
+    else if (sub.status === 'active' && monthly(p, cycle) <= monthly(sub.plan, sub.billingCycle)) {
+      lines.push(`Le changement s'appliquera le ${date(sub.currentPeriodEnd)} : vous gardez la formule ${sub.plan.name} jusque-là, déjà réglée.`);
+    } else {
+      lines.push(sub.status === 'active'
+        ? 'Une facture au prorata de la période restante sera émise ; la nouvelle formule sera active dès son paiement.'
+        : 'Une facture sera émise ; la nouvelle formule sera active dès son paiement.');
+    }
+    const quota = p.entitlements.quotas.users;
+    if (quota !== null && sub.usage.users > quota) lines.push(`Vous avez ${sub.usage.users} utilisateurs pour ${quota} inclus : aucun ne sera supprimé, mais vous ne pourrez plus en ajouter.`);
+    return lines;
+  };
 
   return (
     <>
@@ -45,7 +74,10 @@ export default function SubscriptionPage() {
           {sub.graceUntil && <div className="kpi"><div className="l">Suspension le</div><div className="v" style={{ fontSize: 18, color: 'var(--warn)' }}>{date(sub.graceUntil)}</div></div>}
         </div>
         {sub.cancelAtPeriodEnd && <Alert kind="warn">Résiliation programmée au {date(sub.currentPeriodEnd)}. Vos données resteront consultables et exportables 90 jours.</Alert>}
-        {sub.pendingChange && <Alert kind="info">Passage à la formule {sub.pendingChange.plan_code} programmé au {date(sub.currentPeriodEnd)}.</Alert>}
+        {sub.pendingChange && <Alert kind="info">
+          Passage à la formule {planName(sub.pendingChange.plan_code)}{sub.pendingChange.billing_cycle === 'yearly' ? ' (annuelle)' : ''} programmé au {date(sub.currentPeriodEnd)}.
+          {admin && sub.status === 'active' && <> <button className="btn sm" disabled={busy} onClick={keepCurrent}>Annuler ce changement</button></>}
+        </Alert>}
       </div>
 
       {sub.openInvoices.length > 0 && (
@@ -69,12 +101,23 @@ export default function SubscriptionPage() {
                   <h3>{p.name}</h3>
                   <div style={{ fontSize: 20, fontWeight: 700 }}>{money(cycle === 'yearly' ? p.priceYearly : p.priceMonthly)}<span className="small muted"> / {cycle === 'yearly' ? 'an' : 'mois'}</span></div>
                   <div className="small muted">{p.entitlements.quotas.users ?? 'Illimité'} utilisateurs · {p.entitlements.modules.length} modules{p.entitlements.modules.includes('payroll') ? ' · paie incluse' : ''}</div>
-                  <button className="btn sm" disabled={busy || current} onClick={() => change(p.code)}>{current ? 'Formule actuelle' : 'Choisir'}</button>
+                  <button className="btn sm" disabled={busy || current} onClick={() => setConfirm(p)}>{current ? 'Formule actuelle' : 'Choisir'}</button>
                 </div>
               );
             })}
           </div>
           <p className="small muted" style={{ marginBottom: 0 }}>Montée en gamme : facturée au prorata, active dès le paiement. Descente : appliquée à l'échéance. Aucune donnée n'est supprimée en cas de dépassement d'une limite.</p>
+        </div>
+      )}
+
+      {confirm && (
+        <div className="modal-back" onClick={() => setConfirm(null)}>
+          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title" style={{ width: 'min(480px, 100%)' }} onClick={(e) => e.stopPropagation()}>
+            <h2 id="confirm-title">Passer à la formule {confirm.name} ?</h2>
+            <p style={{ margin: 0 }}><b>{money(cycle === 'yearly' ? confirm.priceYearly : confirm.priceMonthly)}</b> / {cycle === 'yearly' ? 'an' : 'mois'} · {confirm.entitlements.quotas.users ?? 'Illimité'} utilisateurs · {confirm.entitlements.modules.length} modules</p>
+            {consequence(confirm).map((line, i) => <Alert key={i} kind={i === 0 ? 'info' : 'warn'}>{line}</Alert>)}
+            <div className="row"><button className="btn primary" disabled={busy} onClick={() => change(confirm.code)}>Confirmer</button><button className="btn" onClick={() => setConfirm(null)}>Annuler</button></div>
+          </div>
         </div>
       )}
 

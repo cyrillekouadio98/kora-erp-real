@@ -11,7 +11,8 @@ export default function SupportPage() {
   const [rows, setRows] = useState<any[]>([]);
   const { busy, error, run } = useAction();
   const load = useCallback(async () => setRows(await api('/company/support-access')), []);
-  useEffect(() => { load(); }, [load]);
+  // Chargement initial via run : une erreur (accès refusé, réseau) s'affiche au lieu de laisser la page vide.
+  useEffect(() => { run(load); }, [load]);
   const act = (id: string, a: string) => run(async () => { await api(`/company/support-access/${id}/${a}`, { method: 'POST', body: {} }); await load(); });
   return (
     <>

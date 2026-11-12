@@ -46,7 +46,9 @@ export class RolesController {
     return this.db.tenant(t.ctx, (trx) => trx.selectFrom('role as r')
       .select((eb) => ['r.id', 'r.key', 'r.name', 'r.description', 'r.is_system as isSystem', 'r.permissions',
         eb.selectFrom('membership_role as mr').whereRef('mr.role_id', '=', 'r.id').select(eb.fn.countAll<string>().as('c')).as('memberCount')])
-      .orderBy('r.is_system', 'desc').orderBy('r.name').execute());
+      .orderBy('r.is_system', 'desc').orderBy('r.name').execute()
+      // Rôles que seul un propriétaire peut attribuer (rôle Propriétaire, ou permissions sensibles : Comptable, Paie…).
+      .then((rows) => rows.map((r) => ({ ...r, ownerOnly: r.key === 'owner' || r.permissions.some(isSensitive) }))));
   }
 
   @Permission('users.admin')
@@ -73,7 +75,16 @@ export class RolesController {
       const role = await trx.selectFrom('role').selectAll().where('id', '=', id).executeTakeFirst();
       if (!role) throw notFound('Rôle');
       if (role.key === 'owner' && input.permissions) throw forbidden('Les permissions du rôle Propriétaire ne sont pas modifiables.');
-      if (input.permissions) checkPermissions(t, input.permissions, role.permissions);
+      if (input.permissions) {
+        checkPermissions(t, input.permissions, role.permissions);
+        // Ajouter des droits à un rôle qu'on détient soi-même reviendrait à modifier ses propres droits,
+        // ce qui est interdit à un non-propriétaire (cf. modification d'un membre). Retirer des droits reste possible.
+        const added = input.permissions.filter((p) => !role.permissions.includes(p));
+        if (added.length && !t.isOwner) {
+          const held = await trx.selectFrom('membership_role').select('role_id').where('membership_id', '=', t.membershipId).where('role_id', '=', id).executeTakeFirst();
+          if (held) throw forbidden('Vous ne pouvez pas ajouter de permissions à un rôle qui vous est attribué. Demandez-le à un propriétaire.', 'self_change');
+        }
+      }
       const updated = await trx.updateTable('role').set({
         ...(input.name ? { name: input.name } : {}),
         ...(input.description !== undefined ? { description: input.description ?? null } : {}),

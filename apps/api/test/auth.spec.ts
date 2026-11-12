@@ -3,10 +3,21 @@ import { authenticator } from 'otplib';
 import request from 'supertest';
 import { createApp, ownerClient, resetDb, signup, uniqueEmail } from './helpers';
 
+/** Code TOTP d'un pas de temps décalé (0 = actuel, 1 = suivant, accepté grâce à la fenêtre de ±1 pas). */
+const codeAt = (secret: string, offsetSteps: number) => authenticator.clone({ epoch: Date.now() + offsetSteps * 30_000 }).generate(secret);
+
 describe('Authentification et sessions', () => {
   let app: INestApplication;
   beforeAll(async () => { await resetDb(); app = await createApp(); });
   afterAll(async () => { await app.close(); });
+
+  /** Compte avec double authentification activée (le code d'activation consomme le pas actuel). */
+  async function withMfa() {
+    const u = await signup(app);
+    const setup = await u.agent.post('/auth/mfa/setup');
+    expect((await u.agent.post('/auth/mfa/enable').send({ code: codeAt(setup.body.secret, 0) })).status).toBe(200);
+    return { u, secret: setup.body.secret as string };
+  }
 
   it("l'inscription crée l'entreprise, le propriétaire et un essai gratuit", async () => {
     const u = await signup(app, { companyName: 'Pharmacie du Plateau' });
@@ -16,6 +27,18 @@ describe('Authentification et sessions', () => {
     expect(sub.body.status).toBe('trialing');
     const audit = await u.agent.get('/company/audit');
     expect(audit.body.map((a: any) => a.action)).toContain('company.created');
+  });
+
+  it("le journal n'inscrit que les champs réellement modifiés de la fiche entreprise", async () => {
+    const u = await signup(app, { companyName: 'Quincaillerie Test' });
+    const updated = async () => (await u.agent.get('/company/audit')).body.filter((a: any) => a.action === 'company.updated');
+    expect((await u.agent.patch('/company').send({ name: 'Quincaillerie Test', legalForm: 'SARL', city: null })).status).toBe(200);
+    const first = await updated();
+    expect(first).toHaveLength(1);
+    expect(Object.keys(first[0].data.changes)).toEqual(['legal_form']);
+    // Un enregistrement sans changement n'ajoute rien au journal.
+    await u.agent.patch('/company').send({ name: 'Quincaillerie Test', legalForm: 'SARL' });
+    expect(await updated()).toHaveLength(1);
   });
 
   it("refuse une adresse déjà utilisée et un mot de passe trop court", async () => {
@@ -43,15 +66,48 @@ describe('Authentification et sessions', () => {
     const u = await signup(app);
     const setup = await u.agent.post('/auth/mfa/setup');
     expect(setup.body.otpauthUrl).toMatch(/^otpauth:\/\//);
+    // QR code généré localement, en SVG, prêt à être affiché.
+    expect(setup.body.qrCode).toMatch(/^data:image\/svg\+xml;base64,/);
+    expect(Buffer.from(setup.body.qrCode.split(',')[1], 'base64').toString()).toContain('<svg');
     expect((await u.agent.post('/auth/mfa/enable').send({ code: '000000' })).status).toBe(401);
-    expect((await u.agent.post('/auth/mfa/enable').send({ code: authenticator.generate(setup.body.secret) })).status).toBe(200);
+    const enableCode = authenticator.generate(setup.body.secret);
+    expect((await u.agent.post('/auth/mfa/enable').send({ code: enableCode })).status).toBe(200);
 
     const agent = request.agent(app.getHttpServer());
     const login = await agent.post('/auth/login').send({ email: u.email, password: 'MotDePasse123' });
     expect(login.body.mfaRequired).toBe(true);
     expect((await agent.get('/company/context')).body.error.code).toBe('mfa_required');
-    expect((await agent.post('/auth/mfa/verify').send({ code: authenticator.generate(setup.body.secret) })).status).toBe(200);
+    // Le code déjà utilisé pour l'activation ne peut pas être rejoué ; le suivant est accepté.
+    expect((await agent.post('/auth/mfa/verify').send({ code: enableCode })).status).toBe(401);
+    expect((await agent.post('/auth/mfa/verify').send({ code: codeAt(setup.body.secret, 1) })).status).toBe(200);
     expect((await agent.get('/company/context')).status).toBe(200);
+  });
+
+  it("les codes de double authentification erronés comptent dans le verrouillage, même en se reconnectant", async () => {
+    const { u, secret } = await withMfa();
+    const agent = request.agent(app.getHttpServer());
+    await agent.post('/auth/login').send({ email: u.email, password: 'MotDePasse123' });
+    for (let i = 0; i < 3; i++) expect((await agent.post('/auth/mfa/verify').send({ code: '000000' })).status).toBe(401);
+    // Se reconnecter avec le bon mot de passe ne remet pas le compteur à zéro.
+    await agent.post('/auth/login').send({ email: u.email, password: 'MotDePasse123' });
+    for (let i = 0; i < 2; i++) expect((await agent.post('/auth/mfa/verify').send({ code: '000000' })).status).toBe(401);
+    expect((await agent.post('/auth/mfa/verify').send({ code: codeAt(secret, 1) })).status).toBe(423);
+    expect((await agent.get('/company/context')).body.error.code).toBe('mfa_required');
+  });
+
+  it("un code erroné saisi à la connexion compte aussi comme un échec", async () => {
+    const { u, secret } = await withMfa();
+    const http = request(app.getHttpServer());
+    for (let i = 0; i < 5; i++) expect((await http.post('/auth/login').send({ email: u.email, password: 'MotDePasse123', code: '000000' })).status).toBe(401);
+    expect((await http.post('/auth/login').send({ email: u.email, password: 'MotDePasse123', code: codeAt(secret, 1) })).status).toBe(423);
+  });
+
+  it("un code accepté à la connexion ne peut pas être réutilisé", async () => {
+    const { u, secret } = await withMfa();
+    const http = request(app.getHttpServer());
+    const code = codeAt(secret, 1);
+    expect((await http.post('/auth/login').send({ email: u.email, password: 'MotDePasse123', code })).body.mfaRequired).toBe(false);
+    expect((await http.post('/auth/login').send({ email: u.email, password: 'MotDePasse123', code })).status).toBe(401);
   });
 
   it("une session révoquée ou déconnectée ne donne plus accès", async () => {

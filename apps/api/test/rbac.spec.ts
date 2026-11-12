@@ -79,6 +79,51 @@ describe('Rôles, permissions et quotas', () => {
     expect(ownerRoleAttempt.status).toBe(403);
   });
 
+  it("la liste des rôles signale ceux que seul un propriétaire peut attribuer", async () => {
+    const owner = await signup(app);
+    const roles = (await owner.agent.get('/company/roles')).body;
+    const ownerOnly = (key: string) => roles.find((r: any) => r.key === key).ownerOnly;
+    expect(['owner', 'accountant', 'payroll_manager'].map(ownerOnly)).toEqual([true, true, true]);
+    expect(['sales_rep', 'cashier', 'director'].map(ownerOnly)).toEqual([false, false, false]);
+  });
+
+  it("un administrateur non propriétaire ne peut pas ajouter de droits à un rôle qu'il détient", async () => {
+    const owner = await signup(app);
+    const adminRole = await owner.agent.post('/company/roles').send({ name: 'Administrateur délégué', permissions: ['users.read', 'users.admin'] });
+    const otherRole = await owner.agent.post('/company/roles').send({ name: 'Autre rôle', permissions: ['contacts.read'] });
+    const admin = await invite(app, owner, 'cashier');
+    const members = await owner.agent.get('/company/members');
+    const adminMember = members.body.find((m: any) => m.email === admin.email);
+    expect((await owner.agent.patch(`/company/members/${adminMember.id}`).send({ roleIds: [adminRole.body.id] })).status).toBe(200);
+
+    const escalate = await admin.agent.patch(`/company/roles/${adminRole.body.id}`).send({ permissions: ['users.read', 'users.admin', 'billing.admin'] });
+    expect(escalate.status).toBe(403);
+    expect(escalate.body.error.code).toBe('self_change');
+    // Retirer des droits à son propre rôle, ou modifier un rôle qu'on ne détient pas, reste possible.
+    expect((await admin.agent.patch(`/company/roles/${otherRole.body.id}`).send({ permissions: ['contacts.read', 'contacts.create'] })).status).toBe(200);
+    expect((await admin.agent.patch(`/company/roles/${adminRole.body.id}`).send({ name: 'Administrateur (renommé)' })).status).toBe(200);
+    // Le propriétaire, lui, peut modifier ce rôle.
+    expect((await owner.agent.patch(`/company/roles/${adminRole.body.id}`).send({ permissions: ['users.read', 'users.admin', 'billing.read'] })).status).toBe(200);
+  });
+
+  it("le mot de passe saisi pour accepter une invitation est soumis au verrouillage du compte", async () => {
+    const owner = await signup(app);
+    const existing = await signup(app); // compte existant invité dans une seconde entreprise
+    const roles = await owner.agent.get('/company/roles');
+    const role = roles.body.find((r: any) => r.key === 'sales_rep');
+    const inv = await owner.agent.post('/company/invitations').send({ email: existing.email, roleIds: [role.id] });
+    const token = new URL(inv.body.inviteUrl).searchParams.get('token');
+    const http = request(app.getHttpServer());
+    for (let i = 0; i < 5; i++) {
+      expect((await http.post('/invitations/accept').send({ token, password: 'mauvais-mdp' })).body.error.code).toBe('invitation_auth_required');
+    }
+    const lockedRes = await http.post('/invitations/accept').send({ token, password: 'MotDePasse123' });
+    expect(lockedRes.status).toBe(423);
+    expect((await http.post('/auth/login').send({ email: existing.email, password: 'MotDePasse123' })).status).toBe(423);
+    // Le compte déjà connecté accepte sans ressaisir son mot de passe (ses sessions restent valides).
+    expect((await existing.agent.post("/invitations/accept").send({ token })).status).toBe(201);
+  });
+
   it("protège contre le verrouillage : pas d'auto-désactivation ni de suppression du dernier propriétaire", async () => {
     const owner = await signup(app);
     const members = await owner.agent.get('/company/members');

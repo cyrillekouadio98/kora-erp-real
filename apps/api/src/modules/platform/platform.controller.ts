@@ -137,11 +137,13 @@ export class PlatformController {
       const mrr = await sql<{ mrr: string | null }>`
         select sum(case when s.billing_cycle = 'yearly' then v.price_yearly / 12 else v.price_monthly end)::numeric(18,0)::text as mrr
         from subscription s join plan_version v on v.id = s.plan_version_id where s.status in ('active','grace')`.execute(trx);
-      const month = await sql<{ invoiced: string | null; collected: string | null; open_amount: string | null; open_count: string }>`
+      const month = await sql<{ invoiced: string | null; collected: string | null; open_amount: string | null; open_count: string; unapplied_amount: string; unapplied_count: string }>`
         select (select coalesce(sum(amount),0) from platform_invoice where status <> 'void' and issued_at >= date_trunc('month', now()))::text as invoiced,
                (select coalesce(sum(amount),0) from platform_payment where status = 'succeeded' and received_at >= date_trunc('month', now()))::text as collected,
                (select coalesce(sum(amount),0) from platform_invoice where status = 'open')::text as open_amount,
-               (select count(*) from platform_invoice where status = 'open')::text as open_count`.execute(trx);
+               (select count(*) from platform_invoice where status = 'open')::text as open_count,
+               (select coalesce(sum(amount),0) from platform_payment where status = 'unapplied')::text as unapplied_amount,
+               (select count(*) from platform_payment where status = 'unapplied')::text as unapplied_count`.execute(trx);
       const churn = await sql<{ n: string }>`select count(*)::text as n from subscription_event where to_status = 'cancelled' and created_at >= now() - interval '30 days'`.execute(trx);
       const toObj = (rows: { n: string }[], key: string) => Object.fromEntries(rows.map((r: any) => [r[key], Number(r.n)]));
       const m = month.rows[0];
@@ -149,6 +151,7 @@ export class PlatformController {
         companies: toObj(companies, 'status'), subscriptions: toObj(subs, 'status'), byPlan: toObj(byPlan, 'code'),
         mrrEstimated: Number(mrr.rows[0]?.mrr ?? 0), arrEstimated: Number(mrr.rows[0]?.mrr ?? 0) * 12,
         invoicedThisMonth: Number(m.invoiced), collectedThisMonth: Number(m.collected), openInvoices: { count: Number(m.open_count), amount: Number(m.open_amount) },
+        unappliedPayments: { count: Number(m.unapplied_count), amount: Number(m.unapplied_amount) },
         cancellationsLast30Days: Number(churn.rows[0].n), currency: 'XOF',
       };
     });
@@ -164,6 +167,17 @@ export class PlatformController {
       if (status && ['open', 'paid', 'void'].includes(status)) q = q.where('i.status', '=', status as any);
       return q.execute();
     });
+  }
+
+  /** Paiements reçus mais non affectés à une facture (montant ou devise différents, facture déjà réglée ou annulée), à traiter. */
+  @PlatformRoles('super_admin', 'billing')
+  @Get('payments/unapplied')
+  unappliedPayments() {
+    return this.db.platform((trx) => trx.selectFrom('platform_payment as pm').innerJoin('platform_invoice as i', 'i.id', 'pm.invoice_id').innerJoin('company as c', 'c.id', 'pm.company_id')
+      .select(['pm.id', 'c.name as companyName', 'i.number as invoiceNumber', 'i.status as invoiceStatus', 'i.amount as invoiceAmount', 'pm.provider', 'pm.provider_ref as providerRef',
+        'pm.amount', 'pm.currency', 'pm.unapplied_reason as reason', 'pm.received_at as receivedAt'])
+      .where('pm.status', '=', 'unapplied').orderBy('pm.received_at', 'desc').limit(500).execute()
+      .then((rows) => rows.map((r) => ({ ...r, amount: Number(r.amount), invoiceAmount: Number(r.invoiceAmount) }))));
   }
 
   /** Paiement reçu hors ligne (virement, chèque) et saisi par le gestionnaire de facturation. */

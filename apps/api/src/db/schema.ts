@@ -8,7 +8,7 @@ type JsonDefault<T = unknown> = ColumnType<T, T | string | undefined, T | string
 
 export interface UserAccountTable {
   id: Generated<string>; email: string; password_hash: string; full_name: string; phone: string | null;
-  mfa_enabled: Generated<boolean>; totp_secret_enc: string | null; failed_logins: Generated<number>;
+  mfa_enabled: Generated<boolean>; totp_secret_enc: string | null; totp_last_step: number | null; failed_logins: Generated<number>;
   locked_until: TsNullable; last_login_at: TsNullable; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 export interface PlatformRoleAssignmentTable { user_id: string; role: string; granted_by: string | null; created_at: Generated<Date>; }
@@ -57,7 +57,7 @@ export interface PlatformInvoiceTable {
 }
 export interface PlatformPaymentTable {
   id: Generated<string>; invoice_id: string; company_id: string; provider: string; provider_ref: string; amount: Num; currency: string;
-  status: 'succeeded' | 'refunded'; received_at: Generated<Date>;
+  status: 'succeeded' | 'unapplied' | 'refunded'; unapplied_reason: string | null; received_at: Generated<Date>;
 }
 export interface PaymentWebhookEventTable {
   id: Generated<string>; provider: string; event_id: string; payload: Json; received_at: Generated<Date>; processed_at: TsNullable; outcome: string | null;

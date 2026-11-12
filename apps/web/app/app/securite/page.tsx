@@ -7,14 +7,15 @@ import { Alert, Field, Pill, useAction } from '@/components/ui';
 
 export default function SecurityPage() {
   const { me, refresh } = useSession();
-  const [setup, setSetup] = useState<{ secret: string; otpauthUrl: string } | null>(null);
+  const [setup, setSetup] = useState<{ secret: string; otpauthUrl: string; qrCode: string } | null>(null);
   const [code, setCode] = useState('');
   const [sessions, setSessions] = useState<any[]>([]);
   const [pw, setPw] = useState({ currentPassword: '', newPassword: '' });
   const [ok, setOk] = useState('');
   const { busy, error, run } = useAction();
   const load = useCallback(async () => setSessions(await api('/auth/sessions')), []);
-  useEffect(() => { load(); }, [load]);
+  // Chargement initial via run : une erreur (accès refusé, réseau) s'affiche au lieu de laisser la page vide.
+  useEffect(() => { run(load); }, [load]);
 
   return (
     <>
@@ -25,8 +26,12 @@ export default function SecurityPage() {
         {!me.user.mfaEnabled && !setup && <div><p className="muted small">Protégez votre compte avec une application d'authentification (Google Authenticator, Microsoft Authenticator…).</p><button className="btn primary" disabled={busy} onClick={() => run(async () => setSetup(await api('/auth/mfa/setup', { method: 'POST', body: {} })))}>Configurer</button></div>}
         {setup && (
           <form className="form" onSubmit={(e) => { e.preventDefault(); run(async () => { await api('/auth/mfa/enable', { body: { code } }); setSetup(null); setOk('Double authentification activée.'); await refresh(); }); }}>
-            <p className="small">Ajoutez un compte dans votre application avec cette clé, puis saisissez le code affiché :</p>
-            <code className="k" style={{ fontSize: 16, letterSpacing: '.08em', wordBreak: 'break-all' }}>{setup.secret}</code>
+            <p className="small">Scannez ce QR code avec votre application d'authentification, puis saisissez le code à 6 chiffres qu'elle affiche :</p>
+            <img src={setup.qrCode} alt="QR code à scanner avec votre application d'authentification" width={200} height={200} style={{ background: '#fff', padding: 8, borderRadius: 8, border: '1px solid var(--line, #ddd)' }} />
+            <details className="small">
+              <summary>Impossible de scanner ? Saisir la clé manuellement</summary>
+              <code className="k" style={{ display: 'inline-block', marginTop: 6, fontSize: 16, letterSpacing: '.08em', wordBreak: 'break-all' }}>{setup.secret}</code>
+            </details>
             <div className="row"><div style={{ width: 200 }}><Field label="Code à 6 chiffres" inputMode="numeric" pattern="\d{6}" required value={code} onChange={(e) => setCode(e.target.value)} /></div><button className="btn primary" style={{ alignSelf: 'flex-end' }} disabled={busy}>Activer</button></div>
           </form>
         )}

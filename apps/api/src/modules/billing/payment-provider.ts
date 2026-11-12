@@ -28,7 +28,9 @@ export class SandboxProvider implements PaymentProvider {
   readonly code = 'sandbox';
 
   static sign(raw: string | Buffer) {
-    return createHmac('sha256', config.payments.sandboxSecret).update(raw).digest('hex');
+    const secret = config.payments.sandboxSecret;
+    if (!secret) throw new Error('Prestataire de test désactivé en production');
+    return createHmac('sha256', secret).update(raw).digest('hex');
   }
 
   async createCheckout(invoice: { id: string; number: string; amount: number; currency: string }) {
@@ -47,4 +49,6 @@ export class SandboxProvider implements PaymentProvider {
 
 // Les connecteurs réels (agrégateur mobile money local, carte internationale) implémenteront PaymentProvider
 // et seront ajoutés ici après choix du prestataire (décision en attente, cf. dossier de conception).
-export const PAYMENT_PROVIDERS: Record<string, PaymentProvider> = { sandbox: new SandboxProvider() };
+// Le prestataire de test n'est jamais branché en production : sa route de notification
+// (/webhooks/payments/sandbox) y répond donc « Prestataire » introuvable.
+export const PAYMENT_PROVIDERS: Record<string, PaymentProvider> = config.payments.sandboxSecret ? { sandbox: new SandboxProvider() } : {};
