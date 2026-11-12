@@ -53,6 +53,8 @@ services:
       JOBS_ENABLED: "true"
       BILLING_INTERVAL_MS: "600000"
       DB_POOL_MAX: "10"                          # connexions par rôle (PostgreSQL limité à 50 sur ce petit serveur)
+      # Double authentification exigée pour la console éditeur (PLATFORM_MFA_REQUIRED=false dans .env pour la lever).
+      PLATFORM_MFA_REQUIRED: ${PLATFORM_MFA_REQUIRED:-true}
       # E-mails (invitations, mot de passe oublié, documents, rappels). Sans SMTP_URL, ils restent
       # consultables dans Kora sans être envoyés. Ex. : smtp://utilisateur:motdepasse@smtp-relay.brevo.com:587
       SMTP_URL: ${SMTP_URL:-}
