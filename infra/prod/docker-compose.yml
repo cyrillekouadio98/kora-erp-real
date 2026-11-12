@@ -17,6 +17,8 @@ services:
   db:
     image: postgres:16
     restart: unless-stopped
+    # Réglages pour un petit serveur (2 Go de RAM partagés avec l'API, l'interface et Caddy).
+    command: ["postgres", "-c", "shared_buffers=128MB", "-c", "effective_cache_size=512MB", "-c", "max_connections=50", "-c", "work_mem=4MB"]
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?Lancez generate-env.sh}
@@ -38,6 +40,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=384   # mémoire bornée : le serveur peut n'avoir que 2 Go
       PORT: "3001"
       WEB_URL: https://${DOMAIN:?}
       DATABASE_OWNER_URL: postgres://kora_owner:${KORA_OWNER_PASSWORD}@db:5432/kora
@@ -71,6 +74,7 @@ services:
     restart: unless-stopped
     environment:
       API_URL: http://api:3001
+      NODE_OPTIONS: --max-old-space-size=384
     depends_on:
       api: { condition: service_healthy }
     logging: *logging

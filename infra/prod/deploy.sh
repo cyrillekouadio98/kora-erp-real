@@ -25,8 +25,9 @@ if "${COMPOSE[@]}" ps --status running --services 2>/dev/null | grep -qx db; the
   "$DIR/backup.sh"
 fi
 
-echo "→ Construction des images"
-"${COMPOSE[@]}" build --pull
+echo "→ Construction des images (l'une après l'autre : le serveur peut n'avoir que 2 Go de mémoire)"
+"${COMPOSE[@]}" build --pull api
+"${COMPOSE[@]}" build --pull web
 
 echo "→ Démarrage (migrations appliquées au démarrage de l'API)"
 "${COMPOSE[@]}" up -d --remove-orphans
@@ -45,6 +46,7 @@ done
 echo "  API saine."
 
 docker image prune -f >/dev/null
+docker builder prune -f --filter until=168h >/dev/null   # cache de build de plus de 7 jours : le disque reste disponible
 echo
 echo "Kora ERP est en ligne : https://$DOMAIN"
 echo "Journaux : docker compose -f $DIR/docker-compose.yml --env-file $DIR/.env logs -f"

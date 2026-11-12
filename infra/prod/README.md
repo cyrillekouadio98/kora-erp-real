@@ -23,7 +23,7 @@ Internet ──443──▶ caddy (HTTPS automatique) ──▶ web (Next.js) �
 
 ## Prérequis
 
-- Un serveur **Ubuntu 22.04 ou 24.04**, 2 cœurs et 4 Go de RAM recommandés (la construction de l'interface est gourmande).
+- Un serveur **Ubuntu 22.04 ou 24.04**, avec au moins **1 cœur, 2 Go de RAM et 30 Go de disque**. Cette taille suffit pour démarrer : PostgreSQL et Node.js sont réglés pour un petit serveur et `setup-server.sh` ajoute 2 Go d'espace d'échange. Seule la construction des images, à chaque déploiement, est lente (plusieurs minutes) ; avec plus d'utilisateurs, passez à 2 cœurs et 4 Go.
 - Un **nom de domaine** dont l'enregistrement DNS `A` pointe vers l'IP publique du serveur (nécessaire au certificat HTTPS).
 - Un accès SSH par **clé** (pas de mot de passe).
 

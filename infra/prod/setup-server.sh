@@ -11,7 +11,9 @@
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then echo "À lancer en root (sudo)." >&2; exit 1; fi
-REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+# Emplacement du dépôt sur le serveur (chemin de la sauvegarde nocturne). Par défaut, celui du script ;
+# REPO_DIR=/opt/kora permet de lancer une copie du script avant de cloner le dépôt.
+REPO_DIR="${REPO_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
 export DEBIAN_FRONTEND=noninteractive
 
 echo "→ Mises à jour du système"
