@@ -108,7 +108,7 @@ export class SetupService {
       const c = await trx.selectFrom('company').selectAll().where('id', '=', id).executeTakeFirstOrThrow();
       const sites = await trx.selectFrom('site').select(['id', 'code', 'name', 'city', 'address', 'phone', 'is_default']).where('archived_at', 'is', null).orderBy('is_default', 'desc').orderBy('code').execute();
       const accounts = await trx.selectFrom('treasury_account').select(['id', 'kind', 'name', 'bank_name', 'account_number', 'site_id']).where('archived_at', 'is', null).orderBy('kind').orderBy('name').execute();
-      const roles = await trx.selectFrom('role').select(['key', 'name', 'description']).where('key', '!=', 'owner').orderBy('name').execute();
+      const roles = await trx.selectFrom('role').select(['key', 'name', 'description']).where('company_id', '=', id).where('key', '!=', 'owner').orderBy('name').execute();
       const company = Object.fromEntries(Object.entries(COMPANY_COLUMNS).map(([k, col]) => [k, (c as any)[col] as string | null])) as Record<keyof typeof COMPANY_COLUMNS, string | null>;
       const banks = accounts.filter((a) => a.kind === 'bank');
       const seats = (s.owner_email ? 1 : 0) + users.length;
@@ -211,7 +211,7 @@ export class SetupService {
     const quota = t.entitlements.quotas.users;
     if (quota !== null && emails.length > quota) throw conflict(`La formule permet ${quota} utilisateur(s), propriétaire compris : changez de formule ou retirez des collaborateurs.`, 'quota_users');
     await this.db.tenant(t.ctx, async (trx) => {
-      const roles = new Set((await trx.selectFrom('role').select('key').where('key', '!=', 'owner').execute()).map((r) => r.key));
+      const roles = new Set((await trx.selectFrom('role').select('key').where('company_id', '=', t.companyId).where('key', '!=', 'owner').execute()).map((r) => r.key));
       const unknownRole = input.users.find((u) => !roles.has(u.roleKey));
       if (unknownRole) throw badRequest(`Rôle inconnu pour ${unknownRole.email}.`, undefined, 'unknown_role');
       const siteIds = [...new Set(input.users.flatMap((u) => u.siteIds ?? []))];
@@ -237,7 +237,7 @@ export class SetupService {
   }
 
   private async inviteOwner(trx: TenantTrx, t: TenantInfo, owner: { name: string | null; email: string }, company: { name: string; email: string | null }, planName: string) {
-    const ownerRole = await trx.selectFrom('role').select('id').where('key', '=', 'owner').executeTakeFirstOrThrow();
+    const ownerRole = await trx.selectFrom('role').select('id').where('company_id', '=', t.companyId).where('key', '=', 'owner').executeTakeFirstOrThrow();
     const inv = await this.invite(trx, t, { email: owner.email, roleIds: [ownerRole.id], siteIds: null, isOwner: true });
     await this.mail.enqueue(trx, {
       companyId: t.companyId, to: owner.email, kind: 'invitation', entityId: inv.id, fromName: 'Kora ERP', createdBy: t.ctx.userId,
@@ -264,7 +264,7 @@ export class SetupService {
       if (s.handed_over_at) throw conflict("L'entreprise a déjà été remise au client.", 'setup_handed_over');
       const company = await trx.selectFrom('company').select(['name', 'email']).where('id', '=', id).executeTakeFirstOrThrow();
       const owner = await this.inviteOwner(trx, t, { name: s.owner_name, email: s.owner_email! }, company, state.subscription.planName);
-      const roles = new Map((await trx.selectFrom('role').select(['id', 'key', 'name']).execute()).map((r) => [r.key, r]));
+      const roles = new Map((await trx.selectFrom('role').select(['id', 'key', 'name']).where('company_id', '=', t.companyId).execute()).map((r) => [r.key, r]));
       const users = [];
       for (const u of s.users as PlannedUser[]) {
         const role = roles.get(u.roleKey)!;

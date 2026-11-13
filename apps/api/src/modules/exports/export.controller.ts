@@ -31,10 +31,10 @@ export class ExportController {
   async export(@Tenant() t: TenantInfo, @Res() res: Response) {
     const data = await this.db.tenant(t.ctx, async (trx) => {
       const out = {
-        company: await trx.selectFrom('company').selectAll().execute(),
+        company: await trx.selectFrom('company').selectAll().where('id', '=', t.companyId).execute(),
         members: await trx.selectFrom('company_membership as m').innerJoin('user_account as u', 'u.id', 'm.user_id')
-          .select(['m.id', 'u.full_name', 'u.email', 'm.status', 'm.is_owner', 'm.valid_until', 'm.created_at']).execute(),
-        roles: await trx.selectFrom('role').select(['id', 'key', 'name', 'description', 'is_system', 'permissions']).execute(),
+          .select(['m.id', 'u.full_name', 'u.email', 'm.status', 'm.is_owner', 'm.valid_until', 'm.created_at']).where('m.company_id', '=', t.companyId).execute(),
+        roles: await trx.selectFrom('role').select(['id', 'key', 'name', 'description', 'is_system', 'permissions']).where('company_id', '=', t.companyId).execute(),
         member_roles: await trx.selectFrom('membership_role').select(['membership_id', 'role_id']).execute(),
         invitations: await trx.selectFrom('invitation').select(['id', 'email', 'role_ids', 'expires_at', 'accepted_at', 'revoked_at', 'created_at']).execute(),
         subscription: await trx.selectFrom('subscription').selectAll().execute(),

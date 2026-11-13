@@ -24,7 +24,7 @@ const INVITE_DAYS = 7;
 
 async function assertRolesAssignable(trx: TenantTrx, t: TenantInfo, roleIds: string[]) {
   if (!roleIds.every(isUuid)) throw badRequest('Rôle invalide.');
-  const roles = await trx.selectFrom('role').select(['id', 'key', 'permissions']).where('id', 'in', roleIds).execute();
+  const roles = await trx.selectFrom('role').select(['id', 'key', 'permissions']).where('company_id', '=', t.companyId).where('id', 'in', roleIds).execute();
   if (roles.length !== new Set(roleIds).size) throw badRequest('Un ou plusieurs rôles sont introuvables dans cette entreprise.', undefined, 'unknown_role');
   if (!t.isOwner && roles.some((r) => r.key === 'owner' || r.permissions.some(isSensitive))) {
     throw forbidden('Seul un propriétaire peut attribuer un rôle comportant des permissions sensibles.', 'sensitive_permission');
@@ -133,7 +133,7 @@ export class MembersController {
       if (!e) throw notFound('Employé');
       if (e.user_id) throw conflict('Cet employé a déjà accès à son espace.', 'already_linked');
       if (!e.email) throw badRequest("Renseignez l'adresse e-mail de l'employé avant de l'inviter.", undefined, 'no_email');
-      const role = await trx.selectFrom('role').select('id').where('key', '=', 'employee').executeTakeFirst();
+      const role = await trx.selectFrom('role').select('id').where('company_id', '=', t.companyId).where('key', '=', 'employee').executeTakeFirst();
       if (!role) throw badRequest('Le rôle « Employé » a été supprimé.', undefined, 'no_employee_role');
       const pending = await trx.selectFrom('invitation').select('id').where('employee_id', '=', id).where('accepted_at', 'is', null).where('revoked_at', 'is', null).where('expires_at', '>', new Date()).executeTakeFirst();
       if (pending) throw conflict('Une invitation est déjà en attente pour cet employé.', 'invitation_pending');
@@ -164,7 +164,7 @@ export class MembersController {
     const inviteUrl = `${config.webUrl}/invitation?token=${encodeURIComponent(token)}`;
     const company = await trx.selectFrom('company').select('name').where('id', '=', t.companyId).executeTakeFirstOrThrow();
     const inviter = await trx.selectFrom('user_account').select(['full_name', 'email']).where('id', '=', t.ctx.userId).executeTakeFirstOrThrow();
-    const roles = await trx.selectFrom('role').select('name').where('id', 'in', input.roleIds).execute();
+    const roles = await trx.selectFrom('role').select('name').where('company_id', '=', t.companyId).where('id', 'in', input.roleIds).execute();
     await this.mail.enqueue(trx, {
       companyId: t.companyId, to: input.email, kind: 'invitation', entityId: inv.id, fromName: company.name, replyTo: inviter.email, createdBy: t.ctx.userId,
       subject: `${inviter.full_name} vous invite à rejoindre ${company.name} sur Kora ERP`,
@@ -274,7 +274,7 @@ export class MembersController {
       const owner = inv.is_owner ? { is_owner: true } : {};
       if (existing) await t.updateTable('company_membership').set({ status: 'active', site_ids: inv.site_ids, ...owner }).where('id', '=', existing.id).execute();
       else membershipId = (await t.insertInto('company_membership').values({ company_id: tk.companyId, user_id: userId, site_ids: inv.site_ids, ...owner }).returning('id').executeTakeFirstOrThrow()).id;
-      const roles = await t.selectFrom('role').select('id').where('id', 'in', inv.role_ids).execute();
+      const roles = await t.selectFrom('role').select('id').where('company_id', '=', tk.companyId).where('id', 'in', inv.role_ids).execute();
       await t.deleteFrom('membership_role').where('membership_id', '=', membershipId!).execute();
       if (roles.length) await t.insertInto('membership_role').values(roles.map((r) => ({ company_id: tk.companyId, membership_id: membershipId!, role_id: r.id }))).execute();
       await t.updateTable('invitation').set({ accepted_at: new Date() }).where('id', '=', inv.id).execute();

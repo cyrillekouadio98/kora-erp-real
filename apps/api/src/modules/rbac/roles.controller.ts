@@ -46,7 +46,7 @@ export class RolesController {
     return this.db.tenant(t.ctx, (trx) => trx.selectFrom('role as r')
       .select((eb) => ['r.id', 'r.key', 'r.name', 'r.description', 'r.is_system as isSystem', 'r.permissions',
         eb.selectFrom('membership_role as mr').whereRef('mr.role_id', '=', 'r.id').select(eb.fn.countAll<string>().as('c')).as('memberCount')])
-      .orderBy('r.is_system', 'desc').orderBy('r.name').execute()
+      .where('r.company_id', '=', t.companyId).orderBy('r.is_system', 'desc').orderBy('r.name').execute()
       // Rôles que seul un propriétaire peut attribuer (rôle Propriétaire, ou permissions sensibles : Comptable, Paie…).
       .then((rows) => rows.map((r) => ({ ...r, ownerOnly: r.key === 'owner' || r.permissions.some(isSensitive) }))));
   }
@@ -72,7 +72,7 @@ export class RolesController {
     if (!isUuid(id)) throw notFound('Rôle');
     const input = parse(RoleSchema.partial(), body);
     return this.db.tenant(t.ctx, async (trx) => {
-      const role = await trx.selectFrom('role').selectAll().where('id', '=', id).executeTakeFirst();
+      const role = await trx.selectFrom('role').selectAll().where('company_id', '=', t.companyId).where('id', '=', id).executeTakeFirst();
       if (!role) throw notFound('Rôle');
       if (role.key === 'owner' && input.permissions) throw forbidden('Les permissions du rôle Propriétaire ne sont pas modifiables.');
       if (input.permissions) {
@@ -104,7 +104,7 @@ export class RolesController {
   remove(@Tenant() t: TenantInfo, @Param('id') id: string) {
     if (!isUuid(id)) throw notFound('Rôle');
     return this.db.tenant(t.ctx, async (trx) => {
-      const role = await trx.selectFrom('role').select(['id', 'is_system', 'name']).where('id', '=', id).executeTakeFirst();
+      const role = await trx.selectFrom('role').select(['id', 'is_system', 'name']).where('company_id', '=', t.companyId).where('id', '=', id).executeTakeFirst();
       if (!role) throw notFound('Rôle');
       if (role.is_system) throw forbidden('Les rôles standard ne peuvent pas être supprimés (vous pouvez les modifier).');
       const used = await trx.selectFrom('membership_role').select('role_id').where('role_id', '=', id).executeTakeFirst();

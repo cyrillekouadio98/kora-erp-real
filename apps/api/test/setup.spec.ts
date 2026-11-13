@@ -88,3 +88,40 @@ describe('Console : préparation d’une entreprise pour un client', () => {
     expect((audit.items ?? audit).some((a: any) => a.action === 'company.handed_over' && a.actorType === 'platform')).toBe(true);
   });
 });
+
+describe('Console : un éditeur qui a aussi sa propre entreprise', () => {
+  let app: INestApplication;
+  beforeAll(async () => { await resetDb(); app = await createApp(); });
+  afterAll(async () => { await app.close(); });
+
+  it('remet l’entreprise avec ses propres rôles, pas ceux de l’entreprise de l’éditeur', async () => {
+    const sales = await platformUser(app, 'sales_admin');
+    // L'éditeur est aussi propriétaire de sa propre entreprise : ses rôles ne doivent pas se mélanger à ceux du client.
+    expect((await sales.agent.post('/companies').send({ name: 'Éditeur SARL' })).status).toBe(201);
+    const r = await sales.agent.post('/platform/setup').send({ name: 'King Distribution', planCode: 'business', billingCycle: 'monthly' });
+    const id = r.body.id;
+    expect(r.body.roles.filter((x: any) => x.key === 'sales_rep')).toHaveLength(1); // pas de doublon venu de l'autre entreprise
+    const ownerEmail = uniqueEmail('king');
+    const vendeur = uniqueEmail('vendeur');
+    await sales.agent.patch(`/platform/setup/${id}/company`).send({ rccm: 'CI-ABJ-2026-B-9999', taxId: '2699999A', address: 'Rue 12' });
+    expect((await sales.agent.put(`/platform/setup/${id}/people`).send({ owner: { name: 'Hervé Kouakou', email: ownerEmail }, users: [{ name: 'Vendeur', email: vendeur, roleKey: 'sales_rep', siteIds: [] }] })).status).toBe(200);
+    const h = await sales.agent.post(`/platform/setup/${id}/hand-over`);
+    expect(h.status).toBe(200);
+
+    const c = await ownerClient();
+    try {
+      const foreign = await c.query(`SELECT i.email FROM invitation i JOIN role r ON r.id = ANY (i.role_ids) WHERE i.company_id = $1 AND r.company_id <> i.company_id`, [id]);
+      expect(foreign.rows).toEqual([]);
+    } finally { await c.end(); }
+
+    const owner = request.agent(app.getHttpServer());
+    const ok = await owner.post('/invitations/accept').send({ token: new URL(h.body.links.owner.inviteUrl).searchParams.get('token'), fullName: 'Hervé Kouakou', password: 'MotDePasse123' });
+    expect(ok.status).toBe(201);
+    const ctx = (await owner.get('/company/context')).body;
+    expect(ctx).toMatchObject({ isOwner: true, company: { name: 'King Distribution' } });
+    expect(ctx.permissions).toEqual(expect.arrayContaining(['settings.admin', 'sales.create', 'purchases.read', 'accounting.read']));
+    // La page Rôles du client ne montre que ses rôles
+    const roles = (await owner.get('/company/roles')).body;
+    expect(roles.filter((x: any) => x.key === 'owner')).toHaveLength(1);
+  });
+});
