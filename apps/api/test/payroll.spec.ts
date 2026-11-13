@@ -182,7 +182,12 @@ describe('Paie : employés, campagne mensuelle, comptabilité, paiement', () => 
   it('calcule la fiche à partir du net à payer et de la catégorie', async () => {
     const settings = (await owner.agent.get('/company/payroll/settings')).body.params;
     expect(settings.smig).toBe(75_000);
-    const categories = settings.categories.map((c: any) => (c.code === '3' ? { ...c, minSalary: 120_000 } : c));
+    // Grille par défaut : commerce, distribution, négoce (barème 2023)
+    expect(settings.categories.find((c: any) => c.code === '1A')).toMatchObject({ minSalary: 75_000 });
+    expect(settings.categories.find((c: any) => c.code === '11')).toMatchObject({ label: 'Cadre 11', minSalary: 230_918 });
+    expect(settings.categories).toHaveLength(18);
+    // L'entreprise ajuste sa grille : 3e catégorie relevée, 5e laissée non renseignée.
+    const categories = settings.categories.map((c: any) => (c.code === '3' ? { ...c, minSalary: 120_000 } : c.code === '5' ? { ...c, minSalary: 0 } : c));
     expect((await owner.agent.patch('/company/payroll/settings').send({ categories })).status).toBe(200);
     const body = { targetNet: 250_000, category: '3', transportAllowance: 30_000, maritalStatus: 'married', children: 1 };
     const r = (await owner.agent.post('/company/payroll/net-to-gross').send(body)).body;

@@ -1,5 +1,5 @@
 'use client';
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
@@ -17,6 +17,8 @@ const EMPTY = {
 const MONEY_FIELDS = ['baseSalary', 'extraSalary', 'housingAllowance', 'transportAllowance', 'otherAllowances'];
 /** Champs dont dépend le calcul : les modifier rend le bulletin simulé périmé. */
 const SIM_FIELDS = ['category', 'targetNet', 'housingAllowance', 'transportAllowance', 'otherAllowances', 'maritalStatus', 'children', 'partsOverride', 'baseSalary', 'extraSalary'];
+/** Champs qui relancent le calcul automatique du salaire de base et du sursalaire à partir du net à payer. */
+const AUTO_FIELDS = SIM_FIELDS.filter((k) => k !== 'baseSalary' && k !== 'extraSalary');
 
 /** Aperçu du bulletin calculé à partir du net : gains, retenues du salarié, net et coût employeur. */
 function SimulatedSlip({ slip }: { slip: any }) {
@@ -87,8 +89,16 @@ function Employees() {
   const { busy, error, run } = useAction();
   const load = useCallback(() => api(`/company/employees?includeLeft=${includeLeft}${q ? `&q=${encodeURIComponent(q)}` : ''}`).then(setRows), [q, includeLeft]);
   useEffect(() => { const h = setTimeout(load, 250); return () => clearTimeout(h); }, [load]);
-  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => { if (SIM_FIELDS.includes(k)) setSim(null); setEdit({ ...edit, [k]: e.target.value }); };
-  const open = (e: any) => { setSim(null); setPhoto(undefined); setEdit(e); };
+  // Calcul automatique : relancé à chaque saisie du net, de la catégorie, des indemnités ou de la situation de famille.
+  const [autoCalc, setAutoCalc] = useState(0);
+  const [calc, setCalc] = useState<{ busy: boolean; error: string }>({ busy: false, error: '' });
+  const calcSeq = useRef(0);
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    if (SIM_FIELDS.includes(k)) setSim(null);
+    if (AUTO_FIELDS.includes(k)) setAutoCalc((n) => n + 1);
+    setEdit({ ...edit, [k]: e.target.value });
+  };
+  const open = (e: any) => { setSim(null); setAutoCalc(0); setCalc({ busy: false, error: '' }); setPhoto(undefined); setEdit(e); };
   // Sites : rappel sur la vignette quand plusieurs sites sont affichés, choix du site sur la fiche.
   const sites = ctx?.sites ?? [];
   const siteOf = (id?: string) => (!ctx?.siteId && sites.length > 1 ? sites.find((s) => s.id === id)?.name : undefined);
@@ -101,16 +111,30 @@ function Employees() {
   }, [edit?.id, salaries]);
   useEffect(() => { if (direct) api(`/company/employees/${direct}`).then((e) => open(toForm(e)), () => {}); }, [direct]); // eslint-disable-line
 
-  // « Calculer la fiche » : salaire de base et sursalaire qui donnent le net demandé (rien n'est enregistré avant « Enregistrer »).
-  const calculate = () => run(async () => {
-    const r = await api('/company/payroll/net-to-gross', { body: {
+  // Salaire de base et sursalaire qui donnent le net demandé (rien n'est enregistré avant « Enregistrer »).
+  // Seule la dernière saisie compte : une réponse arrivée après une saisie plus récente est ignorée.
+  const calculate = async () => {
+    const seq = ++calcSeq.current;
+    if (!Number(edit.targetNet)) { setCalc({ busy: false, error: '' }); return; }
+    setCalc({ busy: true, error: '' });
+    try {
+      const r = await api('/company/payroll/net-to-gross', { body: {
       targetNet: Number(edit.targetNet), category: edit.category || null, housingAllowance: Number(edit.housingAllowance || 0),
       transportAllowance: Number(edit.transportAllowance || 0), otherAllowances: Number(edit.otherAllowances || 0),
       maritalStatus: edit.maritalStatus, children: Number(edit.children || 0), partsOverride: edit.partsOverride === '' || edit.partsOverride === null ? null : Number(edit.partsOverride),
-    } });
-    setEdit((x: any) => ({ ...x, baseSalary: r.baseSalary, extraSalary: r.extraSalary }));
-    setSim(r);
-  });
+      } });
+      if (seq !== calcSeq.current) return;
+      setEdit((x: any) => ({ ...x, baseSalary: r.baseSalary, extraSalary: r.extraSalary }));
+      setSim(r); setCalc({ busy: false, error: '' });
+    } catch (err) {
+      if (seq === calcSeq.current) setCalc({ busy: false, error: (err as Error).message });
+    }
+  };
+  useEffect(() => {
+    if (!autoCalc) return;
+    const h = setTimeout(calculate, 450);
+    return () => clearTimeout(h);
+  }, [autoCalc]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = () => run(async () => {
     const body: any = {};
@@ -229,9 +253,10 @@ function Employees() {
                 <Field label="Autres indemnités imposables" type="number" min={0} value={edit.otherAllowances} onChange={set('otherAllowances')} />
               </div>
               <div className="row">
-                <button type="button" className="btn" disabled={busy || !Number(edit.targetNet)} onClick={calculate}>Calculer la fiche</button>
-                <span className="small muted" style={{ flex: 1, minWidth: 200 }}>Salaire de base = salaire catégoriel ; le sursalaire complète jusqu'au net à payer, compte tenu des indemnités, de la CNPS, de la CMU et de l'ITS.</span>
+                <button type="button" className="btn" disabled={busy || calc.busy || !Number(edit.targetNet)} onClick={calculate}>{calc.busy ? 'Calcul…' : 'Recalculer'}</button>
+                <span className="small muted" style={{ flex: 1, minWidth: 200 }}>Le salaire de base et le sursalaire se remplissent dès la saisie du net à payer : salaire de base = salaire catégoriel, le sursalaire complète compte tenu des indemnités, de la CNPS, de la CMU et de l'ITS.</span>
               </div>
+              <Alert>{calc.error}</Alert>
               {sim?.warnings.map((w: string) => <Alert key={w} kind="warn">{w}</Alert>)}
               {planned.map((r) => <Alert key={r.evaluationId} kind="info">Augmentation prévue : salaire de base de <b>{money(r.newBaseSalary)}</b> à partir de {periodLabel(r.period)}{' '}
                 (<Link href={`/app/evaluations/fiche/${r.evaluationId}`}>{r.campaignName}</Link>). Elle s&apos;appliquera à la préparation de cette paie.</Alert>)}

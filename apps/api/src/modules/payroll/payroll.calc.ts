@@ -39,11 +39,16 @@ export const DEFAULT_PAYROLL_PARAMS: PayrollParams = {
   employerTaxRate: 1.2, apprenticeshipTaxRate: 0.4, trainingTaxRate: 1.2,
   transportExemptCap: 30_000, workingDays: 30, leaveDaysPerMonth: 2.2,
   smig: 75_000,
-  // Montants à compléter : ils dépendent de la convention collective de la branche (arrêté n° 50/MEPS/CAB de 2023).
-  categories: [
-    ...[1, 2, 3, 4, 5, 6, 7].map((n) => ({ code: String(n), label: `${n}${n === 1 ? 're' : 'e'} catégorie`, minSalary: 0 })),
-    { code: 'AM', label: 'Agent de maîtrise', minSalary: 0 }, { code: 'C', label: 'Cadre', minSalary: 0 },
-  ],
+  // Grille du secteur Commerce, distribution, négoce : barème de 2015 relevé de 11 % au 1er janvier 2023
+  // (arrêté n° 0050/MEPS/CAB). Montants repris d'une source secondaire, à vérifier sur le texte officiel ;
+  // chaque entreprise ajuste la grille de sa convention dans Paie > Configuration.
+  categories: ([
+    ['1A', '1re catégorie A', 75_000], ['1B', '1re catégorie B', 83_344], ['2', '2e catégorie', 89_375], ['3', '3e catégorie', 92_084],
+    ['4', '4e catégorie', 99_506], ['5', '5e catégorie', 118_737], ['6', '6e catégorie (M1)', 128_907], ['7A', '7e catégorie A (M2)', 129_313],
+    ['7B', '7e catégorie B (M3)', 135_942], ['8A', '8e catégorie A (M4)', 135_942], ['8B', '8e catégorie B (M5)', 137_955],
+    ['8C', 'Cadre 8C', 137_955], ['9A', 'Cadre 9A', 139_660], ['9B', 'Cadre 9B', 157_121], ['10A', 'Cadre 10A', 164_938],
+    ['10B', 'Cadre 10B', 184_733], ['10C', 'Cadre 10C', 207_824], ['11', 'Cadre 11', 230_918],
+  ] as const).map(([code, label, minSalary]) => ({ code, label, minSalary })),
 };
 
 export type MaritalStatus = 'single' | 'married' | 'divorced' | 'widowed';
