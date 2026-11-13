@@ -15,6 +15,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
       const message = status === 429 ? 'Trop de tentatives. Réessayez dans quelques minutes.' : status === 404 ? 'Ressource introuvable.' : (typeof body === 'string' ? body : body?.message ?? 'Erreur');
       return res.status(status).json({ error: { code, message } });
     }
+    // Corps de requête au-delà de la limite du serveur (body-parser) : erreur du client, pas du serveur.
+    if ((exception as { type?: string })?.type === 'entity.too.large') {
+      return res.status(HttpStatus.PAYLOAD_TOO_LARGE).json({ error: { code: 'payload_too_large', message: 'Envoi trop volumineux : réduisez la taille du fichier.' } });
+    }
     const pg = exception as { code?: string; message?: string };
     if (pg?.code === '42501') {
       this.logger.warn(`Accès refusé par la base : ${pg.message}`);

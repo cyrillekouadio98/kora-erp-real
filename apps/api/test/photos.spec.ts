@@ -80,6 +80,13 @@ describe('Photos des employés et logos des contacts', () => {
     expect((await owner.agent.put('/company/logo').send({ logo: 'data:image/svg+xml;base64,PHN2Zz4=' })).body.error.code).toBe('invalid_photo');
     const audit = (await owner.agent.get('/company/audit')).body;
     expect((audit.items ?? audit).map((e: any) => e.action)).toContain('company.logo_updated');
+    // Un logo réduit par le navigateur peut dépasser 100 Ko (limite par défaut d'Express) : il doit passer.
+    const big = await owner.agent.put('/company/logo').send({ logo: `data:image/png;base64,${Buffer.alloc(290_000, 7).toString('base64')}` });
+    expect(big.status).toBe(200);
+    expect(big.body.logo).toMatch(/^\/company\/logo\?v=\d+$/);
+    const huge = await owner.agent.put('/company/logo').send({ logo: `data:image/png;base64,${'A'.repeat(1_100_000)}` });
+    expect(huge.status).toBe(413);
+    expect(huge.body.error.code).toBe('payload_too_large');
     expect((await owner.agent.put('/company/logo').send({ logo: null })).body.logo).toBeNull();
     expect((await owner.agent.get('/company/logo')).status).toBe(404);
   });

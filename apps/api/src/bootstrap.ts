@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import type { NextFunction, Request, Response } from 'express';
@@ -29,8 +30,17 @@ export function buildOpenApi(app: INestApplication) {
   return SwaggerModule.createDocument(app, doc);
 }
 
+/**
+ * Taille maximale d'un corps JSON. Express plafonne à 100 Ko par défaut, ce qui refusait les logos
+ * (data URL jusqu'à 410 Ko). Chaque champ garde sa propre limite dans sa validation.
+ */
+export function configureBodyParsers(app: NestExpressApplication) {
+  app.useBodyParser('json', { limit: '1mb' });
+}
+
 export async function createApp(): Promise<INestApplication> {
-  const app = await NestFactory.create(AppModule, { rawBody: true, logger: config.env === 'test' ? ['error'] : undefined });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true, logger: config.env === 'test' ? ['error'] : undefined });
+  configureBodyParsers(app);
   const express = app.getHttpAdapter().getInstance();
   express.disable('x-powered-by');
   express.set('trust proxy', config.trustProxy);

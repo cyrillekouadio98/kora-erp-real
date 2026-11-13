@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { INestApplication, Type } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
 import { hash } from '@node-rs/argon2';
@@ -7,6 +8,7 @@ import { authenticator } from 'otplib';
 import { Client } from 'pg';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { configureBodyParsers } from '../src/bootstrap';
 import { encrypt } from '../src/common/crypto';
 import { HttpExceptionFilter } from '../src/common/http-exception.filter';
 import { config } from '../src/config';
@@ -34,7 +36,8 @@ export async function resetDb() {
 
 export async function createApp(extraControllers: Type<unknown>[] = []): Promise<INestApplication> {
   const mod = await Test.createTestingModule({ imports: [AppModule], controllers: extraControllers }).compile();
-  const app = mod.createNestApplication({ rawBody: true, logger: ['error'] });
+  const app = mod.createNestApplication<NestExpressApplication>({ rawBody: true, logger: ['error'] });
+  configureBodyParsers(app);
   app.use(cookieParser());
   app.useGlobalFilters(new HttpExceptionFilter());
   await app.init();
