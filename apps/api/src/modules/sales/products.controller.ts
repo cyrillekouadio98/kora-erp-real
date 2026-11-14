@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { AllowWhenReadOnly, Permission, Tenant } from '../../common/decorators';
@@ -132,6 +132,35 @@ export class ProductsController {
       const changes = Object.fromEntries(Object.keys(patch).filter((c) => String((before as any)[c]) !== String(patch[c])).map((c) => [c, { from: (before as any)[c], to: patch[c] }]));
       await this.audit.tenant(trx, t.ctx, { action: 'product.updated', entityType: 'product', entityId: id, data: { code: after.code, changes } });
       return toNumbers(after);
+    });
+  }
+
+  /**
+   * Suppression définitive d'un article jamais utilisé (créé par erreur, en double…). Dès qu'il figure dans un
+   * devis, une facture, un achat, un bon ou un mouvement de stock (stock initial compris), il s'archive à la place :
+   * l'historique et la comptabilité restent intacts.
+   */
+  @Permission('products.cancel') @HttpCode(200)
+  @Delete(':id')
+  remove(@Tenant() t: TenantInfo, @Param('id') id: string) {
+    if (!isUuid(id)) throw notFound('Article');
+    return this.db.tenant(t.ctx, async (trx) => {
+      const p = await trx.selectFrom('product').select(['id', 'code', 'name', 'stock_qty']).where('id', '=', id).forUpdate().executeTakeFirst();
+      if (!p) throw notFound('Article');
+      const used = async (table: 'sales_document_line' | 'purchase_document_line' | 'stock_movement' | 'stock_document_line') =>
+        !!(await trx.selectFrom(table).select('product_id').where('product_id', '=', id).limit(1).executeTakeFirst());
+      const uses = [
+        (await used('sales_document_line')) && 'des devis ou factures',
+        (await used('purchase_document_line')) && 'des achats',
+        ((await used('stock_movement')) || (await used('stock_document_line'))) && 'des mouvements de stock',
+      ].filter(Boolean) as string[];
+      if (uses.length) {
+        throw conflict(`« ${p.name} » figure déjà dans ${uses.join(', ').replace(/, ([^,]*)$/, ' et $1')} : il ne peut pas être supprimé sans effacer cet historique. Archivez-le : il disparaîtra des listes et des ventes.`, 'product_in_use');
+      }
+      await trx.deleteFrom('stock_level').where('product_id', '=', id).execute();
+      await trx.deleteFrom('product').where('id', '=', id).execute();
+      await this.audit.tenant(trx, t.ctx, { action: 'product.deleted', entityType: 'product', entityId: id, data: { code: p.code, name: p.name } });
+      return { ok: true };
     });
   }
 

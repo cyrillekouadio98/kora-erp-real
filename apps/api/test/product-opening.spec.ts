@@ -36,4 +36,18 @@ describe("Création d'un article avec son stock initial", () => {
     expect(bad.status).toBe(400);
     expect((await owner.agent.get('/company/products')).body.length).toBe(before);
   });
+
+  it("supprime un article jamais utilisé, et demande d'archiver un article qui a servi", async () => {
+    const unused = (await owner.agent.post('/company/products').send({ name: 'Article en double', salePrice: 1000, vatRate: 18 })).body;
+    const del = await owner.agent.delete(`/company/products/${unused.id}`);
+    expect(del.status).toBe(200);
+    expect((await owner.agent.get('/company/products?archived=all')).body.find((p: any) => p.id === unused.id)).toBeUndefined();
+    expect((await owner.agent.delete(`/company/products/${unused.id}`)).status).toBe(404);
+    // Article avec stock initial : il a un mouvement, donc il s'archive.
+    const stocked = (await owner.agent.post('/company/products').send({ name: 'Ciment 50 kg', salePrice: 5000, purchasePrice: 4500, vatRate: 18, openingStock: { quantity: 2 } })).body;
+    const refused = await owner.agent.delete(`/company/products/${stocked.id}`);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toMatchObject({ code: 'product_in_use' });
+    expect(refused.body.error.message).toMatch(/mouvements de stock.*Archivez/);
+  });
 });

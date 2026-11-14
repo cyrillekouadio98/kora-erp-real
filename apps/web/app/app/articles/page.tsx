@@ -61,6 +61,11 @@ export default function ProductsPage() {
     if (edit.id) await api(`/company/products/${edit.id}`, { method: 'PATCH', body }); else await api('/company/products', { body });
     setEdit(null); await load();
   });
+  // Suppression : seulement un article jamais utilisé ; sinon l'API répond qu'il faut l'archiver.
+  const remove = (p: any) => {
+    if (!window.confirm(`Supprimer définitivement « ${p.name} » (${p.code}) ?\n\nPossible seulement s'il n'a jamais servi (aucun devis, facture, achat ni mouvement de stock). Cette action ne peut pas être annulée.`)) return;
+    run(async () => { await api(`/company/products/${p.id}`, { method: 'DELETE' }); await load(); });
+  };
   const toggleArchive = (p: any) => run(async () => { await api(`/company/products/${p.id}/${p.archivedAt ? 'restore' : 'archive'}`, { body: {} }); await load(); });
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setEdit({ ...edit, [k]: e.target.value });
 
@@ -105,6 +110,7 @@ export default function ProductsPage() {
               <td className="n"><div className="row" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                 {writable && can('products.update') && !p.archivedAt && <button className="btn sm" onClick={() => setEdit({ ...Object.fromEntries(FIELDS.map((k) => [k, p[k] ?? EMPTY[k]])), id: p.id, code: p.code })}>Modifier</button>}
                 {writable && can('products.cancel') && <button className={`btn sm${p.archivedAt ? '' : ' danger'}`} disabled={busy} onClick={() => toggleArchive(p)}>{p.archivedAt ? 'Restaurer' : 'Archiver'}</button>}
+                {writable && can('products.cancel') && <button className="btn sm danger" disabled={busy} onClick={() => remove(p)}>Supprimer</button>}
               </div></td>
             </tr>
           ); })}
