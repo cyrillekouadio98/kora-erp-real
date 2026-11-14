@@ -2,13 +2,14 @@ import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query } from '@nes
 import { ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { AllowWhenReadOnly, Permission, Tenant } from '../../common/decorators';
-import { conflict, notFound } from '../../common/errors';
+import { badRequest, conflict, forbidden, notFound } from '../../common/errors';
 import { isUuid } from '../../common/ids';
 import { nextNumber, peekNumber } from '../../common/numbering';
 import type { TenantInfo } from '../../common/request-context';
 import { parse } from '../../common/validation';
 import { DatabaseService, TenantTrx } from '../../db/database.service';
 import { AuditService } from '../audit/audit.service';
+import { StockService } from '../stock/stock.service';
 
 /** Taux de TVA applicables en Côte d'Ivoire : normal, réduit, exonéré. */
 export const VAT_RATES = [18, 9, 0];
@@ -25,6 +26,13 @@ const ProductSchema = z.object({
   barcode: z.string().trim().max(40).regex(/^[A-Za-z0-9._-]*$/, { message: 'Code-barres : chiffres et lettres uniquement, sans espace' }).transform((v) => v || null).nullable().optional(),
 }).strict();
 
+/** Stock initial saisi avec l'article (quantité, coût unitaire HT, entrepôt). */
+const OpeningStockSchema = z.object({
+  quantity: z.coerce.number().positive({ message: 'La quantité en stock doit être positive' }).max(1e9),
+  unitCost: money.optional(),
+  warehouseId: z.string().uuid({ message: 'Entrepôt inconnu' }).nullable().optional(),
+}).strict();
+
 const COLUMNS = { kind: 'kind', name: 'name', description: 'description', unit: 'unit', salePrice: 'sale_price', purchasePrice: 'purchase_price', vatRate: 'vat_rate', barcode: 'barcode' } as const;
 const SELECT = ['id', 'code', 'kind', 'name', 'description', 'unit', 'sale_price as salePrice', 'purchase_price as purchasePrice', 'vat_rate as vatRate', 'archived_at as archivedAt',
   'track_stock as trackStock', 'stock_qty as stockQty', 'barcode'] as const;
@@ -35,7 +43,7 @@ const toNumbers = <T extends { salePrice: string; purchasePrice: string | null; 
 @ApiTags('Articles')
 @Controller('company/products')
 export class ProductsController {
-  constructor(private readonly db: DatabaseService, private readonly audit: AuditService) {}
+  constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly stock: StockService) {}
 
   /** Code d'un nouvel article, toujours attribué par N° de séquence (ART-00001…) ; un code déjà pris (ancienne saisie manuelle) est sauté. */
   private async nextCode(trx: TenantTrx, t: TenantInfo) {
@@ -80,7 +88,11 @@ export class ProductsController {
   @Permission('products.create')
   @Post()
   create(@Tenant() t: TenantInfo, @Body() body: unknown) {
-    const input = parse(ProductSchema, body);
+    const { openingStock, ...input } = parse(ProductSchema.extend({ openingStock: OpeningStockSchema.optional() }), body);
+    if (openingStock) {
+      if (!t.permissions.has('stock.admin')) throw forbidden("Saisir un stock initial demande la permission d'administrer les stocks.");
+      if ((input.kind ?? 'good') !== 'good') throw badRequest('Un service ne se stocke pas.', undefined, 'service_not_stockable');
+    }
     return this.db.tenant(t.ctx, async (trx) => {
       await this.assertBarcodeFree(trx, input.barcode);
       const code = await this.nextCode(trx, t);
@@ -89,6 +101,11 @@ export class ProductsController {
       // Les biens sont suivis en stock dès leur création ; les services ne le sont jamais.
       const p = await trx.insertInto('product').values({ ...values, code, company_id: t.companyId, created_by: t.ctx.userId, track_stock: (input.kind ?? 'good') === 'good' } as any).returning(SELECT).executeTakeFirstOrThrow();
       await this.audit.tenant(trx, t.ctx, { action: 'product.created', entityType: 'product', entityId: p.id, data: { code, name: p.name, salePrice: Number(p.salePrice) } });
+      if (openingStock) {
+        // Coût unitaire non saisi : prix d'achat de l'article.
+        await this.stock.recordOpening(trx, t, p.id, { ...openingStock, unitCost: openingStock.unitCost ?? input.purchasePrice ?? 0 });
+        return toNumbers(await trx.selectFrom('product').select(SELECT).where('id', '=', p.id).executeTakeFirstOrThrow());
+      }
       return toNumbers(p);
     });
   }

@@ -412,7 +412,15 @@ export class StockService {
   // ------------------------------------------------------------------ saisies directes sur un article
   /** Stock initial d'un article sans mouvement : entrée valorisée, passée en à-nouveaux (D 311 / C 471). */
   async opening(t: TenantInfo, productId: string, input: { quantity: number; unitCost: number; date?: string; warehouseId?: string | null }) {
-    return this.db.tenant(t.ctx, async (trx) => {
+    return this.db.tenant(t.ctx, (trx) => this.recordOpening(trx, t, productId, input));
+  }
+
+  /**
+   * Stock initial dans une transaction existante : utilisé par Stocks et par la création d'un article
+   * (l'article et son stock de départ sont enregistrés ensemble, ou pas du tout).
+   */
+  async recordOpening(trx: TenantTrx, t: TenantInfo, productId: string, input: { quantity: number; unitCost: number; date?: string; warehouseId?: string | null }) {
+    {
       const p = await this.product(trx, productId);
       if (!p.track_stock) throw badRequest("Cet article n'est pas suivi en stock.", undefined, 'not_tracked');
       const any = await trx.selectFrom('stock_movement').select('id').where('product_id', '=', productId).executeTakeFirst();
@@ -427,7 +435,7 @@ export class StockService {
       }
       await this.audit.tenant(trx, t.ctx, { action: 'stock.opening_recorded', entityType: 'product', entityId: productId, data: { name: p.name, quantity: input.quantity, value } });
       return { ok: true };
-    });
+    }
   }
 
   /** Inventaire rapide d'un article dans un entrepôt : la quantité comptée devient le stock ; l'écart entre ou sort au coût moyen. */

@@ -45,11 +45,19 @@ export default function ProductsPage() {
   // Nouvel article : aperçu du code qu'il recevra (attribué à l'enregistrement).
   const creating = !!edit && !edit.id;
   useEffect(() => { if (creating) { setNextCode(''); api('/company/products/next-code').then((r) => setNextCode(r.code), () => {}); } }, [creating]);
+  // Stock initial saisi avec l'article : réservé à qui administre les stocks ; entrepôt au choix s'il y en a plusieurs.
+  const canOpening = can('stock.admin');
+  const [warehouses, setWarehouses] = useState<any[]>([]);
+  useEffect(() => { if (creating && canOpening) api('/company/stock/warehouses').then((r: any[]) => setWarehouses(r.filter((w) => !w.archived)), () => {}); }, [creating, canOpening]);
 
   const save = () => run(async () => {
     const body: any = Object.fromEntries(FIELDS.map((k) => [k, edit[k]]));
     body.purchasePrice = body.purchasePrice === '' || body.purchasePrice === null ? null : Number(body.purchasePrice);
     body.barcode = body.barcode?.trim() || null;
+    if (!edit.id && edit.kind === 'good' && Number(edit.openingQty) > 0) {
+      body.openingStock = { quantity: Number(edit.openingQty), warehouseId: edit.openingWarehouse || null,
+        ...(edit.openingCost !== '' && edit.openingCost != null ? { unitCost: Number(edit.openingCost) } : {}) };
+    }
     if (edit.id) await api(`/company/products/${edit.id}`, { method: 'PATCH', body }); else await api('/company/products', { body });
     setEdit(null); await load();
   });
@@ -129,7 +137,17 @@ export default function ProductsPage() {
               {!(trade && edit.kind === 'good') && <Field label={trade ? "Coût d'achat HT (facultatif)" : m.cost} type="number" min={0} step="any" value={edit.purchasePrice ?? ''} onChange={set('purchasePrice')} />}
             </div>
             {editMargin && <p className="small" style={{ margin: 0 }}>Marge unitaire : <b style={editMargin.value < 0 ? { color: 'var(--crit)' } : undefined}>{money(editMargin.value)}</b>{editMargin.rate != null && <> ({editMargin.rate.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} % du prix de vente)</>}</p>}
-            {!services && edit.kind === 'good' && !edit.id && <p className="small muted" style={{ margin: 0 }}>Le stock de cette marchandise se suit dans Stocks : saisissez le stock initial ou un bon d&apos;entrée après l&apos;enregistrement.</p>}
+            {edit.kind === 'good' && !edit.id && (canOpening ? <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
+              <legend className="small" style={{ fontWeight: 600, marginBottom: 6 }}>Stock initial (facultatif)</legend>
+              <div className="grid2">
+                <Field label={`Quantité en stock${edit.unit ? ` (${edit.unit})` : ''}`} type="number" min={0} step="any" value={edit.openingQty ?? ''} onChange={set('openingQty')} placeholder="0" />
+                <Field label="Coût unitaire HT (FCFA)" type="number" min={0} step="any" value={edit.openingCost ?? ''} onChange={set('openingCost')}
+                  placeholder={edit.purchasePrice !== '' && edit.purchasePrice != null ? `${edit.purchasePrice} (prix d'achat)` : "Prix d'achat"} />
+                {warehouses.length > 1 && <label className="field">Entrepôt<select className="input" value={edit.openingWarehouse ?? ''} onChange={set('openingWarehouse')}>
+                  <option value="">Entrepôt du site</option>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}{w.siteName ? ` — ${w.siteName}` : ''}</option>)}</select></label>}
+              </div>
+              <p className="small muted" style={{ margin: '4px 0 0' }}>Les quantités déjà en rayon ou en magasin. Le coût unitaire reprend le prix d&apos;achat s&apos;il n&apos;est pas saisi. Ensuite, le stock évolue avec les achats, les ventes et les inventaires.</p>
+            </fieldset> : <p className="small muted" style={{ margin: 0 }}>Le stock de cette marchandise se suit dans Stocks : le stock initial s&apos;y saisit après l&apos;enregistrement.</p>)}
             <label className="field">Description<textarea className="input" rows={2} value={edit.description ?? ''} onChange={set('description')} /></label>
             <div className="row"><button className="btn primary" disabled={busy}>Enregistrer</button><button type="button" className="btn" onClick={() => setEdit(null)}>Annuler</button></div>
           </form>
