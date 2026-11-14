@@ -60,7 +60,7 @@ describe('Espace employé et congés', () => {
     expect((await christine.get('/company/me')).status).toBe(403); // pas encore d'espace employé
     const id = (await owner.agent.post('/company/employees').send({ firstName: 'Christine', lastName: 'Konan', hireDate: '2025-06-01', email: 'Christine.Konan@test.ci', baseSalary: 150_000 })).body.id;
     const r = await owner.agent.post(`/company/employees/${id}/invite`);
-    expect(r.body).toEqual({ linked: true, email: 'christine.konan@test.ci' });
+    expect(r.body).toEqual({ linked: true, email: 'christine.konan@test.ci', emailCorrected: false });
     expect((await christine.get('/company/me')).body.employee).toMatchObject({ name: 'Christine Konan' });
     const member = (await owner.agent.get('/company/members')).body.find((m: any) => m.email === 'christine.konan@test.ci');
     expect(member.roles.map((x: any) => x.key ?? x.name)).toEqual(expect.arrayContaining([expect.stringMatching(/employee|Employé/)]));
@@ -128,6 +128,27 @@ describe('Espace employé et congés', () => {
     expect(slip.inputs.absenceDays).toBe(workingDays(start, end));
     expect(run.payslips.find((p: any) => p.employeeId === ayaId).inputs.absenceDays).toBe(0);
     await owner.agent.post(`/company/payroll/runs/${run.id}/validate`);
+  });
+
+  it("ouvre tout de suite l'espace malgré une faute dans l'e-mail de la fiche (compte choisi)", async () => {
+    const roles = (await owner.agent.get('/company/roles')).body;
+    const sites = (await owner.agent.get('/company/sites')).body;
+    const list = sites.items ?? sites;
+    const inv = await owner.agent.post('/company/invitations').send({ email: 'annemariekonan933@test.ci', roleIds: [roles.find((x: any) => x.key === 'cashier').id], siteIds: [list[0].id] });
+    const anne = request.agent(app.getHttpServer());
+    await anne.post('/invitations/accept').send({ token: new URL(inv.body.inviteUrl).searchParams.get('token'), fullName: 'Anne Marie Konan', password: 'MotDePasse123' });
+    // Fiche saisie avec une faute (« kona » au lieu de « konan ») : pas de rattachement automatique possible
+    const id = (await owner.agent.post('/company/employees').send({ firstName: 'Aya Anne Marie', lastName: 'Konan', hireDate: '2025-09-01', contractType: 'stage', email: 'annemariekona933@test.ci', baseSalary: 75_000 })).body.id;
+    const accounts = (await owner.agent.get(`/company/employees/${id}/accounts`)).body;
+    expect(accounts[0]).toMatchObject({ name: 'Anne Marie Konan', email: 'annemariekonan933@test.ci', match: 'similar_email' });
+    expect(accounts.some((a: any) => a.email === 'christine.konan@test.ci')).toBe(false); // déjà rattachée à sa fiche
+    const r = await owner.agent.post(`/company/employees/${id}/invite`).send({ userId: accounts[0].userId });
+    expect(r.body).toEqual({ linked: true, email: 'annemariekonan933@test.ci', emailCorrected: true });
+    expect((await anne.get('/company/me')).body.employee).toMatchObject({ name: 'Aya Anne Marie Konan' });
+    expect((await owner.agent.get(`/company/employees/${id}`)).body.email).toBe('annemariekonan933@test.ci');
+    // Fiche sans e-mail ni compte : pas d'invitation possible
+    const nobody = (await owner.agent.post('/company/employees').send({ firstName: 'Zié', lastName: 'Coulibaly', hireDate: '2025-09-01', baseSalary: 75_000 })).body.id;
+    expect((await owner.agent.post(`/company/employees/${nobody}/invite`).send({})).body.error.code).toBe('no_email');
   });
 
   it("affecte l'employé à un autre site sans lui couper son espace", async () => {

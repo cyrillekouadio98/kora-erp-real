@@ -148,13 +148,28 @@ function Employees() {
     return () => clearTimeout(h);
   }, [autoCalc]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** Espace employé : invitation, ou rattachement immédiat de la fiche si la personne a déjà un accès à l'entreprise. */
+  /**
+   * Espace employé : choix du compte. Un compte existant de l'entreprise (même e-mail, e-mail proche ou même nom en tête)
+   * donne un accès immédiat ; à défaut, invitation à l'e-mail de la fiche.
+   */
+  const [space, setSpace] = useState<{ e: { id: string; fullName: string; email: string }; accounts: any[]; choice: string } | null>(null);
   const openSpace = (e: { id: string; fullName: string; email: string }) => run(async () => {
-    const r = await api(`/company/employees/${e.id}/invite`, { body: {} });
-    if (r.linked) { setNotice(`${e.fullName} avait déjà un accès à l'entreprise (${r.email}) : sa fiche y est maintenant rattachée. Son espace (bulletins, congés) est ouvert dès maintenant, dans « Mon espace ».`); await load(); }
-    else setNotice(`Invitation envoyée à ${e.fullName} (${e.email}) : à son acceptation, il ou elle accédera à ses bulletins et à ses congés.`);
-    setEdit((x: any) => (x?.id === e.id ? { ...x, linked: !!r.linked } : x));
+    const accounts: any[] = await api(`/company/employees/${e.id}/accounts`);
+    const best = accounts.find((a) => a.match);
+    setSpace({ e, accounts, choice: best ? best.userId : e.email ? 'invite' : accounts[0]?.userId ?? 'invite' });
   });
+  const confirmSpace = () => run(async () => {
+    const { e, choice, accounts } = space!;
+    const r = await api(`/company/employees/${e.id}/invite`, { body: choice === 'invite' ? {} : { userId: choice } });
+    setSpace(null);
+    if (r.linked) {
+      const who = accounts.find((a) => a.userId === choice)?.name ?? e.fullName;
+      setNotice(`Espace ouvert : la fiche de ${e.fullName} est rattachée au compte de ${who} (${r.email}). Bulletins et congés sont accessibles tout de suite dans « Mon espace ».${r.emailCorrected ? ` L'e-mail de la fiche a été corrigé en ${r.email}.` : ''}`);
+      await load();
+    } else setNotice(`Invitation envoyée à ${e.fullName} (${e.email}) : à son acceptation, il ou elle accédera à ses bulletins et à ses congés.`);
+    setEdit((x: any) => (x?.id === e.id ? { ...x, linked: !!r.linked, ...(r.linked ? { email: r.email, savedEmail: r.email } : {}) } : x));
+  });
+  const MATCH: Record<string, string> = { email: 'même e-mail', similar_email: 'e-mail presque identique', name: 'même nom' };
 
   const save = () => run(async () => {
     const body: any = {};
@@ -219,8 +234,7 @@ function Employees() {
               {salaries && <td className="n" style={{ whiteSpace: 'nowrap' }}>{money(e.baseSalary)}</td>}
               <td className="small">{PAYMENT_METHODS[e.paymentMethod]}</td>
               <td className="n"><div className="row" style={{ justifyContent: 'flex-end', gap: 6, flexWrap: 'nowrap' }}>
-                {can('users.admin') && writable && e.active && !e.linked && <button className="btn sm" disabled={busy} title={e.email ? undefined : 'Renseignez d’abord son e-mail'}
-                  onClick={() => openSpace(e)}>Ouvrir son espace</button>}
+                {can('users.admin') && writable && e.active && !e.linked && <button className="btn sm" disabled={busy} onClick={() => openSpace(e)}>Ouvrir son espace</button>}
                 {can('employees.update') && writable && <button className="btn sm" onClick={() => open(toForm(e))}>Modifier</button>}</div></td>
             </tr>
           ))}
@@ -253,8 +267,8 @@ function Employees() {
             <Alert>{error}</Alert>
             {edit.id && (edit.linked ? <Alert kind="ok">Espace employé ouvert : bulletins et congés accessibles dans « Mon espace ».</Alert>
               : can('users.admin') && writable && edit.active && <div className="row">
-                <button type="button" className="btn sm" disabled={busy || !edit.savedEmail} onClick={() => openSpace({ id: edit.id, fullName: `${edit.firstName} ${edit.lastName}`, email: edit.savedEmail })}>Ouvrir son espace employé</button>
-                <span className="small muted" style={{ flex: 1, minWidth: 200 }}>{edit.savedEmail ? `Invitation à ${edit.savedEmail}, ou rattachement immédiat si cette personne a déjà un accès à l'entreprise.` : "Renseignez et enregistrez d'abord son e-mail."}</span>
+                <button type="button" className="btn sm" disabled={busy} onClick={() => openSpace({ id: edit.id, fullName: `${edit.firstName} ${edit.lastName}`, email: edit.savedEmail })}>Ouvrir son espace employé</button>
+                <span className="small muted" style={{ flex: 1, minWidth: 200 }}>Accès immédiat si la personne a déjà un compte dans l'entreprise ; sinon invitation par e-mail{edit.savedEmail ? ` (${edit.savedEmail})` : ''}.</span>
               </div>)}
             <div className="vg-avatar-edit">
               <Avatar e={{ ...edit, fullName: `${edit.firstName} ${edit.lastName}` }} src={photo === undefined ? edit.photo && `/api${edit.photo}` : photo} />
@@ -312,6 +326,31 @@ function Employees() {
               {sim && <SimulatedSlip slip={sim.payslip} />}
             </>}
             <div className="row"><button className="btn primary" disabled={busy}>Enregistrer</button><button type="button" className="btn" onClick={() => setEdit(null)}>Annuler</button></div>
+          </form>
+        </div>
+      )}
+      {space && (
+        <div className="modal-back" onClick={() => setSpace(null)}>
+          <form className="modal" role="dialog" aria-modal="true" aria-labelledby="space-title" style={{ width: 'min(560px, 100%)', zIndex: 2 }} onClick={(ev) => ev.stopPropagation()} onSubmit={(ev) => { ev.preventDefault(); confirmSpace(); }}>
+            <h2 id="space-title">Ouvrir l'espace de {space.e.fullName}</h2>
+            <Alert>{error}</Alert>
+            {space.accounts.length > 0 && <fieldset style={{ border: 0, padding: 0, display: 'grid', gap: 8 }}>
+              <legend className="small" style={{ fontWeight: 600, marginBottom: 6 }}>Rattacher à son compte existant — accès immédiat</legend>
+              {space.accounts.map((a) => (
+                <label key={a.userId} className="row small" style={{ alignItems: 'flex-start', flexWrap: 'nowrap' }}>
+                  <input type="radio" name="space-account" checked={space.choice === a.userId} onChange={() => setSpace({ ...space, choice: a.userId })} style={{ marginTop: 3 }} />
+                  <span><b>{a.name}</b>{a.match && <> <Pill tone="ok">{MATCH[a.match]}</Pill></>}{a.isOwner && <> <Pill>Propriétaire</Pill></>}<br /><span className="muted">{a.email}</span></span>
+                </label>))}
+            </fieldset>}
+            <fieldset style={{ border: 0, padding: 0, display: 'grid', gap: 8 }}>
+              <legend className="small" style={{ fontWeight: 600, marginBottom: 6 }}>{space.accounts.length ? 'Ou, si elle n’a pas encore de compte' : 'Pas encore de compte dans l’entreprise'}</legend>
+              <label className="row small" style={{ flexWrap: 'nowrap' }}>
+                <input type="radio" name="space-account" disabled={!space.e.email} checked={space.choice === 'invite'} onChange={() => setSpace({ ...space, choice: 'invite' })} />
+                <span>{space.e.email ? <>Inviter par e-mail : <b>{space.e.email}</b> <span className="muted">(accès après acceptation — vérifiez l'adresse)</span></> : <span className="muted">Invitation impossible : renseignez son e-mail sur la fiche.</span>}</span>
+              </label>
+            </fieldset>
+            <div className="row"><button className="btn primary" disabled={busy || (space.choice === 'invite' && !space.e.email)}>{space.choice === 'invite' ? 'Envoyer l’invitation' : 'Ouvrir l’espace maintenant'}</button>
+              <button type="button" className="btn" onClick={() => setSpace(null)}>Annuler</button></div>
           </form>
         </div>
       )}

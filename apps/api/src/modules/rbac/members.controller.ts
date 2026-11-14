@@ -22,6 +22,21 @@ import { isSensitive } from './permissions';
 
 const INVITE_DAYS = 7;
 
+/** Nom sans accents ni casse, mots séparés par une espace (comparaison fiche employé / compte). */
+const normalize = (v: string) => v.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+/** Distance d'édition (Levenshtein), pour repérer un e-mail saisi avec une faute de frappe. */
+function editDistance(a: string, b: string) {
+  if (Math.abs(a.length - b.length) > 2) return 3;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+const rank = (m: string | null) => ({ email: 0, similar_email: 1, name: 2 } as Record<string, number>)[m ?? ''] ?? 3;
+
 async function assertRolesAssignable(trx: TenantTrx, t: TenantInfo, roleIds: string[]) {
   if (!roleIds.every(isUuid)) throw badRequest('Rôle invalide.');
   const roles = await trx.selectFrom('role').select(['id', 'key', 'permissions']).where('company_id', '=', t.companyId).where('id', 'in', roleIds).execute();
@@ -124,35 +139,72 @@ export class MembersController {
   }
 
   /**
-   * Ouvre l'espace personnel d'un employé (rôle « Employé ») : invitation, sa fiche étant rattachée au compte à l'acceptation ;
-   * si la personne a déjà un accès à l'entreprise (caissier, commercial…), sa fiche est rattachée tout de suite à ce compte.
+   * Comptes de l'entreprise auxquels rattacher la fiche d'un employé : comptes actifs sans fiche, les plus probables
+   * d'abord (même e-mail, e-mail presque identique — faute de frappe —, même nom).
+   */
+  @Permission('users.admin')
+  @Get('company/employees/:id/accounts')
+  employeeAccounts(@Tenant() t: TenantInfo, @Param('id') id: string) {
+    if (!isUuid(id)) throw notFound('Employé');
+    return this.db.tenant(t.ctx, async (trx) => {
+      const e = await trx.selectFrom('employee').select(['id', 'first_name', 'last_name', 'email', 'user_id']).where('id', '=', id).executeTakeFirst();
+      if (!e) throw notFound('Employé');
+      const members = await trx.selectFrom('company_membership as m').innerJoin('user_account as u', 'u.id', 'm.user_id')
+        .select(['m.id', 'm.user_id', 'u.full_name', 'u.email', 'm.is_owner']).where('m.company_id', '=', t.companyId).where('m.status', '=', 'active')
+        .where(({ not, exists, selectFrom }) => not(exists(selectFrom('employee as x').select('x.id').whereRef('x.user_id', '=', 'm.user_id')))).execute();
+      const email = e.email?.trim().toLowerCase() ?? '';
+      const names = new Set(normalize(`${e.first_name} ${e.last_name}`).split(' ').filter((w) => w.length > 1));
+      return members.map((m) => {
+        const words = normalize(m.full_name).split(' ').filter((w) => w.length > 1);
+        const common = words.filter((w) => names.has(w)).length;
+        const match = email && m.email === email ? 'email' : email && editDistance(m.email, email) <= 2 ? 'similar_email' : common >= 2 || (common === 1 && words.length === 1) ? 'name' : null;
+        return { userId: m.user_id, name: m.full_name, email: m.email, isOwner: m.is_owner, match };
+      }).sort((a, b) => rank(a.match) - rank(b.match) || a.name.localeCompare(b.name));
+    });
+  }
+
+  /**
+   * Ouvre l'espace personnel d'un employé (rôle « Employé »), avec un accès immédiat dès qu'un compte existe :
+   * - userId fourni : la fiche est rattachée à ce compte de l'entreprise (choisi par le responsable) ;
+   * - sinon, compte de l'entreprise au même e-mail que la fiche : rattachement immédiat ;
+   * - sinon, invitation à l'e-mail de la fiche, rattachée à l'acceptation.
    */
   @Permission('users.admin')
   @Post('company/employees/:id/invite')
-  inviteEmployee(@Tenant() t: TenantInfo, @Param('id') id: string) {
+  inviteEmployee(@Tenant() t: TenantInfo, @Param('id') id: string, @Body() body: unknown) {
     if (!isUuid(id)) throw notFound('Employé');
+    const input = parse(z.object({ userId: z.string().uuid({ message: 'Compte introuvable' }).optional() }).strict(), body ?? {});
     return this.db.tenant(t.ctx, async (trx) => {
       const e = await trx.selectFrom('employee').select(['id', 'email', 'user_id', 'site_id']).where('id', '=', id).executeTakeFirst();
       if (!e) throw notFound('Employé');
       if (e.user_id) throw conflict('Cet employé a déjà accès à son espace.', 'already_linked');
-      if (!e.email) throw badRequest("Renseignez l'adresse e-mail de l'employé avant de l'inviter.", undefined, 'no_email');
       const role = await trx.selectFrom('role').select('id').where('company_id', '=', t.companyId).where('key', '=', 'employee').executeTakeFirst();
       if (!role) throw badRequest('Le rôle « Employé » a été supprimé.', undefined, 'no_employee_role');
-      const email = e.email.trim().toLowerCase();
-      const member = await trx.selectFrom('company_membership as m').innerJoin('user_account as u', 'u.id', 'm.user_id')
-        .select(['m.id', 'm.user_id', 'm.status']).where('m.company_id', '=', t.companyId).where('u.email', '=', email).executeTakeFirst();
+      const email = e.email?.trim().toLowerCase() ?? null;
+      const members = trx.selectFrom('company_membership as m').innerJoin('user_account as u', 'u.id', 'm.user_id')
+        .select(['m.id', 'm.user_id', 'm.status', 'm.site_ids', 'u.email']).where('m.company_id', '=', t.companyId);
+      const member = input.userId ? await members.where('m.user_id', '=', input.userId).executeTakeFirst()
+        : email ? await members.where('u.email', '=', email).executeTakeFirst() : undefined;
+      if (input.userId && !member) throw notFound('Compte');
       if (member) {
         if (member.status !== 'active') throw conflict("Le compte de cette personne est désactivé : réactivez-le d'abord dans Utilisateurs.", 'member_disabled');
         const other = await trx.selectFrom('employee').select('number').where('user_id', '=', member.user_id).executeTakeFirst();
         if (other) throw conflict(`Ce compte est déjà rattaché à la fiche ${other.number}.`, 'user_already_linked');
-        await trx.updateTable('employee').set({ user_id: member.user_id }).where('id', '=', id).execute();
+        // L'e-mail de la fiche suit celui du compte (corrige une faute de frappe) ; le site de la fiche est ouvert au compte s'il est limité.
+        await trx.updateTable('employee').set({ user_id: member.user_id, email: member.email }).where('id', '=', id).execute();
+        if (member.site_ids && !member.site_ids.includes(e.site_id)) {
+          await trx.updateTable('company_membership').set({ site_ids: [...member.site_ids, e.site_id] }).where('id', '=', member.id).execute();
+        }
         await trx.insertInto('membership_role').values({ company_id: t.companyId, membership_id: member.id, role_id: role.id }).onConflict((oc) => oc.doNothing()).execute();
-        await this.audit.tenant(trx, t.ctx, { action: 'employee.account_linked', entityType: 'employee', entityId: id, data: { email } });
-        return { linked: true as const, email };
+        // Les invitations encore ouvertes pour cette fiche n'ont plus d'objet.
+        await trx.updateTable('invitation').set({ revoked_at: new Date() }).where('employee_id', '=', id).where('accepted_at', 'is', null).where('revoked_at', 'is', null).execute();
+        await this.audit.tenant(trx, t.ctx, { action: 'employee.account_linked', entityType: 'employee', entityId: id, data: { email: member.email, previousEmail: email !== member.email ? email : undefined } });
+        return { linked: true as const, email: member.email, emailCorrected: !!email && email !== member.email };
       }
+      if (!email) throw badRequest("Renseignez l'adresse e-mail de l'employé, ou choisissez son compte existant.", undefined, 'no_email');
       const pending = await trx.selectFrom('invitation').select('id').where('employee_id', '=', id).where('accepted_at', 'is', null).where('revoked_at', 'is', null).where('expires_at', '>', new Date()).executeTakeFirst();
       if (pending) throw conflict('Une invitation est déjà en attente pour cet employé.', 'invitation_pending');
-      return this.createInvitation(trx, t, { email: e.email, roleIds: [role.id], employeeId: id, siteIds: [e.site_id] });
+      return this.createInvitation(trx, t, { email, roleIds: [role.id], employeeId: id, siteIds: [e.site_id] });
     });
   }
 
