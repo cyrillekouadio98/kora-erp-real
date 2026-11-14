@@ -16,9 +16,9 @@ import { fullMonths, workingDays } from './workdays';
 export const LEAVE_TYPES: Record<LeaveType, string> = {
   annual: 'Congé payé', sick: 'Maladie', maternity: 'Maternité', family_event: 'Permission exceptionnelle (événement familial)', unpaid: 'Congé sans solde', other: 'Autre absence',
 };
-/** Seuls les salariés en CDI et en CDD acquièrent des congés payés ; stagiaires et journaliers n'ont que les autres absences. */
+/** Seuls les salariés en CDI et en CDD acquièrent des congés payés ; stagiaires, journaliers et occasionnels n'ont que les autres absences. */
 export const PAID_LEAVE_CONTRACTS = ['cdi', 'cdd'];
-const CONTRACT_LABELS: Record<string, string> = { stage: 'un stagiaire', journalier: 'un journalier' };
+const CONTRACT_LABELS: Record<string, string> = { stage: 'un stagiaire', journalier: 'un journalier', occasionnel: 'un occasionnel' };
 const noPaidLeave = (contract: string) => badRequest(
   `Les congés payés sont réservés aux salariés en CDI ou en CDD : pour ${CONTRACT_LABELS[contract] ?? 'ce contrat'}, choisissez une permission exceptionnelle (sans retenue sur salaire).`,
   undefined, 'no_paid_leave');

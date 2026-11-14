@@ -11,11 +11,11 @@ import { AccountingService } from '../accounting/accounting.service';
 import { AuditService } from '../audit/audit.service';
 import { LeaveService } from '../leave/leave.service';
 import { TreasuryService } from '../treasury/treasury.service';
-import { computePayslip, DEFAULT_PAYROLL_PARAMS, familyParts, MaritalStatus, netToGross, PayrollParams } from './payroll.calc';
+import { computePayslip, DEFAULT_PAYROLL_PARAMS, familyParts, isChargeFree, MaritalStatus, netToGross, PayrollParams } from './payroll.calc';
 
 export interface EmployeeInput {
   firstName: string; lastName: string; jobTitle?: string | null; department?: string | null; hireDate: string; endDate?: string | null;
-  contractType?: 'cdi' | 'cdd' | 'stage' | 'journalier'; cnpsNumber?: string | null; maritalStatus?: MaritalStatus; children?: number; partsOverride?: number | null;
+  contractType?: 'cdi' | 'cdd' | 'stage' | 'journalier' | 'occasionnel'; cnpsNumber?: string | null; maritalStatus?: MaritalStatus; children?: number; partsOverride?: number | null;
   baseSalary?: number; housingAllowance?: number; transportAllowance?: number; otherAllowances?: number;
   category?: string | null; targetNet?: number | null; extraSalary?: number;
   paymentMethod?: 'cash' | 'bank_transfer' | 'mobile_money'; bankDetails?: string | null; phone?: string | null; email?: string | null;
@@ -208,7 +208,7 @@ export class PayrollService {
   /** « Calculer la fiche » : salaire de base et sursalaire qui donnent le net demandé, avec le bulletin correspondant. */
   async netToGross(t: TenantInfo, input: {
     targetNet: number; category?: string | null; housingAllowance: number; transportAllowance: number; otherAllowances: number;
-    maritalStatus: MaritalStatus; children: number; partsOverride?: number | null;
+    maritalStatus: MaritalStatus; children: number; partsOverride?: number | null; contractType?: string;
   }) {
     this.assertSalaries(t);
     return this.db.tenant(t.ctx, async (trx) => {
@@ -219,7 +219,7 @@ export class PayrollService {
       const parts = input.partsOverride ?? familyParts(input.maritalStatus, input.children);
       const cmuBeneficiaries = 1 + (input.maritalStatus === 'married' ? 1 : 0) + input.children;
       const r = netToGross(input.targetNet, cat?.minSalary ?? 0, {
-        housingAllowance: input.housingAllowance, transportAllowance: input.transportAllowance, otherAllowances: input.otherAllowances, parts, cmuBeneficiaries,
+        housingAllowance: input.housingAllowance, transportAllowance: input.transportAllowance, otherAllowances: input.otherAllowances, parts, cmuBeneficiaries, chargeFree: isChargeFree(input.contractType),
       }, p);
       if (!r.ok) {
         throw badRequest(r.reason === 'below_category'
@@ -248,7 +248,7 @@ export class PayrollService {
     const beneficiaries = 1 + (e.marital_status === 'married' ? 1 : 0) + e.children;
     const result = computePayslip({
       baseSalary: Number(e.base_salary), extraSalary: Number(e.extra_salary), housingAllowance: Number(e.housing_allowance), otherAllowances: Number(e.other_allowances), transportAllowance: Number(e.transport_allowance),
-      ...inputs, parts, cmuBeneficiaries: beneficiaries,
+      ...inputs, parts, cmuBeneficiaries: beneficiaries, chargeFree: isChargeFree(e.contract_type),
     }, params);
     if (result.net < 0) throw badRequest(`Le net à payer de ${e.first_name} ${e.last_name} serait négatif : réduisez les retenues.`, undefined, 'negative_net');
     const employee = { number: e.number, name: `${e.first_name} ${e.last_name}`, jobTitle: e.job_title, department: e.department, hireDate: e.hire_date,

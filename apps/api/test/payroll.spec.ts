@@ -62,6 +62,16 @@ describe('Calcul du bulletin de paie (paramètres par défaut)', () => {
     // Absences : le sursalaire est proratisé comme le salaire de base
     expect(computePayslip(input({ baseSalary: 200_000, extraSalary: 100_000, absenceDays: 3 }), P).taxable).toBe(320_000);
   });
+
+  it('stage et occasionnel : ni charges sociales ni charges fiscales, le net vaut le brut', () => {
+    const r = computePayslip(input({ chargeFree: true, transportAllowance: 30_000, advanceDeduction: 10_000 }), P);
+    expect(r.lines.map((l) => l.code)).toEqual(['BASE', 'LOG', 'AVA', 'TRA']);
+    expect(r.gross).toBe(380_000);
+    expect(r.net).toBe(370_000);
+    expect(r.totals).toMatchObject({ cnpsEmployee: 0, cnpsEmployer: 0, cmuEmployee: 0, cmuEmployer: 0, its: 0, socialEmployer: 0, taxesEmployer: 0, employerCost: 380_000 });
+    const g = netToGross(150_000, 0, { housingAllowance: 0, transportAllowance: 0, otherAllowances: 0, parts: 1, cmuBeneficiaries: 1, chargeFree: true }, P);
+    expect(g).toMatchObject({ ok: true, baseSalary: 150_000, extraSalary: 0 });
+  });
 });
 
 describe('Paie : employés, campagne mensuelle, comptabilité, paiement', () => {
@@ -203,5 +213,12 @@ describe('Paie : employés, campagne mensuelle, comptabilité, paiement', () => 
     const unset = (await owner.agent.post('/company/payroll/net-to-gross').send({ ...body, category: '5', targetNet: 60_000 })).body;
     expect(unset.extraSalary).toBe(0);
     expect(unset.warnings.join(' ')).toMatch(/pas renseigné.*SMIG/s);
+
+    // Occasionnel (chargeur-déchargeur) : sans charges, le net demandé est le salaire.
+    const occ = (await owner.agent.post('/company/payroll/net-to-gross').send({ targetNet: 90_000, contractType: 'occasionnel' })).body;
+    expect(occ).toMatchObject({ baseSalary: 90_000, extraSalary: 0, payslip: { net: 90_000, gross: 90_000, employerCost: 90_000 } });
+    const created = await owner.agent.post('/company/employees').send({ firstName: 'Ali', lastName: 'Traoré', hireDate: today(), contractType: 'occasionnel', baseSalary: 90_000 });
+    expect(created.status).toBe(201);
+    expect(created.body.contractType).toBe('occasionnel');
   });
 });

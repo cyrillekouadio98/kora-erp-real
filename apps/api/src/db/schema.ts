@@ -204,7 +204,7 @@ export interface StockDocumentLineTable {
 type NumNullable = ColumnType<string | null, number | string | null | undefined, number | string | null>;
 export interface EmployeeTable {
   company_id: string; site_id: Generated<string>; id: Generated<string>; number: string; first_name: string; last_name: string; job_title: string | null; department: string | null;
-  hire_date: string; end_date: DateNullable; contract_type: Generated<'cdi' | 'cdd' | 'stage' | 'journalier'>; cnps_number: string | null;
+  hire_date: string; end_date: DateNullable; contract_type: Generated<'cdi' | 'cdd' | 'stage' | 'journalier' | 'occasionnel'>; cnps_number: string | null;
   marital_status: Generated<'single' | 'married' | 'divorced' | 'widowed'>; children: Generated<number>; parts_override: NumNullable;
   base_salary: NumDefault; housing_allowance: NumDefault; transport_allowance: NumDefault; other_allowances: NumDefault;
   category: string | null; target_net: NumNullable; extra_salary: NumDefault;

@@ -3,7 +3,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
-import { CONTRACTS, date, MARITAL, money, PAYMENT_METHODS, periodLabel } from '@/lib/format';
+import { CHARGE_FREE_CONTRACTS, CONTRACTS, date, MARITAL, money, PAYMENT_METHODS, periodLabel } from '@/lib/format';
 import { useSession } from '@/components/session';
 import { Alert, Avatar, Field, hue, Pill, shrinkImage, useAction } from '@/components/ui';
 
@@ -16,7 +16,7 @@ const EMPTY = {
 /** Fiche de l'API vers le formulaire : valeurs absentes (salaires masqués) remplacées par celles par défaut. */
 const MONEY_FIELDS = ['baseSalary', 'extraSalary', 'housingAllowance', 'transportAllowance', 'otherAllowances'];
 /** Champs dont dépend le calcul : les modifier rend le bulletin simulé périmé. */
-const SIM_FIELDS = ['category', 'targetNet', 'housingAllowance', 'transportAllowance', 'otherAllowances', 'maritalStatus', 'children', 'partsOverride', 'baseSalary', 'extraSalary'];
+const SIM_FIELDS = ['contractType', 'category', 'targetNet', 'housingAllowance', 'transportAllowance', 'otherAllowances', 'maritalStatus', 'children', 'partsOverride', 'baseSalary', 'extraSalary'];
 /** Champs qui relancent le calcul automatique du salaire de base et du sursalaire à partir du net à payer. */
 const AUTO_FIELDS = SIM_FIELDS.filter((k) => k !== 'baseSalary' && k !== 'extraSalary');
 
@@ -134,6 +134,7 @@ function Employees() {
       targetNet: Number(edit.targetNet), category: edit.category || null, housingAllowance: Number(edit.housingAllowance || 0),
       transportAllowance: Number(edit.transportAllowance || 0), otherAllowances: Number(edit.otherAllowances || 0),
       maritalStatus: edit.maritalStatus, children: Number(edit.children || 0), partsOverride: edit.partsOverride === '' || edit.partsOverride === null ? null : Number(edit.partsOverride),
+      contractType: edit.contractType,
       } });
       if (seq !== calcSeq.current) return;
       setEdit((x: any) => ({ ...x, baseSalary: r.baseSalary, extraSalary: r.extraSalary }));
@@ -285,7 +286,8 @@ function Employees() {
               <Field label="Service" value={edit.department ?? ''} onChange={set('department')} />
               {sites.length > 1 && <label className="field">Site d'affectation<select className="input" value={edit.siteId ?? ''} onChange={set('siteId')}>
                 {!edit.id && <option value="">— Site affiché —</option>}{sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>}
-              <label className="field">Contrat<select className="input" value={edit.contractType} onChange={set('contractType')}>{Object.entries(CONTRACTS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+              <label className="field">Contrat<select className="input" value={edit.contractType} onChange={set('contractType')}>{Object.entries(CONTRACTS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+                {CHARGE_FREE_CONTRACTS.includes(edit.contractType) && <span className="small muted">Sans charges sociales ni fiscales, sans congés payés : le net à payer est égal au brut.</span>}</label>
               <Field label="N° CNPS" value={edit.cnpsNumber ?? ''} onChange={set('cnpsNumber')} />
               <Field label="Date d'embauche" type="date" required value={edit.hireDate} onChange={set('hireDate')} />
               <Field label="Date de sortie (le cas échéant)" type="date" value={edit.endDate ?? ''} onChange={set('endDate')} />

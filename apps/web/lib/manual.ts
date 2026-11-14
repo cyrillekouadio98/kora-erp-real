@@ -558,7 +558,7 @@ La fiche employé est la base des congés, des évaluations et de la paie. Ces m
 *Qui : responsable RH ; la rémunération par le gestionnaire de paie. Chemin : Employés › Nouvel employé.*
 
 1. **Identité** : nom, prénom, photo, téléphone, e-mail (nécessaire pour l'espace employé), situation familiale, enfants à charge. Les parts fiscales se calculent automatiquement si le champ reste vide.
-2. **Emploi** : site, service, poste, catégorie, type de contrat (CDI, CDD, stage, journalier), date d'embauche, numéro CNPS.
+2. **Emploi** : site, service, poste, catégorie, type de contrat (CDI, CDD, stage, journalier, occasionnel — stage et occasionnel sans charges sociales ni fiscales), date d'embauche, numéro CNPS.
 3. **Rémunération** : salaire de base (salaire catégoriel), sursalaire, indemnités de transport, de logement et autres. Pour partir d'un net convenu, saisir le net à payer puis **Calculer la fiche** : Kora déduit le sursalaire compte tenu de la CNPS, de la CMU et de l'ITS.
 4. **Paiement** : mode de paiement du salaire, numéro mobile money ou coordonnées bancaires (permission sensible).
 5. Enregistrer. Le bulletin simulé affiché permet de vérifier brut et net.

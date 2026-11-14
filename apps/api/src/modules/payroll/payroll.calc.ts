@@ -64,10 +64,19 @@ export function familyParts(status: MaritalStatus, children: number): number {
   return Math.min(5, parts);
 }
 
+/**
+ * Contrats sans charges sociales ni fiscales : stage et occasionnel (chargeurs-déchargeurs, main-d'œuvre ponctuelle).
+ * Le bulletin ne porte ni CNPS, ni CMU, ni ITS, ni taxes patronales : le net vaut le brut.
+ */
+export const CHARGE_FREE_CONTRACTS = ['stage', 'occasionnel'];
+export const isChargeFree = (contract?: string | null) => !!contract && CHARGE_FREE_CONTRACTS.includes(contract);
+
 export interface PayslipInput {
   baseSalary: number; extraSalary?: number; housingAllowance: number; otherAllowances: number; transportAllowance: number;
   overtime: number; bonus: number; absenceDays: number; advanceDeduction: number; otherDeduction: number;
   parts: number; cmuBeneficiaries: number;
+  /** Contrat sans charges sociales ni fiscales (stage, occasionnel). */
+  chargeFree?: boolean;
 }
 
 export interface PayslipLine { code: string; label: string; base?: number; rate?: number; employee?: number; employer?: number; gain?: number }
@@ -104,6 +113,21 @@ export function computePayslip(input: PayslipInput, p: PayrollParams) {
 
   const taxable = base + input.overtime + input.housingAllowance + input.otherAllowances + input.bonus + transportTaxable;
   const gross = taxable + transportExempt;
+
+  if (input.chargeFree) {
+    if (input.advanceDeduction) lines.push({ code: 'AVA', label: "Remboursement d'avance", employee: input.advanceDeduction });
+    if (input.otherDeduction) lines.push({ code: 'RET', label: 'Autres retenues', employee: input.otherDeduction });
+    if (transportExempt) lines.push({ code: 'TRA', label: 'Indemnité de transport (non imposable)', gain: transportExempt });
+    const deductions = input.advanceDeduction + input.otherDeduction;
+    return {
+      lines, gross, taxable, net: gross - deductions,
+      totals: {
+        cnpsEmployee: 0, cnpsEmployer: 0, familyBenefits: 0, workAccident: 0, cmuEmployee: 0, cmuEmployer: 0, its: 0, itsGross: 0, itsReduction: 0,
+        employerTax: 0, apprenticeship: 0, training: 0, advances: input.advanceDeduction, otherDeductions: input.otherDeduction,
+        socialEmployee: 0, socialEmployer: 0, taxesEmployer: 0, deductions, employerCost: gross,
+      },
+    };
+  }
 
   // Cotisations sociales
   const cnpsBase = Math.min(taxable, p.cnpsCeiling);

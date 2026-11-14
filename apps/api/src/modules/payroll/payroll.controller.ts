@@ -15,7 +15,7 @@ const EmployeeSchema = z.object({
   firstName: z.string().trim().min(1, { message: 'Indiquez le prénom' }).max(80),
   lastName: z.string().trim().min(1, { message: 'Indiquez le nom' }).max(80),
   jobTitle: text(120), department: text(80), hireDate: isoDate, endDate: isoDate.nullable().optional(),
-  contractType: z.enum(['cdi', 'cdd', 'stage', 'journalier']).optional(), cnpsNumber: text(40),
+  contractType: z.enum(['cdi', 'cdd', 'stage', 'journalier', 'occasionnel']).optional(), cnpsNumber: text(40),
   maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']).optional(),
   children: z.coerce.number().int().min(0).max(20).optional(),
   partsOverride: z.coerce.number().min(1).max(5).multipleOf(0.5).nullable().optional(),
@@ -46,6 +46,7 @@ const NetToGrossSchema = z.object({
   category: text(20), housingAllowance: money.default(0), transportAllowance: money.default(0), otherAllowances: money.default(0),
   maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']).default('single'), children: z.coerce.number().int().min(0).max(20).default(0),
   partsOverride: z.coerce.number().min(1).max(5).multipleOf(0.5).nullable().optional(),
+  contractType: z.enum(['cdi', 'cdd', 'stage', 'journalier', 'occasionnel']).optional(),
 }).strict();
 
 @ApiTags('Employés et paie')

@@ -8,7 +8,7 @@ import { DatabaseService, TenantTrx } from '../../db/database.service';
 import type { LeaveType } from '../../db/schema';
 import { LeaveService } from '../leave/leave.service';
 import { workingDays } from '../leave/workdays';
-import { PayrollParams, slipFigures, PayslipLine } from './payroll.calc';
+import { isChargeFree, PayrollParams, slipFigures, PayslipLine } from './payroll.calc';
 import { periodLabel, PayrollService } from './payroll.service';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -68,9 +68,9 @@ export class PayrollInsightsService {
     if (status === 'ending') out.push('ending_soon');
     if (e.contract_type === 'cdd' && !e.end_date) out.push('cdd_no_end');
     // Le montant n'est révélé qu'à qui voit les salaires.
-    if (t.permissions.has('payroll.salaries') && e.contract_type !== 'stage' && Number(e.base_salary) > 0 && Number(e.base_salary) < p.smig) out.push('below_smig');
-    if (!e.category && e.contract_type !== 'stage') out.push('no_category');
-    if (!e.cnps_number && e.contract_type !== 'stage') out.push('no_cnps');
+    if (t.permissions.has('payroll.salaries') && !isChargeFree(e.contract_type) && Number(e.base_salary) > 0 && Number(e.base_salary) < p.smig) out.push('below_smig');
+    if (!e.category && !isChargeFree(e.contract_type)) out.push('no_category');
+    if (!e.cnps_number && !isChargeFree(e.contract_type)) out.push('no_cnps');
     if ((e.payment_method === 'bank_transfer' && !e.bank_details_enc) || (e.payment_method === 'mobile_money' && !e.phone)) out.push('no_payment_details');
     return out;
   }

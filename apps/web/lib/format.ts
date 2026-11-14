@@ -180,12 +180,14 @@ export const MOVEMENT_CATEGORIES: Record<string, string> = {
 
 export const JOURNALS: Record<string, string> = { VT: 'Ventes', AC: 'Achats', TR: 'Trésorerie', OD: 'Opérations diverses', AN: 'À-nouveaux' };
 
-export const CONTRACTS: Record<string, string> = { cdi: 'CDI', cdd: 'CDD', stage: 'Stage', journalier: 'Journalier' };
+export const CONTRACTS: Record<string, string> = { cdi: 'CDI', cdd: 'CDD', stage: 'Stage', journalier: 'Journalier', occasionnel: 'Occasionnel' }
+/** Contrats sans charges sociales ni fiscales (même liste que l'API). */
+export const CHARGE_FREE_CONTRACTS = ['stage', 'occasionnel'];;
 export const MARITAL: Record<string, string> = { single: 'Célibataire', married: 'Marié(e)', divorced: 'Divorcé(e)', widowed: 'Veuf / veuve' };
 const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 /** « 2026-10 » → « octobre 2026 » */
 export const periodLabel = (p: string) => `${MONTHS[Number(p.slice(5, 7)) - 1]} ${p.slice(0, 4)}`;
-/** Types d'absence ouverts à un salarié : sans droit aux congés payés (stage, journalier), le congé payé est retiré. */
+/** Types d'absence ouverts à un salarié : sans droit aux congés payés (stage, journalier, occasionnel), le congé payé est retiré. */
 export const leaveTypesFor = (entitled: boolean) => Object.entries(LEAVE_TYPES).filter(([k]) => entitled || k !== 'annual');
 export const LEAVE_TYPES: Record<string, string> = {
   annual: 'Congé payé', sick: 'Maladie', maternity: 'Maternité', family_event: 'Permission exceptionnelle', unpaid: 'Congé sans solde', other: 'Autre absence',
