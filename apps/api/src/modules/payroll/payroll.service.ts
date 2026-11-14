@@ -191,6 +191,14 @@ export class PayrollService {
       const patch = this.columns(input);
       if (input.endDate !== undefined && input.endDate && input.endDate < (input.hireDate ?? before.hire_date)) throw badRequest("La date de sortie précède la date d'embauche.", undefined, 'end_before_hire');
       const after = Object.keys(patch).length ? await trx.updateTable('employee').set(patch).where('id', '=', id).returningAll().executeTakeFirstOrThrow() : before;
+      // Changement de site d'un employé qui a son espace : son accès, s'il est limité à certains sites, s'ouvre au nouveau
+      // (sinon « Mon espace » ne retrouverait plus sa fiche). Les sites déjà accordés sont conservés.
+      if (input.siteId && input.siteId !== before.site_id && before.user_id) {
+        const m = await trx.selectFrom('company_membership').select(['id', 'site_ids']).where('company_id', '=', t.companyId).where('user_id', '=', before.user_id).executeTakeFirst();
+        if (m?.site_ids && !m.site_ids.includes(input.siteId)) {
+          await trx.updateTable('company_membership').set({ site_ids: [...m.site_ids, input.siteId] }).where('id', '=', m.id).execute();
+        }
+      }
       // Le journal ne garde que la liste des champs modifiés : ni salaire ni RIB en clair.
       await this.audit.tenant(trx, t.ctx, { action: 'employee.updated', entityType: 'employee', entityId: id, data: { number: before.number, fields: Object.keys(input) } });
       return this.present(t, after, await this.photoAt(trx, id));

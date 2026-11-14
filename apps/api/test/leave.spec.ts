@@ -130,6 +130,19 @@ describe('Espace employé et congés', () => {
     await owner.agent.post(`/company/payroll/runs/${run.id}/validate`);
   });
 
+  it("affecte l'employé à un autre site sans lui couper son espace", async () => {
+    const site = await owner.agent.post('/company/sites').send({ name: 'Boutique Bonon' });
+    expect(site.status).toBe(201);
+    const moved = await owner.agent.patch(`/company/employees/${ayaId}`).send({ siteId: site.body.id });
+    expect(moved.body.siteId).toBe(site.body.id);
+    expect((await staff.get('/company/me')).body.employee).toMatchObject({ name: 'Aya Kouassi' }); // espace toujours accessible
+    const c = await ownerClient();
+    try {
+      const m = await c.query(`SELECT m.site_ids FROM company_membership m JOIN employee e ON e.user_id = m.user_id AND e.company_id = m.company_id WHERE e.id = $1`, [ayaId]);
+      expect(m.rows[0].site_ids).toContain(site.body.id);
+    } finally { await c.end(); }
+  });
+
   it("réserve les congés payés aux CDI et CDD : stagiaire et journalier n'ont que des permissions sans retenue", async () => {
     const stagiaire = (await owner.agent.post('/company/employees').send({ firstName: 'Awa', lastName: 'Stagiaire', hireDate: '2025-01-15', contractType: 'stage', email: 'awa.stage@test.ci', baseSalary: 75_000 })).body.id;
     const journalier = (await owner.agent.post('/company/employees').send({ firstName: 'Yao', lastName: 'Journalier', hireDate: '2025-01-15', contractType: 'journalier', baseSalary: 75_000 })).body.id;

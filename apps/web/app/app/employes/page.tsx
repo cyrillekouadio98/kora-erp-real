@@ -101,7 +101,19 @@ function Employees() {
   const open = (e: any) => { setSim(null); setAutoCalc(0); setCalc({ busy: false, error: '' }); setPhoto(undefined); setEdit(e); };
   // Sites : rappel sur la vignette quand plusieurs sites sont affichés, choix du site sur la fiche.
   const sites = ctx?.sites ?? [];
-  const siteOf = (id?: string) => (!ctx?.siteId && sites.length > 1 ? sites.find((s) => s.id === id)?.name : undefined);
+  const siteOf = (id?: string) => (sites.length > 1 ? sites.find((s) => s.id === id)?.name ?? 'Site archivé' : undefined);
+  // Affectation aux sites : tous les employés affichés, un site chacun, enregistrés en une fois.
+  const [assign, setAssign] = useState<Record<string, string> | null>(null);
+  const saveAssign = () => run(async () => {
+    const changed = (rows ?? []).filter((e) => assign![e.id] && assign![e.id] !== e.siteId);
+    for (const e of changed) await api(`/company/employees/${e.id}`, { method: 'PATCH', body: { siteId: assign![e.id] } });
+    setAssign(null);
+    const away = ctx?.siteId ? changed.filter((e) => assign![e.id] !== ctx.siteId).length : 0;
+    setNotice(changed.length
+      ? `${changed.length} employé(s) affecté(s) : ${changed.map((e) => `${e.fullName} → ${siteOf(assign![e.id])}`).join(', ')}.${away ? ' Ceux qui ont changé de site apparaissent dans la vue de leur nouveau site (ou « Tous les sites » en haut de page).' : ''}`
+      : 'Aucun changement.');
+    await load();
+  });
   // Ouverture directe d'une fiche : /app/employes?id=… (liens depuis la paie)
   const direct = useSearchParams().get('id');
   // Augmentations approuvées par une évaluation, en attente de leur mois d'effet
@@ -167,7 +179,9 @@ function Employees() {
   return (
     <>
       <div className="page-head"><h1>Employés</h1>
-        {can('employees.create') && writable && <button className="btn primary" onClick={() => open({ ...EMPTY, siteId: ctx?.siteId ?? '' })}>Nouvel employé</button>}</div>
+        <div className="row">
+          {sites.length > 1 && can('employees.update') && writable && !!rows?.length && <button className="btn" onClick={() => setAssign(Object.fromEntries((rows ?? []).map((e) => [e.id, e.siteId])))}>Affecter aux sites</button>}
+          {can('employees.create') && writable && <button className="btn primary" onClick={() => open({ ...EMPTY, siteId: ctx?.siteId ?? '' })}>Nouvel employé</button>}</div></div>
       <Alert kind="ok">{notice}</Alert>
       <Alert>{!edit && error}</Alert>
       {!salaries && <Alert kind="info">Les salaires et la paie ne sont visibles qu'avec la permission sensible « voir les salaires et bulletins ».</Alert>}
@@ -191,12 +205,13 @@ function Employees() {
           {rows && !shown.length && <p className="muted">Aucun employé.</p>}
         </div>
       ) : <div className="table-wrap"><table>
-        <thead><tr><th>Matricule</th><th>Employé</th><th>Contrat</th>{salaries && <th>Catégorie</th>}<th>Embauche</th><th className="n">Parts</th>{salaries && <th className="n">Salaire de base</th>}<th>Paiement</th><th></th></tr></thead>
+        <thead><tr><th>Matricule</th><th>Employé</th>{sites.length > 1 && <th>Site</th>}<th>Contrat</th>{salaries && <th>Catégorie</th>}<th>Embauche</th><th className="n">Parts</th>{salaries && <th className="n">Salaire de base</th>}<th>Paiement</th><th></th></tr></thead>
         <tbody>
           {shown.map((e) => (
             <tr key={e.id} style={e.active ? undefined : { opacity: 0.6 }}>
               <td style={{ whiteSpace: 'nowrap' }}><code className="k">{e.number}</code></td>
               <td><div className="row" style={{ flexWrap: 'nowrap' }}><span className="vg-mini"><Avatar e={e} /></span><div><b>{e.fullName}</b>{!e.active && <> <Pill>Sorti le {date(e.endDate)}</Pill></>}{e.linked && <> <Pill tone="ok">Espace employé</Pill></>}<div className="small muted">{[e.jobTitle, e.department].filter(Boolean).join(' · ')}</div></div></div></td>
+              {sites.length > 1 && <td className="small">{siteOf(e.siteId)}</td>}
               <td>{CONTRACTS[e.contractType]}</td>
               {salaries && <td className="small">{e.category ? catLabel(e.category) : '—'}</td>}
               <td style={{ whiteSpace: 'nowrap' }}>{date(e.hireDate)}</td>
@@ -209,11 +224,28 @@ function Employees() {
                 {can('employees.update') && writable && <button className="btn sm" onClick={() => open(toForm(e))}>Modifier</button>}</div></td>
             </tr>
           ))}
-          {rows && !shown.length && <tr><td colSpan={9} className="muted" style={{ textAlign: 'center', padding: 24 }}>Aucun employé.</td></tr>}
+          {rows && !shown.length && <tr><td colSpan={10} className="muted" style={{ textAlign: 'center', padding: 24 }}>Aucun employé.</td></tr>}
         </tbody>
       </table></div>}
       </div>
 
+      {assign && (
+        <div className="modal-back" onClick={() => setAssign(null)}>
+          <form className="modal" role="dialog" aria-modal="true" aria-labelledby="assign-title" style={{ width: 'min(640px, 100%)' }} onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); saveAssign(); }}>
+            <h2 id="assign-title">Affecter les employés à leur site</h2>
+            <p className="small muted" style={{ margin: 0 }}>Choisissez le site de chaque employé{ctx?.siteId ? ` affiché sur « ${sites.find((x) => x.id === ctx.siteId)?.name} »` : ''}. Ses ventes de caisse, son espace employé et les filtres par site suivent son affectation ; la paie reste commune à l'entreprise.</p>
+            <Alert>{error}</Alert>
+            <div className="table-wrap"><table>
+              <thead><tr><th>Employé</th><th>Site d'affectation</th></tr></thead>
+              <tbody>{(rows ?? []).map((e) => (
+                <tr key={e.id}><td><b>{e.fullName}</b><div className="small muted">{e.number}{e.jobTitle ? ` · ${e.jobTitle}` : ''}</div></td>
+                  <td><select className="input" aria-label={`Site de ${e.fullName}`} value={assign[e.id] ?? ''} onChange={(ev) => setAssign({ ...assign, [e.id]: ev.target.value })}>
+                    {sites.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></td></tr>))}</tbody>
+            </table></div>
+            <div className="row"><button className="btn primary" disabled={busy}>Enregistrer les affectations</button><button type="button" className="btn" onClick={() => setAssign(null)}>Annuler</button></div>
+          </form>
+        </div>
+      )}
       {edit && (
         <div className="modal-back" onClick={() => setEdit(null)}>
           <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); save(); }}>
