@@ -130,6 +130,31 @@ describe('Espace employé et congés', () => {
     await owner.agent.post(`/company/payroll/runs/${run.id}/validate`);
   });
 
+  it("réserve les congés payés aux CDI et CDD : stagiaire et journalier n'ont que des permissions sans retenue", async () => {
+    const stagiaire = (await owner.agent.post('/company/employees').send({ firstName: 'Awa', lastName: 'Stagiaire', hireDate: '2025-01-15', contractType: 'stage', email: 'awa.stage@test.ci', baseSalary: 75_000 })).body.id;
+    const journalier = (await owner.agent.post('/company/employees').send({ firstName: 'Yao', lastName: 'Journalier', hireDate: '2025-01-15', contractType: 'journalier', baseSalary: 75_000 })).body.id;
+    const balances = (await owner.agent.get('/company/leave/balances')).body;
+    for (const id of [stagiaire, journalier]) {
+      expect(balances.find((b: any) => b.employeeId === id)).toMatchObject({ entitled: false, accrued: 0, available: 0 });
+    }
+    expect(balances.find((b: any) => b.employeeId === ayaId)).toMatchObject({ entitled: true, contract: 'cdi' }); // CDI : droits inchangés
+    const day = plus(nextMonday, 60);
+    const annual = await owner.agent.post('/company/leave').send({ employeeId: stagiaire, type: 'annual', startDate: day, endDate: day });
+    expect(annual.body.error.code).toBe('no_paid_leave');
+    expect(annual.body.error.message).toMatch(/stagiaire/);
+    expect((await owner.agent.post('/company/leave').send({ employeeId: journalier, type: 'annual', startDate: day, endDate: day })).body.error.code).toBe('no_paid_leave');
+    // Permission exceptionnelle acceptée et validée : aucune absence retenue en paie
+    const perm = await owner.agent.post('/company/leave').send({ employeeId: stagiaire, type: 'family_event', startDate: day, endDate: plus(day, 1), reason: 'Mariage' });
+    expect(perm.status).toBe(201);
+    expect((await owner.agent.post(`/company/leave/${perm.body.id}/approve`).send({})).status).toBeLessThan(300);
+    const c = await ownerClient();
+    try {
+      const rows = await c.query(`SELECT status FROM leave_request WHERE id = $1`, [perm.body.id]);
+      expect(rows.rows[0].status).toBe('approved');
+    } finally { await c.end(); }
+    expect((await owner.agent.get('/company/leave/balances')).body.find((b: any) => b.employeeId === stagiaire)).toMatchObject({ entitled: false, available: 0 });
+  });
+
   it("montre à l'employé ses seuls bulletins validés", async () => {
     const mine = (await staff.get('/company/me/payslips')).body;
     expect(mine).toHaveLength(1);

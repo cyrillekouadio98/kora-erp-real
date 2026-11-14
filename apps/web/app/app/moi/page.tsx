@@ -1,7 +1,7 @@
 'use client';
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { CONTRACTS, date, LEAVE_STATUS, LEAVE_TYPES, money, periodLabel } from '@/lib/format';
+import { CONTRACTS, date, LEAVE_STATUS, LEAVE_TYPES, leaveTypesFor, money, periodLabel } from '@/lib/format';
 import { Score, Stars } from '@/components/evaluations';
 import { useSession } from '@/components/session';
 import { Payslip } from '@/components/payslip';
@@ -29,17 +29,18 @@ export default function MySpacePage() {
   return (
     <>
       <div className="page-head"><h1>Mon espace</h1>
-        {can('leave.self') && <button className="btn primary" onClick={() => { setError(''); setForm({ type: 'annual', startDate: today(), endDate: today(), reason: '' }); }}>Demander un congé</button>}</div>
+        {can('leave.self') && <button className="btn primary" onClick={() => { setError(''); setForm({ type: b.entitled ? 'annual' : 'family_event', startDate: today(), endDate: today(), reason: '' }); }}>Demander un congé</button>}</div>
       <Alert>{!form && error}</Alert>
       <div className="card"><header><h2>{me.employee.name}</h2><span className="small muted">{me.employee.number}</span></header>
         <div className="small">{[me.employee.jobTitle, me.employee.department].filter(Boolean).join(' · ')} — {CONTRACTS[me.employee.contractType]}, entré(e) le {date(me.employee.hireDate)}{me.employee.cnpsNumber ? ` · CNPS ${me.employee.cnpsNumber}` : ''}</div></div>
 
-      <div className="kpis">
+      {!b.entitled ? <Alert kind="info">Votre contrat ({CONTRACTS[me.employee.contractType] ?? me.employee.contractType}) ne donne pas droit aux congés payés, réservés aux CDI et CDD.
+        Vous pouvez demander une <b>permission exceptionnelle</b>, sans retenue sur votre rémunération.</Alert> : <div className="kpis">
         <div className="card kpi"><div className="l">Congés disponibles</div><div className="v">{b.available} j</div><div className="small muted">ouvrables</div></div>
         <div className="card kpi"><div className="l">Acquis</div><div className="v">{b.accrued} j</div><div className="small muted">{b.months} mois × {String(b.rate).replace('.', ',')} j{b.opening ? ` + report ${b.opening} j` : ''}</div></div>
         <div className="card kpi"><div className="l">Pris</div><div className="v">{b.taken} j</div></div>
         <div className="card kpi"><div className="l">En attente de validation</div><div className="v">{b.pending} j</div></div>
-      </div>
+      </div>}
 
       <div className="card"><header><h2>Mes demandes de congé</h2></header>
         <div className="table-wrap"><table>
@@ -85,9 +86,9 @@ export default function MySpacePage() {
             run(async () => { await api('/company/me/leave', { body: { ...form, reason: form.reason || null } }); setForm(null); await load(); });
           }}>
             <h2>Demander un congé</h2>
-            <p className="small muted" style={{ margin: 0 }}>Solde disponible : <b>{b.available - b.pending} jour(s)</b> (demandes en attente déduites). Seuls les jours ouvrables (lundi à samedi, hors fériés) sont décomptés.</p>
+            <p className="small muted" style={{ margin: 0 }}>{b.entitled ? <>Solde disponible : <b>{b.available - b.pending} jour(s)</b> (demandes en attente déduites). </> : <>Pas de congés payés pour votre contrat : une permission exceptionnelle n'entraîne aucune retenue sur salaire. </>}Seuls les jours ouvrables (lundi à samedi, hors fériés) sont décomptés.</p>
             <Alert>{error}</Alert>
-            <label className="field">Type<select className="input" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>{Object.entries(LEAVE_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+            <label className="field">Type<select className="input" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>{leaveTypesFor(b.entitled).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
             <div className="grid2">
               <Field label="Du" type="date" required value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value, endDate: form.endDate < e.target.value ? e.target.value : form.endDate })} />
               <Field label="Au (inclus)" type="date" required min={form.startDate} value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} />

@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
-import { date, LEAVE_STATUS, LEAVE_TYPES } from '@/lib/format';
+import { CONTRACTS, date, LEAVE_STATUS, LEAVE_TYPES, leaveTypesFor } from '@/lib/format';
 import { useSession } from '@/components/session';
 import { Alert, Field, Pill, useAction } from '@/components/ui';
 
@@ -94,6 +94,7 @@ export default function LeavePage() {
   const now = today();
   const absentToday = new Set(yearLeaves.filter((l) => l.status === 'approved' && l.startDate <= now && l.endDate >= now && (!employee || l.employeeId === employee)).map((l) => l.employeeId)).size;
   const chosen = balances.find((b) => b.employeeId === employee);
+  const entitledCount = balances.filter((b) => b.entitled).length;
   const available = chosen ? chosen.available : balances.reduce((t, b) => t + Number(b.available), 0);
   const pendingShown = pending.filter((r) => !employee || r.employeeId === employee);
   const takenThisYear = shown.filter((l) => l.status === 'approved' && l.type === 'annual').reduce((t, l) => t + Number(l.days), 0);
@@ -101,7 +102,7 @@ export default function LeavePage() {
   return (
     <>
       <div className="page-head"><h1>Congés</h1>
-        {can('leave.create') && writable && <button className="btn primary" onClick={() => { setError(''); setModal({ type: 'request', employeeId: employee || balances[0]?.employeeId || '', leaveType: 'annual', startDate: today(), endDate: today(), reason: '' }); }}>Saisir une absence</button>}</div>
+        {can('leave.create') && writable && <button className="btn primary" onClick={() => { setError(''); setModal({ type: 'request', employeeId: employee || balances[0]?.employeeId || '', leaveType: (chosen ?? balances[0])?.entitled === false ? 'family_event' : 'annual', startDate: today(), endDate: today(), reason: '' }); }}>Saisir une absence</button>}</div>
       <Alert>{!modal && error}</Alert>
 
       <div className="lv-bar">
@@ -121,7 +122,7 @@ export default function LeavePage() {
       <div className="lv-summary">
         <div className="card lv-tile"><div className="l">Congés payés{chosen ? ` — ${chosen.name}` : ''}</div>
           <div className="v">{Number(available).toLocaleString('fr-FR', { maximumFractionDigits: 2 })}</div>
-          <div className="small muted">{chosen ? 'jours disponibles' : `jours disponibles pour ${plural(balances.length, 'employé')}`} au {date(now)}</div></div>
+          <div className="small muted">{chosen ? (chosen.entitled ? 'jours disponibles' : `pas de congés payés (${CONTRACTS[chosen.contract] ?? chosen.contract})`) : `jours disponibles pour ${plural(entitledCount, 'employé')} en CDI ou CDD`} au {date(now)}</div></div>
         <div className="card lv-tile"><div className="l">Demandes en attente</div><div className="v">{pendingShown.length}</div>
           {pendingShown.length ? <a className="small" href="#demandes">Traiter les demandes</a> : <div className="small muted">Rien à valider</div>}</div>
         <div className="card lv-tile"><div className="l">Absents aujourd'hui</div><div className="v">{absentToday}</div><div className="small muted">absence validée en cours</div></div>
@@ -176,8 +177,9 @@ export default function LeavePage() {
           <thead><tr><th>Employé</th><th className="n">Report</th><th className="n">Acquis</th><th className="n">Pris</th><th className="n">En attente</th><th className="n">Disponible</th><th></th></tr></thead>
           <tbody>{balances.map((b) => (
             <tr key={b.employeeId}><td><b>{b.name}</b> {b.linked ? <Pill tone="ok">Espace activé</Pill> : <Pill>Sans espace</Pill>}<div className="small muted">{b.number} · {b.months} mois de service</div></td>
-              <td className="n">{b.opening}</td><td className="n">{b.accrued}</td><td className="n">{b.taken}</td><td className="n">{b.pending}</td><td className="n"><b>{b.available}</b></td>
-              <td className="n">{can('leave.admin') && writable && <button className="btn sm" onClick={() => { setError(''); setModal({ type: 'opening', employee: b, balance: b.opening, date: '' }); }}>Report</button>}</td></tr>))}</tbody>
+              {b.entitled ? <><td className="n">{b.opening}</td><td className="n">{b.accrued}</td><td className="n">{b.taken}</td><td className="n">{b.pending}</td><td className="n"><b>{b.available}</b></td></>
+                : <td colSpan={5} className="small muted" style={{ textAlign: 'right' }}>Sans congés payés ({CONTRACTS[b.contract] ?? b.contract}) : permissions exceptionnelles uniquement</td>}
+              <td className="n">{b.entitled && can('leave.admin') && writable && <button className="btn sm" onClick={() => { setError(''); setModal({ type: 'opening', employee: b, balance: b.opening, date: '' }); }}>Report</button>}</td></tr>))}</tbody>
         </table></div></div>
 
       {modal && (
@@ -192,8 +194,8 @@ export default function LeavePage() {
           }}>
             {modal.type === 'request' ? <>
               <h2>Saisir une absence</h2><Alert>{error}</Alert>
-              <label className="field">Employé<select className="input" value={modal.employeeId} onChange={(e) => setModal({ ...modal, employeeId: e.target.value })}>{balances.map((b) => <option key={b.employeeId} value={b.employeeId}>{b.name}</option>)}</select></label>
-              <label className="field">Type<select className="input" value={modal.leaveType} onChange={(e) => setModal({ ...modal, leaveType: e.target.value })}>{Object.entries(LEAVE_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+              <label className="field">Employé<select className="input" value={modal.employeeId} onChange={(e) => { const b = balances.find((x) => x.employeeId === e.target.value); setModal({ ...modal, employeeId: e.target.value, leaveType: b && !b.entitled && modal.leaveType === 'annual' ? 'family_event' : modal.leaveType }); }}>{balances.map((b) => <option key={b.employeeId} value={b.employeeId}>{b.name}</option>)}</select></label>
+              <label className="field">Type<select className="input" value={modal.leaveType} onChange={(e) => setModal({ ...modal, leaveType: e.target.value })}>{leaveTypesFor(balances.find((x) => x.employeeId === modal.employeeId)?.entitled !== false).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
               <div className="grid2"><Field label="Du" type="date" required value={modal.startDate} onChange={(e) => setModal({ ...modal, startDate: e.target.value })} />
                 <Field label="Au (inclus)" type="date" required min={modal.startDate} value={modal.endDate} onChange={(e) => setModal({ ...modal, endDate: e.target.value })} /></div>
               <Field label="Motif (facultatif)" value={modal.reason} onChange={(e) => setModal({ ...modal, reason: e.target.value })} />

@@ -16,10 +16,16 @@ import { fullMonths, workingDays } from './workdays';
 export const LEAVE_TYPES: Record<LeaveType, string> = {
   annual: 'Congé payé', sick: 'Maladie', maternity: 'Maternité', family_event: 'Permission exceptionnelle (événement familial)', unpaid: 'Congé sans solde', other: 'Autre absence',
 };
+/** Seuls les salariés en CDI et en CDD acquièrent des congés payés ; stagiaires et journaliers n'ont que les autres absences. */
+export const PAID_LEAVE_CONTRACTS = ['cdi', 'cdd'];
+const CONTRACT_LABELS: Record<string, string> = { stage: 'un stagiaire', journalier: 'un journalier' };
+const noPaidLeave = (contract: string) => badRequest(
+  `Les congés payés sont réservés aux salariés en CDI ou en CDD : pour ${CONTRACT_LABELS[contract] ?? 'ce contrat'}, choisissez une permission exceptionnelle (sans retenue sur salaire).`,
+  undefined, 'no_paid_leave');
 const today = () => new Date().toISOString().slice(0, 10);
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const frDate = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
-type EmployeeRow = { id: string; first_name: string; last_name: string; hire_date: string; end_date: string | null; email: string | null; user_id: string | null; leave_opening_balance: string; leave_opening_date: string | null };
+type EmployeeRow = { id: string; first_name: string; last_name: string; hire_date: string; end_date: string | null; email: string | null; user_id: string | null; leave_opening_balance: string; leave_opening_date: string | null; contract_type?: string };
 
 /**
  * Congés : acquisition mensuelle (2,2 jours ouvrables par mois de service, paramétrable),
@@ -36,7 +42,7 @@ export class LeaveService {
 
   private async employee(trx: TenantTrx, id: string): Promise<EmployeeRow> {
     if (!isUuid(id)) throw notFound('Employé');
-    const e = await trx.selectFrom('employee').select(['id', 'first_name', 'last_name', 'hire_date', 'end_date', 'email', 'user_id', 'leave_opening_balance', 'leave_opening_date'])
+    const e = await trx.selectFrom('employee').select(['id', 'first_name', 'last_name', 'hire_date', 'end_date', 'email', 'user_id', 'leave_opening_balance', 'leave_opening_date', 'contract_type'])
       .where('id', '=', id).executeTakeFirst();
     if (!e) throw notFound('Employé');
     return e;
@@ -44,23 +50,29 @@ export class LeaveService {
 
   /** Fiche de l'employé rattachée à l'utilisateur connecté (espace employé). */
   async own(trx: TenantTrx, t: TenantInfo): Promise<EmployeeRow> {
-    const e = await trx.selectFrom('employee').select(['id', 'first_name', 'last_name', 'hire_date', 'end_date', 'email', 'user_id', 'leave_opening_balance', 'leave_opening_date'])
+    const e = await trx.selectFrom('employee').select(['id', 'first_name', 'last_name', 'hire_date', 'end_date', 'email', 'user_id', 'leave_opening_balance', 'leave_opening_date', 'contract_type'])
       .where('user_id', '=', t.ctx.userId).executeTakeFirst();
     if (!e) throw forbidden("Votre compte n'est rattaché à aucune fiche employé de cette entreprise. Demandez à votre responsable de vous inviter depuis votre fiche.", 'not_an_employee');
     return e;
   }
 
-  /** Solde : report d'ouverture + jours acquis − congés payés validés (les demandes en attente sont indiquées à part). */
+  /**
+   * Solde : report d'ouverture + jours acquis − congés payés validés (les demandes en attente sont indiquées à part).
+   * Hors CDI et CDD (stage, journalier) : aucun droit, solde nul.
+   */
   async balance(trx: TenantTrx, e: EmployeeRow, asOf = today()) {
+    const contract = e.contract_type ?? (await trx.selectFrom('employee').select('contract_type').where('id', '=', e.id).executeTakeFirstOrThrow()).contract_type;
+    const entitled = PAID_LEAVE_CONTRACTS.includes(contract);
     const until = e.end_date && e.end_date < asOf ? e.end_date : asOf;
     const months = fullMonths(e.leave_opening_date ?? e.hire_date, until);
+    if (!entitled) return { entitled, contract, opening: 0, months, rate: 0, accrued: 0, taken: 0, pending: 0, available: 0 };
     const rate = await this.rate(trx);
     const rows = await trx.selectFrom('leave_request').select(['status', 'days']).where('employee_id', '=', e.id).where('type', '=', 'annual').where('status', 'in', ['approved', 'pending']).execute();
     const taken = rows.filter((r) => r.status === 'approved').reduce((s, r) => s + Number(r.days), 0);
     const pending = rows.filter((r) => r.status === 'pending').reduce((s, r) => s + Number(r.days), 0);
     const opening = Number(e.leave_opening_balance);
     const accrued = round1(months * rate);
-    return { opening, months, rate, accrued, taken: round1(taken), pending: round1(pending), available: round1(opening + accrued - taken) };
+    return { entitled, contract, opening, months, rate, accrued, taken: round1(taken), pending: round1(pending), available: round1(opening + accrued - taken) };
   }
 
   private async present(trx: TenantTrx, rows: any[]) {
@@ -83,6 +95,7 @@ export class LeaveService {
       if (overlap) throw conflict(`Une autre demande couvre déjà cette période (du ${frDate(overlap.start_date)} au ${frDate(overlap.end_date)}).`, 'leave_overlap');
       if (input.type === 'annual') {
         const b = await this.balance(trx, e);
+        if (!b.entitled) throw noPaidLeave(b.contract);
         if (days > b.available - b.pending) {
           throw conflict(`Solde de congés insuffisant : ${round1(b.available - b.pending)} jour(s) disponible(s) (demandes en attente déduites), ${days} demandé(s).`, 'insufficient_leave');
         }
@@ -126,6 +139,7 @@ export class LeaveService {
       if (e.user_id === t.ctx.userId) throw forbidden('Vous ne pouvez pas valider votre propre demande de congé.', 'own_request');
       if (approve && r.type === 'annual') {
         const b = await this.balance(trx, e);
+        if (!b.entitled) throw noPaidLeave(b.contract);
         if (Number(r.days) > b.available) throw conflict(`Solde insuffisant : ${b.available} jour(s) disponible(s) pour ${Number(r.days)} demandé(s).`, 'insufficient_leave');
       }
       await trx.updateTable('leave_request').set({ status: approve ? 'approved' : 'refused', decided_by: t.ctx.userId, decided_at: new Date(), decision_note: note ?? null }).where('id', '=', id).execute();
@@ -182,7 +196,7 @@ export class LeaveService {
 
   async balances(t: TenantInfo) {
     return this.db.tenant(t.ctx, async (trx) => {
-      const employees = await inScope(trx.selectFrom('employee').select(['id', 'first_name', 'last_name', 'hire_date', 'end_date', 'email', 'user_id', 'leave_opening_balance', 'leave_opening_date', 'number'])
+      const employees = await inScope(trx.selectFrom('employee').select(['id', 'first_name', 'last_name', 'hire_date', 'end_date', 'email', 'user_id', 'leave_opening_balance', 'leave_opening_date', 'number', 'contract_type'])
         .where((eb) => eb.or([eb('end_date', 'is', null), eb('end_date', '>=', today())])), t, 'site_id').orderBy('last_name').execute();
       const out = [];
       for (const e of employees) out.push({ employeeId: e.id, number: e.number, name: `${e.first_name} ${e.last_name}`, linked: !!e.user_id, ...(await this.balance(trx, e)) });

@@ -185,6 +185,8 @@ export const MARITAL: Record<string, string> = { single: 'Célibataire', married
 const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 /** « 2026-10 » → « octobre 2026 » */
 export const periodLabel = (p: string) => `${MONTHS[Number(p.slice(5, 7)) - 1]} ${p.slice(0, 4)}`;
+/** Types d'absence ouverts à un salarié : sans droit aux congés payés (stage, journalier), le congé payé est retiré. */
+export const leaveTypesFor = (entitled: boolean) => Object.entries(LEAVE_TYPES).filter(([k]) => entitled || k !== 'annual');
 export const LEAVE_TYPES: Record<string, string> = {
   annual: 'Congé payé', sick: 'Maladie', maternity: 'Maternité', family_event: 'Permission exceptionnelle', unpaid: 'Congé sans solde', other: 'Autre absence',
 };
