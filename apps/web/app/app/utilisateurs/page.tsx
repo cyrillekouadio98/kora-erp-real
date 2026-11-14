@@ -4,6 +4,7 @@ import { api } from '@/lib/api';
 import { date } from '@/lib/format';
 import { useSession } from '@/components/session';
 import { Alert, Field, Pill, useAction } from '@/components/ui';
+import { RoleEditor } from '@/components/role-editor';
 
 export default function UsersPage() {
   const { can, me, ctx } = useSession();
@@ -16,6 +17,8 @@ export default function UsersPage() {
   const [link, setLink] = useState('');
   const [editing, setEditing] = useState<any>(null);
   const [inviteSite, setInviteSite] = useState('');
+  /** Création d'un rôle depuis l'invitation ou la modification d'un accès : il est sélectionné dès sa création. */
+  const [newRole, setNewRole] = useState<'invite' | 'member' | null>(null);
   // Sites : choix proposé dès qu'il y en a plusieurs, ou que l'administrateur est lui-même limité.
   const sites = ctx?.sites ?? [];
   const multi = sites.length > 1 || !!ctx?.siteRestricted;
@@ -45,6 +48,7 @@ export default function UsersPage() {
             <label className="field" style={{ flex: 1, minWidth: 180 }}>Rôle
               <select className="input" value={roleId} onChange={(e) => setRoleId(e.target.value)}>{roles.map((r) => <option key={r.id} value={r.id} disabled={locked(r)}>{r.name}{locked(r) ? ' (propriétaire uniquement)' : ''}</option>)}</select>
             </label>
+            <button type="button" className="btn" style={{ alignSelf: 'flex-end' }} onClick={() => setNewRole('invite')}>+ Nouveau rôle</button>
             {multi && <label className="field" style={{ flex: 1, minWidth: 180 }}>Site
               <select className="input" value={inviteSite} onChange={(e) => setInviteSite(e.target.value)}>
                 <option value="">{ctx?.siteRestricted ? 'Mes sites' : 'Tous les sites'}</option>{sites.map((s) => <option key={s.id} value={s.id}>{s.name} seulement</option>)}</select>
@@ -91,7 +95,8 @@ export default function UsersPage() {
             <h2>{editing.fullName}</h2>
             <Alert>{error}</Alert>
             <fieldset style={{ border: 0, padding: 0, display: 'grid', gap: 6 }}><legend className="small muted" style={{ marginBottom: 6 }}>Rôles</legend>
-              {roles.map((r) => <label key={r.id} className="row small"><input type="checkbox" checked={editing.roleIds.includes(r.id)} disabled={locked(r) && !editing.roleIds.includes(r.id)} onChange={(e) => setEditing({ ...editing, roleIds: e.target.checked ? [...editing.roleIds, r.id] : editing.roleIds.filter((x: string) => x !== r.id) })} /> {r.name} <span className="muted">— {r.description}{locked(r) ? ' (propriétaire uniquement)' : ''}</span></label>)}
+              <div><button type="button" className="btn sm" onClick={() => setNewRole('member')}>+ Créer un rôle</button></div>
+              {roles.map((r) => <label key={r.id} className="row small"><input type="checkbox" checked={editing.roleIds.includes(r.id)} disabled={locked(r) && !editing.roleIds.includes(r.id)} onChange={(e) => setEditing({ ...editing, roleIds: e.target.checked ? [...editing.roleIds, r.id] : editing.roleIds.filter((x: string) => x !== r.id) })} /> {r.name} {(r.description || locked(r)) && <span className="muted">— {[r.description, locked(r) && 'propriétaire uniquement'].filter(Boolean).join(' · ')}</span>}</label>)}
             </fieldset>
             {multi && !editing.isOwner && <fieldset style={{ border: 0, padding: 0, display: 'grid', gap: 6 }}><legend className="small muted" style={{ marginBottom: 6 }}>Sites visibles</legend>
               {!ctx?.siteRestricted && <label className="row small"><input type="radio" checked={editing.allSites} onChange={() => setEditing({ ...editing, allSites: true })} /> Tous les sites</label>}
@@ -109,6 +114,13 @@ export default function UsersPage() {
           </form>
         </div>
       )}
+      {newRole && <RoleEditor role={{ name: '', description: '', permissions: [] }} onClose={() => setNewRole(null)} onSaved={async (r) => {
+        const target = newRole;
+        setNewRole(null);
+        await load();
+        if (target === 'invite') setRoleId(r.id);
+        else setEditing((x: any) => x && { ...x, roleIds: [...x.roleIds, r.id] });
+      }} />}
     </>
   );
 }
