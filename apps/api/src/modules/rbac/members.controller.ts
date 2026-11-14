@@ -123,7 +123,10 @@ export class MembersController {
     return this.db.tenant(t.ctx, (trx) => this.createInvitation(trx, t, input));
   }
 
-  /** Invite un employé dans son espace personnel (rôle « Employé ») ; sa fiche est rattachée au compte à l'acceptation. */
+  /**
+   * Ouvre l'espace personnel d'un employé (rôle « Employé ») : invitation, sa fiche étant rattachée au compte à l'acceptation ;
+   * si la personne a déjà un accès à l'entreprise (caissier, commercial…), sa fiche est rattachée tout de suite à ce compte.
+   */
   @Permission('users.admin')
   @Post('company/employees/:id/invite')
   inviteEmployee(@Tenant() t: TenantInfo, @Param('id') id: string) {
@@ -135,6 +138,18 @@ export class MembersController {
       if (!e.email) throw badRequest("Renseignez l'adresse e-mail de l'employé avant de l'inviter.", undefined, 'no_email');
       const role = await trx.selectFrom('role').select('id').where('company_id', '=', t.companyId).where('key', '=', 'employee').executeTakeFirst();
       if (!role) throw badRequest('Le rôle « Employé » a été supprimé.', undefined, 'no_employee_role');
+      const email = e.email.trim().toLowerCase();
+      const member = await trx.selectFrom('company_membership as m').innerJoin('user_account as u', 'u.id', 'm.user_id')
+        .select(['m.id', 'm.user_id', 'm.status']).where('m.company_id', '=', t.companyId).where('u.email', '=', email).executeTakeFirst();
+      if (member) {
+        if (member.status !== 'active') throw conflict("Le compte de cette personne est désactivé : réactivez-le d'abord dans Utilisateurs.", 'member_disabled');
+        const other = await trx.selectFrom('employee').select('number').where('user_id', '=', member.user_id).executeTakeFirst();
+        if (other) throw conflict(`Ce compte est déjà rattaché à la fiche ${other.number}.`, 'user_already_linked');
+        await trx.updateTable('employee').set({ user_id: member.user_id }).where('id', '=', id).execute();
+        await trx.insertInto('membership_role').values({ company_id: t.companyId, membership_id: member.id, role_id: role.id }).onConflict((oc) => oc.doNothing()).execute();
+        await this.audit.tenant(trx, t.ctx, { action: 'employee.account_linked', entityType: 'employee', entityId: id, data: { email } });
+        return { linked: true as const, email };
+      }
       const pending = await trx.selectFrom('invitation').select('id').where('employee_id', '=', id).where('accepted_at', 'is', null).where('revoked_at', 'is', null).where('expires_at', '>', new Date()).executeTakeFirst();
       if (pending) throw conflict('Une invitation est déjà en attente pour cet employé.', 'invitation_pending');
       return this.createInvitation(trx, t, { email: e.email, roleIds: [role.id], employeeId: id, siteIds: [e.site_id] });
@@ -152,7 +167,7 @@ export class MembersController {
       if (found.length !== siteIds.length) throw badRequest('Un ou plusieurs sites sont introuvables ou archivés.', undefined, 'unknown_site');
     }
     const already = await trx.selectFrom('company_membership as m').innerJoin('user_account as u', 'u.id', 'm.user_id')
-      .select('m.id').where('u.email', '=', input.email).executeTakeFirst();
+      .select('m.id').where('m.company_id', '=', t.companyId).where('u.email', '=', input.email).executeTakeFirst();
     if (already) throw conflict('Cette personne a déjà un accès à cette entreprise.', 'already_member');
     await this.quotas.assertUsers(trx, t.companyId, t.entitlements, { includePending: true });
     const secret = randomToken(24);

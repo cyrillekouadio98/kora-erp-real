@@ -61,7 +61,7 @@ function EmployeeCard({ e, onOpen, site }: { e: any; onOpen?: () => void; site?:
   return onOpen ? <button type="button" className={cls} onClick={onOpen}>{body}</button> : <div className={cls}>{body}</div>;
 }
 
-const toForm = (e: any) => ({ ...Object.fromEntries(Object.keys(EMPTY).map((k) => [k, e[k] ?? (EMPTY as any)[k]])), partsOverride: e.partsOverride ?? '', endDate: e.endDate ?? '', id: e.id, photo: e.photo ?? null });
+const toForm = (e: any) => ({ ...Object.fromEntries(Object.keys(EMPTY).map((k) => [k, e[k] ?? (EMPTY as any)[k]])), partsOverride: e.partsOverride ?? '', endDate: e.endDate ?? '', id: e.id, photo: e.photo ?? null, linked: !!e.linked, active: e.active !== false, savedEmail: e.email ?? '' });
 
 export default function EmployeesPage() {
   return <Suspense><Employees /></Suspense>;
@@ -136,6 +136,14 @@ function Employees() {
     return () => clearTimeout(h);
   }, [autoCalc]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /** Espace employé : invitation, ou rattachement immédiat de la fiche si la personne a déjà un accès à l'entreprise. */
+  const openSpace = (e: { id: string; fullName: string; email: string }) => run(async () => {
+    const r = await api(`/company/employees/${e.id}/invite`, { body: {} });
+    if (r.linked) { setNotice(`${e.fullName} avait déjà un accès à l'entreprise (${r.email}) : sa fiche y est maintenant rattachée. Son espace (bulletins, congés) est ouvert dès maintenant, dans « Mon espace ».`); await load(); }
+    else setNotice(`Invitation envoyée à ${e.fullName} (${e.email}) : à son acceptation, il ou elle accédera à ses bulletins et à ses congés.`);
+    setEdit((x: any) => (x?.id === e.id ? { ...x, linked: !!r.linked } : x));
+  });
+
   const save = () => run(async () => {
     const body: any = {};
     for (const k of Object.keys(EMPTY)) {
@@ -197,7 +205,7 @@ function Employees() {
               <td className="small">{PAYMENT_METHODS[e.paymentMethod]}</td>
               <td className="n"><div className="row" style={{ justifyContent: 'flex-end', gap: 6, flexWrap: 'nowrap' }}>
                 {can('users.admin') && writable && e.active && !e.linked && <button className="btn sm" disabled={busy} title={e.email ? undefined : 'Renseignez d’abord son e-mail'}
-                  onClick={() => run(async () => { await api(`/company/employees/${e.id}/invite`, { body: {} }); setNotice(`Invitation envoyée à ${e.fullName} (${e.email}) : à son acceptation, il ou elle accédera à ses bulletins et à ses congés.`); })}>Inviter dans son espace</button>}
+                  onClick={() => openSpace(e)}>Ouvrir son espace</button>}
                 {can('employees.update') && writable && <button className="btn sm" onClick={() => open(toForm(e))}>Modifier</button>}</div></td>
             </tr>
           ))}
@@ -211,6 +219,11 @@ function Employees() {
           <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); save(); }}>
             <h2>{edit.id ? `${edit.firstName} ${edit.lastName}` : 'Nouvel employé'}</h2>
             <Alert>{error}</Alert>
+            {edit.id && (edit.linked ? <Alert kind="ok">Espace employé ouvert : bulletins et congés accessibles dans « Mon espace ».</Alert>
+              : can('users.admin') && writable && edit.active && <div className="row">
+                <button type="button" className="btn sm" disabled={busy || !edit.savedEmail} onClick={() => openSpace({ id: edit.id, fullName: `${edit.firstName} ${edit.lastName}`, email: edit.savedEmail })}>Ouvrir son espace employé</button>
+                <span className="small muted" style={{ flex: 1, minWidth: 200 }}>{edit.savedEmail ? `Invitation à ${edit.savedEmail}, ou rattachement immédiat si cette personne a déjà un accès à l'entreprise.` : "Renseignez et enregistrez d'abord son e-mail."}</span>
+              </div>)}
             <div className="vg-avatar-edit">
               <Avatar e={{ ...edit, fullName: `${edit.firstName} ${edit.lastName}` }} src={photo === undefined ? edit.photo && `/api${edit.photo}` : photo} />
               <div className="row">

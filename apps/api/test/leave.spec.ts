@@ -51,6 +51,25 @@ describe('Espace employé et congés', () => {
     expect((await owner.agent.get(`/company/employees/${ayaId}`)).body.linked).toBe(true);
   });
 
+  it("rattache tout de suite la fiche d'une personne qui a déjà un accès (caissière invitée avant sa fiche)", async () => {
+    const roles = (await owner.agent.get('/company/roles')).body;
+    const cashier = roles.find((r: any) => r.key === 'cashier').id;
+    const inv = await owner.agent.post('/company/invitations').send({ email: 'christine.konan@test.ci', roleIds: [cashier] });
+    const christine = request.agent(app.getHttpServer());
+    await christine.post('/invitations/accept').send({ token: new URL(inv.body.inviteUrl).searchParams.get('token'), fullName: 'Christine Konan', password: 'MotDePasse123' });
+    expect((await christine.get('/company/me')).status).toBe(403); // pas encore d'espace employé
+    const id = (await owner.agent.post('/company/employees').send({ firstName: 'Christine', lastName: 'Konan', hireDate: '2025-06-01', email: 'Christine.Konan@test.ci', baseSalary: 150_000 })).body.id;
+    const r = await owner.agent.post(`/company/employees/${id}/invite`);
+    expect(r.body).toEqual({ linked: true, email: 'christine.konan@test.ci' });
+    expect((await christine.get('/company/me')).body.employee).toMatchObject({ name: 'Christine Konan' });
+    const member = (await owner.agent.get('/company/members')).body.find((m: any) => m.email === 'christine.konan@test.ci');
+    expect(member.roles.map((x: any) => x.key ?? x.name)).toEqual(expect.arrayContaining([expect.stringMatching(/employee|Employé/)]));
+    expect((await owner.agent.post(`/company/employees/${id}/invite`)).body.error.code).toBe('already_linked');
+    // Un même compte ne peut pas être rattaché à deux fiches
+    const twin = (await owner.agent.post('/company/employees').send({ firstName: 'C.', lastName: 'Konan', hireDate: '2025-06-01', email: 'christine.konan@test.ci', baseSalary: 150_000 })).body.id;
+    expect((await owner.agent.post(`/company/employees/${twin}/invite`)).body.error.code).toBe('user_already_linked');
+  });
+
   it("ne donne à l'employé accès qu'à ses propres données", async () => {
     expect((await staff.get('/company/employees')).status).toBe(403);
     expect((await staff.get('/company/leave')).status).toBe(403);
