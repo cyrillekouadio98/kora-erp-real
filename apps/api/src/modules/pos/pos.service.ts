@@ -363,7 +363,8 @@ export class PosService {
       const rows = await trx.selectFrom('product as p')
         .leftJoin('stock_level as sl', (j) => j.onRef('sl.product_id', '=', 'p.id').onRef('sl.company_id', '=', 'p.company_id').on('sl.warehouse_id', '=', r.warehouse_id))
         .select(['p.id', 'p.code', 'p.barcode', 'p.name', 'p.kind', 'p.unit', 'p.sale_price as salePrice', 'p.vat_rate as vatRate', 'p.track_stock as trackStock', 'sl.quantity as stock'])
-        .where('p.archived_at', 'is', null).orderBy('p.name').limit(5000).execute();
+        .where('p.archived_at', 'is', null).where((eb) => eb.or([eb('p.site_id', 'is', null), eb('p.site_id', '=', r.site_id)]))
+        .orderBy('p.name').limit(5000).execute();
       return rows.map((p) => ({ ...p, salePrice: n(p.salePrice), vatRate: n(p.vatRate), stock: p.trackStock ? n(p.stock) : null }));
     });
   }

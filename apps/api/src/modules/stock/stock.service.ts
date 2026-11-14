@@ -263,8 +263,12 @@ export class StockService {
       // Entrepôts comptés : celui demandé, sinon ceux du site affiché ; null = toute l'entreprise.
       const whSet = warehouseId ? [warehouseId] : siteScope(t) ? warehouses.map((w) => w.id) : null;
       const inSet = (id: string) => !whSet || whSet.includes(id);
-      const rows = await trx.selectFrom('product').select(['id', 'code', 'name', 'unit', 'stock_qty', 'stock_value', 'avg_cost', 'min_stock', 'sale_price', 'purchase_price', 'vat_rate'])
-        .where('track_stock', '=', true).where('archived_at', 'is', null).orderBy('name').execute();
+      // Articles du site des entrepôts affichés et articles communs ; sans filtre, toute l'entreprise.
+      const sitesShown = whSet ? [...new Set(warehouses.filter((w) => whSet.includes(w.id)).map((w) => w.siteId))] : null;
+      const rows = await trx.selectFrom('product').select(['id', 'code', 'name', 'unit', 'stock_qty', 'stock_value', 'avg_cost', 'min_stock', 'sale_price', 'purchase_price', 'vat_rate', 'site_id'])
+        .where('track_stock', '=', true).where('archived_at', 'is', null)
+        .$if(!!sitesShown, (q) => q.where((eb) => eb.or([eb('site_id', 'is', null), ...(sitesShown!.length ? [eb('site_id', 'in', sitesShown!)] : [])])))
+        .orderBy('name').execute();
       const levels = await trx.selectFrom('stock_level').select(['product_id', 'warehouse_id', 'quantity']).where('quantity', '>', '0').execute();
       const last = await trx.selectFrom('stock_movement').select(['product_id', (eb) => eb.fn.max('date').as('date')])
         .$if(!!whSet, (q) => q.where('warehouse_id', 'in', whSet!.length ? whSet! : [def.id])).groupBy('product_id').execute();
@@ -672,7 +676,8 @@ export class StockService {
         .returning('id').executeTakeFirstOrThrow();
       let lines = input.lines ?? [];
       if (input.type === 'inventory' && !lines.length) {
-        const products = await trx.selectFrom('product').select('id').where('track_stock', '=', true).where('archived_at', 'is', null).orderBy('name').execute();
+        const products = await trx.selectFrom('product').select('id').where('track_stock', '=', true).where('archived_at', 'is', null)
+          .where((eb) => eb.or([eb('site_id', 'is', null), eb('site_id', '=', head.site_id)])).orderBy('name').execute();
         lines = products.map((p) => ({ productId: p.id, quantity: null }));
       }
       await this.writeLines(trx, t, input.type, d.id, lines);

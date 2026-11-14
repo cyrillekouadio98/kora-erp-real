@@ -105,7 +105,7 @@ export interface ProductTable {
   unit: Generated<string>; sale_price: ColumnType<string, number | string | undefined, number | string>; purchase_price: ColumnType<string | null, number | string | null | undefined, number | string | null>;
   vat_rate: ColumnType<string, number | string | undefined, number | string>; archived_at: TsNullable; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
   track_stock: Generated<boolean>; barcode: ColumnType<string | null, string | null | undefined, string | null>; min_stock: ColumnType<string | null, number | string | null | undefined, number | string | null>;
-  stock_qty: NumDefault; stock_value: NumDefault; avg_cost: NumDefault;
+  stock_qty: NumDefault; stock_value: NumDefault; avg_cost: NumDefault; site_id: ColumnType<string | null, string | null | undefined, string | null>;
 }
 export type SalesDocType = 'quote' | 'order' | 'invoice' | 'credit_note';
 export type SalesDocStatus = 'draft' | 'sent' | 'accepted' | 'refused' | 'ordered' | 'invoiced' | 'confirmed' | 'cancelled' | 'issued' | 'partially_paid' | 'paid' | 'credited';

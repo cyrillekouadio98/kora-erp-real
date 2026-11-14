@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { AllowWhenReadOnly, Permission, Tenant } from '../../common/decorators';
 import { badRequest, conflict, forbidden, notFound } from '../../common/errors';
 import { isUuid } from '../../common/ids';
+import { assertSiteAccess, siteScope } from '../../common/sites';
 import { nextNumber, peekNumber } from '../../common/numbering';
 import type { TenantInfo } from '../../common/request-context';
 import { parse } from '../../common/validation';
@@ -23,6 +24,8 @@ const ProductSchema = z.object({
   salePrice: money,
   purchasePrice: money.nullable().optional(),
   vatRate: z.coerce.number().refine((v) => VAT_RATES.includes(v), { message: 'Taux de TVA : 18 %, 9 % ou 0 %' }),
+  /** Site de l'article (null = tous les sites). */
+  siteId: z.string().uuid({ message: 'Site inconnu' }).nullable().optional(),
   barcode: z.string().trim().max(40).regex(/^[A-Za-z0-9._-]*$/, { message: 'Code-barres : chiffres et lettres uniquement, sans espace' }).transform((v) => v || null).nullable().optional(),
 }).strict();
 
@@ -33,9 +36,9 @@ const OpeningStockSchema = z.object({
   warehouseId: z.string().uuid({ message: 'Entrepôt inconnu' }).nullable().optional(),
 }).strict();
 
-const COLUMNS = { kind: 'kind', name: 'name', description: 'description', unit: 'unit', salePrice: 'sale_price', purchasePrice: 'purchase_price', vatRate: 'vat_rate', barcode: 'barcode' } as const;
+const COLUMNS = { kind: 'kind', name: 'name', description: 'description', unit: 'unit', salePrice: 'sale_price', purchasePrice: 'purchase_price', vatRate: 'vat_rate', barcode: 'barcode', siteId: 'site_id' } as const;
 const SELECT = ['id', 'code', 'kind', 'name', 'description', 'unit', 'sale_price as salePrice', 'purchase_price as purchasePrice', 'vat_rate as vatRate', 'archived_at as archivedAt',
-  'track_stock as trackStock', 'stock_qty as stockQty', 'barcode'] as const;
+  'track_stock as trackStock', 'stock_qty as stockQty', 'barcode', 'site_id as siteId'] as const;
 
 const toNumbers = <T extends { salePrice: string; purchasePrice: string | null; vatRate: string; stockQty: string }>(p: T) =>
   ({ ...p, salePrice: Number(p.salePrice), purchasePrice: p.purchasePrice === null ? null : Number(p.purchasePrice), vatRate: Number(p.vatRate), stockQty: Number(p.stockQty) });
@@ -44,6 +47,13 @@ const toNumbers = <T extends { salePrice: string; purchasePrice: string | null; 
 @Controller('company/products')
 export class ProductsController {
   constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly stock: StockService) {}
+
+  /** Site d'un article : actif, et permis à l'utilisateur. */
+  private async assertSite(trx: TenantTrx, t: TenantInfo, siteId: string | null | undefined) {
+    if (!siteId) return;
+    if (!(await trx.selectFrom('site').select('id').where('id', '=', siteId).where('archived_at', 'is', null).executeTakeFirst())) throw badRequest('Site introuvable.', undefined, 'unknown_site');
+    assertSiteAccess(t, siteId);
+  }
 
   /** Code d'un nouvel article, toujours attribué par N° de séquence (ART-00001…) ; un code déjà pris (ancienne saisie manuelle) est sauté. */
   private async nextCode(trx: TenantTrx, t: TenantInfo) {
@@ -74,6 +84,9 @@ export class ProductsController {
     const q = parse(z.object({ q: z.string().trim().max(100).optional(), archived: z.enum(['false', 'true', 'all']).default('false') }), query);
     const rows = await this.db.tenant(t.ctx, (trx) => {
       let qb = trx.selectFrom('product').select(SELECT).orderBy('name').limit(1000);
+      // Site affiché : ses articles et les articles communs à tous les sites.
+      const scope = siteScope(t);
+      if (scope) qb = qb.where((eb) => eb.or([eb('site_id', 'is', null), ...(scope.length ? [eb('site_id', 'in', scope)] : [])]));
       if (q.archived === 'false') qb = qb.where('archived_at', 'is', null);
       if (q.archived === 'true') qb = qb.where('archived_at', 'is not', null);
       if (q.q) {
@@ -95,6 +108,12 @@ export class ProductsController {
     }
     return this.db.tenant(t.ctx, async (trx) => {
       await this.assertBarcodeFree(trx, input.barcode);
+      // Site : celui choisi ; à défaut, celui de l'entrepôt qui reçoit le stock initial ; sans stock, tous les sites.
+      const wh = openingStock ? await this.stock.warehouseFor(trx, t, openingStock.warehouseId, input.siteId ?? undefined) : null;
+      if (input.siteId === undefined) input.siteId = wh ? wh.site_id : null;
+      await this.assertSite(trx, t, input.siteId);
+      if (wh && input.siteId && wh.site_id !== input.siteId) throw badRequest(`L'entrepôt « ${wh.name} » n'est pas sur le site choisi pour l'article.`, undefined, 'warehouse_other_site');
+      if (openingStock) openingStock.warehouseId = wh!.id;
       const code = await this.nextCode(trx, t);
       const values: Record<string, unknown> = {};
       for (const [k, col] of Object.entries(COLUMNS)) if ((input as any)[k] !== undefined) values[col] = (input as any)[k];
@@ -120,6 +139,7 @@ export class ProductsController {
       if (!before) throw notFound('Article');
       if (before.archived_at) throw conflict('Cet article est archivé : restaurez-le avant de le modifier.', 'product_archived');
       await this.assertBarcodeFree(trx, input.barcode, id);
+      if (input.siteId !== undefined) await this.assertSite(trx, t, input.siteId);
       const patch: Record<string, unknown> = {};
       for (const [k, col] of Object.entries(COLUMNS)) if ((input as any)[k] !== undefined) patch[col] = (input as any)[k];
       // Un bien est suivi en stock, un service jamais : changer de type n'est possible qu'à stock vide.

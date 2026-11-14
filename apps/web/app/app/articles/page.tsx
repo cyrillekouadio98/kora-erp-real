@@ -8,7 +8,7 @@ import { ImportButton } from '@/components/import';
 import { productsImport } from '@/components/import-configs';
 import { Alert, Field, Pill, useAction } from '@/components/ui';
 
-const EMPTY = { kind: 'good', name: '', description: '', unit: 'unité', salePrice: 0, purchasePrice: '', vatRate: 18, barcode: '' };
+const EMPTY = { kind: 'good', name: '', description: '', unit: 'unité', salePrice: 0, purchasePrice: '', vatRate: 18, barcode: '', siteId: 'auto' };
 const FIELDS = Object.keys(EMPTY) as (keyof typeof EMPTY)[];
 
 /** Le module s'adapte à l'activité de l'entreprise (fiche entreprise) : libellés, type par défaut, colonnes et champs. */
@@ -47,6 +47,10 @@ export default function ProductsPage() {
   useEffect(() => { if (creating) { setNextCode(''); api('/company/products/next-code').then((r) => setNextCode(r.code), () => {}); } }, [creating]);
   // Stock initial saisi avec l'article : réservé à qui administre les stocks ; entrepôt au choix s'il y en a plusieurs.
   const canOpening = can('stock.admin');
+  // Plusieurs sites : un article peut être réservé à l'un d'eux (il n'est alors proposé que là).
+  const sites = ctx?.sites ?? [];
+  const multiSite = sites.length > 1;
+  const siteName = (id: string | null) => sites.find((x) => x.id === id)?.name;
   const [warehouses, setWarehouses] = useState<any[]>([]);
   useEffect(() => { if (creating && canOpening) api('/company/stock/warehouses').then((r: any[]) => setWarehouses(r.filter((w) => !w.archived)), () => {}); }, [creating, canOpening]);
 
@@ -54,6 +58,7 @@ export default function ProductsPage() {
     const body: any = Object.fromEntries(FIELDS.map((k) => [k, edit[k]]));
     body.purchasePrice = body.purchasePrice === '' || body.purchasePrice === null ? null : Number(body.purchasePrice);
     body.barcode = body.barcode?.trim() || null;
+    if (!multiSite) delete body.siteId; else if (body.siteId === 'auto') delete body.siteId; else body.siteId = body.siteId || null;
     if (!edit.id && edit.kind === 'good' && Number(edit.openingQty) > 0) {
       body.openingStock = { quantity: Number(edit.openingQty), warehouseId: edit.openingWarehouse || null,
         ...(edit.openingCost !== '' && edit.openingCost != null ? { unitCost: Number(edit.openingCost) } : {}) };
@@ -99,7 +104,7 @@ export default function ProductsPage() {
           {rows?.map((p) => { const mg = margin(p); return (
             <tr key={p.id} style={p.archivedAt ? { opacity: .6 } : undefined}>
               <td style={{ whiteSpace: 'nowrap' }}><code className="k">{p.code}</code></td>
-              <td><b>{p.name}</b>{p.archivedAt && <> <Pill>Archivé</Pill></>}<div className="small muted">par {p.unit}{p.barcode ? ` · ${p.barcode}` : ''}{p.description ? ` · ${p.description}` : ''}</div></td>
+              <td><b>{p.name}</b>{p.archivedAt && <> <Pill>Archivé</Pill></>}<div className="small muted">par {p.unit}{p.barcode ? ` · ${p.barcode}` : ''}{p.description ? ` · ${p.description}` : ''}</div>{multiSite && <div className="small muted">{p.siteId ? <>Site : <b>{siteName(p.siteId) ?? 'autre site'}</b></> : 'Tous les sites'}</div>}</td>
               {showType && <td><Pill tone={p.kind === 'good' ? 'ok' : 'mute'}>{p.kind === 'good' ? (trade ? 'Marchandise' : 'Bien') : (services ? 'Prestation' : 'Service')}</Pill></td>}
               {trade && <td className="n" style={{ whiteSpace: 'nowrap' }}>{p.purchasePrice == null ? <span className="muted">—</span> : money(p.purchasePrice)}</td>}
               <td className="n" style={{ whiteSpace: 'nowrap' }}>{money(p.salePrice)}</td>
@@ -108,7 +113,7 @@ export default function ProductsPage() {
               <td className="n" style={{ whiteSpace: 'nowrap' }}>{money(p.salePrice * (1 + p.vatRate / 100))}</td>
               {showStock && <td className="n" style={{ whiteSpace: 'nowrap' }}>{p.trackStock ? <Link href="/app/stocks">{p.stockQty.toLocaleString('fr-FR')} {p.unit}</Link> : <span className="muted">—</span>}</td>}
               <td className="n"><div className="row" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
-                {writable && can('products.update') && !p.archivedAt && <button className="btn sm" onClick={() => setEdit({ ...Object.fromEntries(FIELDS.map((k) => [k, p[k] ?? EMPTY[k]])), id: p.id, code: p.code })}>Modifier</button>}
+                {writable && can('products.update') && !p.archivedAt && <button className="btn sm" onClick={() => setEdit({ ...Object.fromEntries(FIELDS.map((k) => [k, p[k] ?? EMPTY[k]])), siteId: p.siteId ?? '', id: p.id, code: p.code })}>Modifier</button>}
                 {writable && can('products.cancel') && <button className={`btn sm${p.archivedAt ? '' : ' danger'}`} disabled={busy} onClick={() => toggleArchive(p)}>{p.archivedAt ? 'Restaurer' : 'Archiver'}</button>}
                 {writable && can('products.cancel') && <button className="btn sm danger" disabled={busy} onClick={() => remove(p)}>Supprimer</button>}
               </div></td>
@@ -140,6 +145,11 @@ export default function ProductsPage() {
               <label className="field">TVA
                 <select className="input" value={edit.vatRate} onChange={set('vatRate')}>{VAT_RATES.map((r) => <option key={r} value={r}>{r === 18 ? '18 % (taux normal)' : r === 9 ? '9 % (taux réduit)' : '0 % (exonéré)'}</option>)}</select>
               </label>
+              {multiSite && <label className="field">Site
+                <select className="input" value={edit.siteId ?? ''} onChange={set('siteId')}>
+                  {!edit.id && <option value="auto">Automatique (site du stock initial)</option>}
+                  <option value="">Tous les sites</option>{sites.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
+                <span className="small muted">{edit.siteId === 'auto' ? "Avec un stock initial, l'article n'est visible que sur le site de son entrepôt ; sans stock, sur tous les sites." : edit.siteId ? 'Visible seulement sur ce site.' : 'Visible sur tous les sites.'}</span></label>}
               {!(trade && edit.kind === 'good') && <Field label={trade ? "Coût d'achat HT (facultatif)" : m.cost} type="number" min={0} step="any" value={edit.purchasePrice ?? ''} onChange={set('purchasePrice')} />}
             </div>
             {editMargin && <p className="small" style={{ margin: 0 }}>Marge unitaire : <b style={editMargin.value < 0 ? { color: 'var(--crit)' } : undefined}>{money(editMargin.value)}</b>{editMargin.rate != null && <> ({editMargin.rate.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} % du prix de vente)</>}</p>}
@@ -149,7 +159,7 @@ export default function ProductsPage() {
                 <Field label={`Quantité en stock${edit.unit ? ` (${edit.unit})` : ''}`} type="number" min={0} step="any" value={edit.openingQty ?? ''} onChange={set('openingQty')} placeholder="0" />
                 <Field label="Coût unitaire HT (FCFA)" type="number" min={0} step="any" value={edit.openingCost ?? ''} onChange={set('openingCost')}
                   placeholder={edit.purchasePrice !== '' && edit.purchasePrice != null ? `${edit.purchasePrice} (prix d'achat)` : "Prix d'achat"} />
-                {warehouses.length > 1 && <label className="field">Entrepôt<select className="input" value={edit.openingWarehouse ?? ''} onChange={set('openingWarehouse')}>
+                {warehouses.length > 1 && <label className="field">Entrepôt<select className="input" value={edit.openingWarehouse ?? ''} onChange={(e) => { const w = warehouses.find((x) => x.id === e.target.value); setEdit({ ...edit, openingWarehouse: e.target.value, ...(w && edit.siteId && edit.siteId !== 'auto' ? { siteId: w.siteId } : {}) }); }}>
                   <option value="">Entrepôt du site</option>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}{w.siteName ? ` — ${w.siteName}` : ''}</option>)}</select></label>}
               </div>
               <p className="small muted" style={{ margin: '4px 0 0' }}>Les quantités déjà en rayon ou en magasin. Le coût unitaire reprend le prix d&apos;achat s&apos;il n&apos;est pas saisi. Ensuite, le stock évolue avec les achats, les ventes et les inventaires.</p>

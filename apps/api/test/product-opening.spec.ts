@@ -50,4 +50,43 @@ describe("Création d'un article avec son stock initial", () => {
     expect(refused.body.error).toMatchObject({ code: 'product_in_use' });
     expect(refused.body.error.message).toMatch(/mouvements de stock.*Archivez/);
   });
+
+  it("réserve un article au site de l'entrepôt de son stock initial", async () => {
+    const created = await owner.agent.post('/company/sites').send({ name: 'Materiels et Poussins', city: 'Bouaflé' });
+    expect(created.status).toBe(201);
+    const site2 = created.body.id;
+    const whs = (await owner.agent.get('/company/stock/warehouses')).body;
+    const wh2 = whs.find((w: any) => w.siteId === site2).id;
+    const main = whs.find((w: any) => w.siteId !== site2).siteId;
+    const as = async (siteId: string | null) => expect((await owner.agent.post('/company/sites/active').send({ siteId })).status).toBe(200);
+
+    const chicks = (await owner.agent.post('/company/products').send({ name: 'Poussins chair', salePrice: 600, purchasePrice: 450, vatRate: 0, openingStock: { quantity: 500, warehouseId: wh2 } })).body;
+    expect(chicks.siteId).toBe(site2);
+    const common = (await owner.agent.post('/company/products').send({ name: 'Sachet plastique', salePrice: 25, vatRate: 18 })).body;
+    expect(common.siteId).toBeNull();
+    // Site choisi explicitement mais entrepôt d'un autre site : refusé.
+    const mismatch = await owner.agent.post('/company/products').send({ name: 'Mangeoire', salePrice: 3000, vatRate: 18, siteId: main, openingStock: { quantity: 2, warehouseId: wh2 } });
+    expect(mismatch.body.error.code).toBe('warehouse_other_site');
+
+    const names = async () => (await owner.agent.get('/company/products')).body.map((p: any) => p.name);
+    await as(main);
+    expect(await names()).not.toContain('Poussins chair');
+    expect(await names()).toContain('Sachet plastique');
+    expect((await owner.agent.get('/company/stock')).body.items.map((p: any) => p.name)).not.toContain('Poussins chair');
+    await as(site2);
+    expect(await names()).toEqual(expect.arrayContaining(['Poussins chair', 'Sachet plastique']));
+    expect((await owner.agent.get('/company/stock')).body.items.find((p: any) => p.name === 'Poussins chair')).toMatchObject({ quantity: 500 });
+    // Caisse de chaque site : seuls ses articles et les articles communs y sont proposés.
+    await as(main);
+    const reg1 = (await owner.agent.post('/company/pos/registers').send({ name: 'Caisse principale' })).body.id;
+    await as(site2);
+    const reg2 = (await owner.agent.post('/company/pos/registers').send({ name: 'Caisse poussins' })).body.id;
+    const catalog = async (r: string) => (await owner.agent.get(`/company/pos/registers/${r}/catalog`)).body.map((p: any) => p.name);
+    expect(await catalog(reg1)).not.toContain('Poussins chair');
+    expect(await catalog(reg2)).toEqual(expect.arrayContaining(['Poussins chair', 'Sachet plastique']));
+    await as(null);
+    expect(await names()).toEqual(expect.arrayContaining(['Poussins chair', 'Sachet plastique']));
+    // Rattachement modifiable : l'article devient commun à tous les sites.
+    expect((await owner.agent.patch(`/company/products/${chicks.id}`).send({ siteId: null })).body.siteId).toBeNull();
+  });
 });
