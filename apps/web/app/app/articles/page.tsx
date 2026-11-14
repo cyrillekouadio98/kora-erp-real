@@ -44,7 +44,6 @@ export default function ProductsPage() {
   useEffect(() => { const h = setTimeout(load, 250); return () => clearTimeout(h); }, [load]);
   // Nouvel article : aperçu du code qu'il recevra (attribué à l'enregistrement).
   const creating = !!edit && !edit.id;
-  useEffect(() => { if (creating) { setNextCode(''); api('/company/products/next-code').then((r) => setNextCode(r.code), () => {}); } }, [creating]);
   // Stock initial saisi avec l'article : réservé à qui administre les stocks ; entrepôt au choix s'il y en a plusieurs.
   const canOpening = can('stock.admin');
   // Plusieurs sites : un article peut être réservé à l'un d'eux (il n'est alors proposé que là).
@@ -52,6 +51,15 @@ export default function ProductsPage() {
   const multiSite = sites.length > 1;
   const siteName = (id: string | null) => sites.find((x) => x.id === id)?.name;
   const [warehouses, setWarehouses] = useState<any[]>([]);
+  // Site qui donnera son code au nouvel article (même règle que l'API) : choisi, sinon celui de l'entrepôt du stock initial.
+  const codeSite = !creating || !multiSite ? null : edit.siteId !== 'auto' ? (edit.siteId || null)
+    : edit.kind === 'good' && Number(edit.openingQty) > 0
+      ? (warehouses.find((w) => w.id === edit.openingWarehouse)?.siteId ?? ctx?.siteId ?? sites.find((x) => x.isDefault)?.id ?? null) : null;
+  useEffect(() => {
+    if (!creating) return;
+    setNextCode('');
+    api(`/company/products/next-code${codeSite ? `?siteId=${codeSite}` : ''}`).then((r) => setNextCode(r.code), () => {});
+  }, [creating, codeSite]);
   useEffect(() => { if (edit && canOpening && !warehouses.length) api('/company/stock/warehouses').then((r: any[]) => setWarehouses(r.filter((w) => !w.archived)), () => {}); }, [!!edit, canOpening]); // eslint-disable-line react-hooks/exhaustive-deps
   // Modification d'une marchandise : stock initial déjà saisi (affiché) ou, sans aucun mouvement, encore saisissable.
   const [history, setHistory] = useState<{ opening: any | null; moves: number; stockQty: number } | null>(null);

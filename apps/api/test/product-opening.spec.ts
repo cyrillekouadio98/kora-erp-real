@@ -62,8 +62,17 @@ describe("Création d'un article avec son stock initial", () => {
 
     const chicks = (await owner.agent.post('/company/products').send({ name: 'Poussins chair', salePrice: 600, purchasePrice: 450, vatRate: 0, openingStock: { quantity: 500, warehouseId: wh2 } })).body;
     expect(chicks.siteId).toBe(site2);
+    // Codes numérotés par site : le site S02 commence à 1, sans suivre les articles communs.
+    expect(chicks.code).toBe('ART-S02-00001');
+    expect((await owner.agent.get(`/company/products/next-code?siteId=${site2}`)).body.code).toBe('ART-S02-00002');
+    const feeder = (await owner.agent.post('/company/products').send({ name: 'Mangeoire 3 kg', salePrice: 1500, vatRate: 18, siteId: site2 })).body;
+    expect(feeder.code).toBe('ART-S02-00002');
+    const mainItem = (await owner.agent.post('/company/products').send({ name: 'Riz parfumé', salePrice: 800, vatRate: 18, siteId: main })).body;
+    expect(mainItem.code).toBe('ART-S01-00001');
     const common = (await owner.agent.post('/company/products').send({ name: 'Sachet plastique', salePrice: 25, vatRate: 18 })).body;
     expect(common.siteId).toBeNull();
+    expect(common.code).toMatch(/^ART-\d{5}$/);
+    expect((await owner.agent.get('/company/products/next-code')).body.code).toBe(`ART-${String(Number(common.code.slice(4)) + 1).padStart(5, '0')}`);
     // Site choisi explicitement mais entrepôt d'un autre site : refusé.
     const mismatch = await owner.agent.post('/company/products').send({ name: 'Mangeoire', salePrice: 3000, vatRate: 18, siteId: main, openingStock: { quantity: 2, warehouseId: wh2 } });
     expect(mismatch.body.error.code).toBe('warehouse_other_site');

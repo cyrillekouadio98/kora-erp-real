@@ -56,10 +56,11 @@ export class ProductsController {
   }
 
   /** Code d'un nouvel article, toujours attribué par N° de séquence (ART-00001…) ; un code déjà pris (ancienne saisie manuelle) est sauté. */
-  private async nextCode(trx: TenantTrx, t: TenantInfo) {
+  private async nextCode(trx: TenantTrx, t: TenantInfo, siteId: string | null | undefined) {
     const taken = async (c: string) => !!(await trx.selectFrom('product').select('id').where('code', '=', c).executeTakeFirst());
+    const seq = await this.codeSequence(trx, siteId);
     for (;;) {
-      const next = await nextNumber(trx, t.companyId, 'product', 'ART');
+      const next = await nextNumber(trx, t.companyId, seq.docType, seq.prefix);
       if (!(await taken(next))) return next;
     }
   }
@@ -74,8 +75,18 @@ export class ProductsController {
   /** Code que recevra le prochain article (aperçu du formulaire, rien n'est réservé). */
   @Permission('products.read') @AllowWhenReadOnly()
   @Get('next-code')
-  nextCodePreview(@Tenant() t: TenantInfo) {
-    return this.db.tenant(t.ctx, async (trx) => ({ code: await peekNumber(trx, 'product', 'ART') }));
+  nextCodePreview(@Tenant() t: TenantInfo, @Query('siteId') siteId?: string) {
+    return this.db.tenant(t.ctx, async (trx) => {
+      const seq = await this.codeSequence(trx, siteId && isUuid(siteId) ? siteId : null);
+      return { code: await peekNumber(trx, seq.docType, seq.prefix) };
+    });
+  }
+
+  /** Séquence des codes : une par site (ART-S02-00001…), et une pour les articles communs (ART-00001…). */
+  private async codeSequence(trx: TenantTrx, siteId: string | null | undefined) {
+    const site = siteId ? await trx.selectFrom('site').select(['id', 'code']).where('id', '=', siteId).executeTakeFirst() : undefined;
+    if (!site) return { docType: 'product', prefix: 'ART' };
+    return { docType: `product_site_${site.id}`, prefix: `ART-${site.code.toUpperCase().replace(/[^A-Z0-9]/g, '') || 'SITE'}` };
   }
 
   @Permission('products.read') @AllowWhenReadOnly()
@@ -110,11 +121,13 @@ export class ProductsController {
       await this.assertBarcodeFree(trx, input.barcode);
       // Site : celui choisi ; à défaut, celui de l'entrepôt qui reçoit le stock initial ; sans stock, tous les sites.
       const wh = openingStock ? await this.stock.warehouseFor(trx, t, openingStock.warehouseId, input.siteId ?? undefined) : null;
-      if (input.siteId === undefined) input.siteId = wh ? wh.site_id : null;
+      // Une entreprise à un seul site n'a que des articles communs.
+      const multiSite = Number((await trx.selectFrom('site').select((eb) => eb.fn.countAll<string>().as('n')).where('archived_at', 'is', null).executeTakeFirstOrThrow()).n) > 1;
+      if (input.siteId === undefined) input.siteId = wh && multiSite ? wh.site_id : null;
       await this.assertSite(trx, t, input.siteId);
       if (wh && input.siteId && wh.site_id !== input.siteId) throw badRequest(`L'entrepôt « ${wh.name} » n'est pas sur le site choisi pour l'article.`, undefined, 'warehouse_other_site');
       if (openingStock) openingStock.warehouseId = wh!.id;
-      const code = await this.nextCode(trx, t);
+      const code = await this.nextCode(trx, t, input.siteId);
       const values: Record<string, unknown> = {};
       for (const [k, col] of Object.entries(COLUMNS)) if ((input as any)[k] !== undefined) values[col] = (input as any)[k];
       // Les biens sont suivis en stock dès leur création ; les services ne le sont jamais.
