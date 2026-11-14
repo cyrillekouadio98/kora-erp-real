@@ -24,7 +24,27 @@ export function useAction() {
 }
 
 export function Field({ label, ...props }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+  if (props.type === 'password') return <PasswordField label={label} {...props} />;
   return <label className="field">{label}<input className="input" {...props} /></label>;
+}
+
+/** Champ mot de passe avec un bouton pour afficher ou masquer la saisie (vérifier avant de valider). */
+function PasswordField({ label, ...props }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+  const [shown, setShown] = useState(false);
+  return (
+    <label className="field">{label}
+      <span className="pw-wrap">
+        <input className="input" {...props} type={shown ? 'text' : 'password'} />
+        <button type="button" className="pw-toggle" aria-pressed={shown} aria-label={shown ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+          title={shown ? 'Masquer le mot de passe' : 'Afficher le mot de passe'} onClick={() => setShown((v) => !v)}>
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" />
+            {shown && <path d="M3 3l18 18" />}
+          </svg>
+        </button>
+      </span>
+    </label>
+  );
 }
 
 /** Choix de l'activité de l'entreprise (commerce, services ou les deux). */
