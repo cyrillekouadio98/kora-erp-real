@@ -133,7 +133,8 @@ export class ProductsController {
   @Patch(':id')
   update(@Tenant() t: TenantInfo, @Param('id') id: string, @Body() body: unknown) {
     if (!isUuid(id)) throw notFound('Article');
-    const input = parse(ProductSchema.partial(), body);
+    const { openingStock, ...input } = parse(ProductSchema.partial().extend({ openingStock: OpeningStockSchema.optional() }), body);
+    if (openingStock && !t.permissions.has('stock.admin')) throw forbidden("Saisir un stock initial demande la permission d'administrer les stocks.");
     return this.db.tenant(t.ctx, async (trx) => {
       const before = await trx.selectFrom('product').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
       if (!before) throw notFound('Article');
@@ -147,11 +148,21 @@ export class ProductsController {
         if (Number(before.stock_qty) !== 0) throw conflict(`« ${before.name} » a encore ${Number(before.stock_qty).toLocaleString('fr-FR')} en stock : soldez-le par un inventaire avant de changer son type.`, 'stock_not_empty');
         patch.track_stock = input.kind === 'good';
       }
-      if (!Object.keys(patch).length) return toNumbers(await trx.selectFrom('product').select(SELECT).where('id', '=', id).executeTakeFirstOrThrow());
-      const after = await trx.updateTable('product').set(patch).where('id', '=', id).returning(SELECT).executeTakeFirstOrThrow();
-      const changes = Object.fromEntries(Object.keys(patch).filter((c) => String((before as any)[c]) !== String(patch[c])).map((c) => [c, { from: (before as any)[c], to: patch[c] }]));
-      await this.audit.tenant(trx, t.ctx, { action: 'product.updated', entityType: 'product', entityId: id, data: { code: after.code, changes } });
-      return toNumbers(after);
+      if (Object.keys(patch).length) {
+        const after = await trx.updateTable('product').set(patch).where('id', '=', id).returning(SELECT).executeTakeFirstOrThrow();
+        const changes = Object.fromEntries(Object.keys(patch).filter((c) => String((before as any)[c]) !== String(patch[c])).map((c) => [c, { from: (before as any)[c], to: patch[c] }]));
+        await this.audit.tenant(trx, t.ctx, { action: 'product.updated', entityType: 'product', entityId: id, data: { code: after.code, changes } });
+      }
+      // Stock initial saisi après coup (article encore sans mouvement) : même règle de site qu'à la création.
+      if (openingStock) {
+        if ((input.kind ?? before.kind) !== 'good') throw badRequest('Un service ne se stocke pas.', undefined, 'service_not_stockable');
+        const site = input.siteId !== undefined ? input.siteId : before.site_id;
+        const wh = await this.stock.warehouseFor(trx, t, openingStock.warehouseId, site ?? undefined);
+        if (site && wh.site_id !== site) throw badRequest(`L'entrepôt « ${wh.name} » n'est pas sur le site de l'article.`, undefined, 'warehouse_other_site');
+        const cost = input.purchasePrice !== undefined ? input.purchasePrice : before.purchase_price === null ? null : Number(before.purchase_price);
+        await this.stock.recordOpening(trx, t, id, { ...openingStock, warehouseId: wh.id, unitCost: openingStock.unitCost ?? cost ?? 0 });
+      }
+      return toNumbers(await trx.selectFrom('product').select(SELECT).where('id', '=', id).executeTakeFirstOrThrow());
     });
   }
 

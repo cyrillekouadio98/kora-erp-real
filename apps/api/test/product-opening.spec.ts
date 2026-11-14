@@ -89,4 +89,19 @@ describe("Création d'un article avec son stock initial", () => {
     // Rattachement modifiable : l'article devient commun à tous les sites.
     expect((await owner.agent.patch(`/company/products/${chicks.id}`).send({ siteId: null })).body.siteId).toBeNull();
   });
+
+  it("ajoute le stock initial en modifiant un article qui n'a encore aucun mouvement", async () => {
+    await owner.agent.post('/company/sites/active').send({ siteId: null });
+    const p = (await owner.agent.post('/company/products').send({ name: 'Abreuvoir 5 L', salePrice: 2500, purchasePrice: 1800, vatRate: 18 })).body;
+    const res = await owner.agent.patch(`/company/products/${p.id}`).send({ salePrice: 2700, openingStock: { quantity: 12 } });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ salePrice: 2700, stockQty: 12 });
+    const mv = (await owner.agent.get(`/company/stock/${p.id}/movements`)).body.movements;
+    expect(mv).toHaveLength(1);
+    expect(mv[0]).toMatchObject({ reason: 'opening', quantity: 12, value: 21_600 });
+    // Une seconde fois : refusé, et la modification envoyée avec n'est pas enregistrée.
+    const again = await owner.agent.patch(`/company/products/${p.id}`).send({ salePrice: 9999, openingStock: { quantity: 3 } });
+    expect(again.body.error.code).toBe('already_has_movements');
+    expect((await owner.agent.get('/company/products')).body.find((x: any) => x.id === p.id).salePrice).toBe(2700);
+  });
 });

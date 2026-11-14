@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { ACTIVITIES, money, VAT_RATES } from '@/lib/format';
+import { ACTIVITIES, date, money, VAT_RATES } from '@/lib/format';
 import { useSession } from '@/components/session';
 import { ImportButton } from '@/components/import';
 import { productsImport } from '@/components/import-configs';
@@ -52,14 +52,25 @@ export default function ProductsPage() {
   const multiSite = sites.length > 1;
   const siteName = (id: string | null) => sites.find((x) => x.id === id)?.name;
   const [warehouses, setWarehouses] = useState<any[]>([]);
-  useEffect(() => { if (creating && canOpening) api('/company/stock/warehouses').then((r: any[]) => setWarehouses(r.filter((w) => !w.archived)), () => {}); }, [creating, canOpening]);
+  useEffect(() => { if (edit && canOpening && !warehouses.length) api('/company/stock/warehouses').then((r: any[]) => setWarehouses(r.filter((w) => !w.archived)), () => {}); }, [!!edit, canOpening]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Modification d'une marchandise : stock initial déjà saisi (affiché) ou, sans aucun mouvement, encore saisissable.
+  const [history, setHistory] = useState<{ opening: any | null; moves: number; stockQty: number } | null>(null);
+  useEffect(() => {
+    setHistory(null);
+    if (edit?.id && edit.kind === 'good' && can('stock.read')) {
+      api(`/company/stock/${edit.id}/movements`).then((r: any) => setHistory({
+        opening: r.movements.find((m: any) => m.reason === 'opening') ?? null, moves: r.movements.length, stockQty: r.product.stock_qty,
+      }), () => {});
+    }
+  }, [edit?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const openingEditable = edit?.kind === 'good' && canOpening && (!edit?.id || history?.moves === 0);
 
   const save = () => run(async () => {
     const body: any = Object.fromEntries(FIELDS.map((k) => [k, edit[k]]));
     body.purchasePrice = body.purchasePrice === '' || body.purchasePrice === null ? null : Number(body.purchasePrice);
     body.barcode = body.barcode?.trim() || null;
     if (!multiSite) delete body.siteId; else if (body.siteId === 'auto') delete body.siteId; else body.siteId = body.siteId || null;
-    if (!edit.id && edit.kind === 'good' && Number(edit.openingQty) > 0) {
+    if (openingEditable && Number(edit.openingQty) > 0) {
       body.openingStock = { quantity: Number(edit.openingQty), warehouseId: edit.openingWarehouse || null,
         ...(edit.openingCost !== '' && edit.openingCost != null ? { unitCost: Number(edit.openingCost) } : {}) };
     }
@@ -153,7 +164,14 @@ export default function ProductsPage() {
               {!(trade && edit.kind === 'good') && <Field label={trade ? "Coût d'achat HT (facultatif)" : m.cost} type="number" min={0} step="any" value={edit.purchasePrice ?? ''} onChange={set('purchasePrice')} />}
             </div>
             {editMargin && <p className="small" style={{ margin: 0 }}>Marge unitaire : <b style={editMargin.value < 0 ? { color: 'var(--crit)' } : undefined}>{money(editMargin.value)}</b>{editMargin.rate != null && <> ({editMargin.rate.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} % du prix de vente)</>}</p>}
-            {edit.kind === 'good' && !edit.id && (canOpening ? <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
+            {edit.kind === 'good' && edit.id && history && !openingEditable && <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
+              <legend className="small" style={{ fontWeight: 600, marginBottom: 6 }}>Stock initial</legend>
+              {history.opening
+                ? <p className="small" style={{ margin: 0 }}><b>{history.opening.quantity.toLocaleString('fr-FR')} {edit.unit}</b> à {money(history.opening.quantity ? history.opening.value / history.opening.quantity : 0)} l&apos;unité, soit {money(history.opening.value)} — {history.opening.warehouseName}, le {date(history.opening.date)}</p>
+                : <p className="small" style={{ margin: 0 }}>{history.moves ? 'Aucun stock initial : le stock de cet article vient de ses achats, ventes et bons.' : 'Aucun stock initial saisi.'}</p>}
+              <p className="small muted" style={{ margin: '4px 0 0' }}>Stock actuel : <b>{history.stockQty.toLocaleString('fr-FR')} {edit.unit}</b>. Le stock initial ne se modifie plus une fois l&apos;article mouvementé : corrigez le stock par un inventaire dans <Link href="/app/stocks">Stocks</Link>.</p>
+            </fieldset>}
+            {edit.kind === 'good' && (!edit.id || (history && openingEditable)) && (canOpening ? <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
               <legend className="small" style={{ fontWeight: 600, marginBottom: 6 }}>Stock initial (facultatif)</legend>
               <div className="grid2">
                 <Field label={`Quantité en stock${edit.unit ? ` (${edit.unit})` : ''}`} type="number" min={0} step="any" value={edit.openingQty ?? ''} onChange={set('openingQty')} placeholder="0" />
