@@ -57,6 +57,16 @@ export default function ContactsPage() {
   // Plusieurs sites : un contact peut être réservé à l'un d'eux (il n'est alors proposé que là).
   const sites = ctx?.sites ?? [];
   const multiSite = sites.length > 1;
+  // Affectation aux sites : tous les contacts affichés, un site chacun ('' = tous les sites), enregistrés en une fois.
+  const [assign, setAssign] = useState<Record<string, string> | null>(null);
+  const [notice, setNotice] = useState('');
+  const saveAssign = () => run(async () => {
+    const changed = (rows ?? []).filter((c) => (assign![c.id] ?? '') !== (c.siteId ?? ''));
+    for (const c of changed) await api(`/company/contacts/${c.id}`, { method: 'PATCH', body: { siteId: assign![c.id] || null } });
+    setAssign(null);
+    setNotice(changed.length ? `${changed.length} contact(s) affecté(s) : ${changed.map((c) => `${c.name} → ${assign![c.id] ? sites.find((x) => x.id === assign![c.id])?.name : 'tous les sites'}`).join(', ')}.` : 'Aucun changement.');
+    await load();
+  });
   const siteLabel = (c: any) => (!multiSite ? undefined : c.siteId ? sites.find((x) => x.id === c.siteId)?.name ?? 'Autre site' : 'Tous les sites');
   const writable = !ctx?.readOnly;
   const [rows, setRows] = useState<any[] | null>(null);
@@ -99,11 +109,13 @@ export default function ContactsPage() {
         <h1>Clients et fournisseurs</h1>
         <div className="row">
           {can('contacts.export') && <a className="btn" href={`/api/company/contacts/export?${params}`}>Exporter (CSV)</a>}
+          {multiSite && can('contacts.update') && writable && !!rows?.length && <button className="btn" onClick={() => { setNotice(''); setAssign(Object.fromEntries((rows ?? []).filter((c) => !c.archivedAt).map((c) => [c.id, c.siteId ?? '']))); }}>Affecter aux sites</button>}
           {can('contacts.create') && writable && <ImportButton config={CONTACTS_IMPORT} onDone={load} />}
           {can('contacts.create') && writable && <button className="btn primary" onClick={() => open({ ...EMPTY, siteId: multiSite ? ctx?.siteId ?? '' : '' })}>Nouveau contact</button>}
         </div>
       </div>
-      <Alert>{!edit && error}</Alert>
+      <Alert>{!edit && !assign && error}</Alert>
+      {notice && <Alert kind="ok">{notice}</Alert>}
       <div className="row">
         <div style={{ flex: 2, minWidth: 220 }}><Field label="Rechercher" type="search" placeholder="Nom, code, téléphone, NCC, ville…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
         <label className="field" style={{ flex: 1, minWidth: 130 }}>Type
@@ -123,13 +135,14 @@ export default function ContactsPage() {
           {rows && !rows.length && <p className="muted">{q || kind || archived !== 'false' ? 'Aucun contact ne correspond à ces critères.' : 'Aucun contact pour l’instant. Ajoutez vos premiers clients et fournisseurs.'}</p>}
         </div>
       ) : <div className="table-wrap"><table>
-        <thead><tr><th>Code</th><th>Nom</th><th>Type</th><th>Téléphone</th><th>Ville</th><th className="n">Délai de paiement</th><th></th></tr></thead>
+        <thead><tr><th>Code</th><th>Nom</th><th>Type</th>{multiSite && <th>Site</th>}<th>Téléphone</th><th>Ville</th><th className="n">Délai de paiement</th><th></th></tr></thead>
         <tbody>
           {rows?.map((c) => (
             <tr key={c.id} style={c.archivedAt ? { opacity: .6 } : undefined}>
               <td style={{ whiteSpace: 'nowrap' }}><code className="k">{c.code}</code></td>
-              <td><div className="row" style={{ flexWrap: 'nowrap' }}><span className="vg-mini"><Logo c={c} /></span><div><b>{c.name}</b>{c.archivedAt && <> <Pill>Archivé</Pill></>}<div className="small muted">{[c.email, c.taxId && `NCC ${c.taxId}`, siteLabel(c)].filter(Boolean).join(' · ')}</div></div></div></td>
+              <td><div className="row" style={{ flexWrap: 'nowrap' }}><span className="vg-mini"><Logo c={c} /></span><div><b>{c.name}</b>{c.archivedAt && <> <Pill>Archivé</Pill></>}<div className="small muted">{[c.email, c.taxId && `NCC ${c.taxId}`].filter(Boolean).join(' · ')}</div></div></div></td>
               <td><Pill tone={KIND[c.kind][1]}>{KIND[c.kind][0]}</Pill></td>
+              {multiSite && <td>{c.siteId ? siteLabel(c) : <span className="muted">Tous les sites</span>}</td>}
               <td style={{ whiteSpace: 'nowrap' }}>{c.phone ?? '—'}</td>
               <td>{c.city ?? '—'}</td>
               <td className="n">{c.paymentTermsDays ? `${c.paymentTermsDays} j` : 'Comptant'}</td>
@@ -139,18 +152,39 @@ export default function ContactsPage() {
               </div></td>
             </tr>
           ))}
-          {rows && !rows.length && <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 28 }}>
+          {rows && !rows.length && <tr><td colSpan={multiSite ? 8 : 7} className="muted" style={{ textAlign: 'center', padding: 28 }}>
             {q || kind || archived !== 'false' ? 'Aucun contact ne correspond à ces critères.' : 'Aucun contact pour l’instant. Ajoutez vos premiers clients et fournisseurs.'}
           </td></tr>}
         </tbody>
       </table></div>}
       {rows && rows.length > 0 && <p className="small muted" style={{ margin: 0 }}>{rows.length} contact{rows.length > 1 ? 's' : ''}</p>}
 
+      {assign && (
+        <div className="modal-back" onClick={() => setAssign(null)}>
+          <form className="modal" role="dialog" aria-modal="true" aria-labelledby="assign-title" style={{ width: 'min(680px, 100%)' }} onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); saveAssign(); }}>
+            <h2 id="assign-title">Affecter les contacts à leur site</h2>
+            <p className="small muted" style={{ margin: 0 }}>Un contact rattaché à un site n'est proposé que sur ce site (ventes, achats, caisse, stocks). « Tous les sites » le garde visible partout. Les codes ne changent pas.</p>
+            <Alert>{error}</Alert>
+            <div className="table-wrap"><table>
+              <thead><tr><th>Contact</th><th>Site</th></tr></thead>
+              <tbody>{(rows ?? []).filter((c) => !c.archivedAt).map((c) => (
+                <tr key={c.id}><td><b>{c.name}</b><div className="small muted">{c.code} · {KIND[c.kind][0]}</div></td>
+                  <td><select className="input" aria-label={`Site de ${c.name}`} value={assign[c.id] ?? ''} onChange={(ev) => setAssign({ ...assign, [c.id]: ev.target.value })}>
+                    <option value="">Tous les sites</option>{sites.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></td></tr>))}</tbody>
+            </table></div>
+            <div className="row"><button className="btn primary" disabled={busy}>Enregistrer les affectations</button><button type="button" className="btn" onClick={() => setAssign(null)}>Annuler</button></div>
+          </form>
+        </div>
+      )}
       {edit && (
         <div className="modal-back" onClick={() => setEdit(null)}>
           <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); save(); }}>
             <h2>{edit.id ? `Modifier ${edit.code}` : 'Nouveau contact'}</h2>
             <Alert>{error}</Alert>
+              {multiSite && <label className="field" style={{ fontWeight: 600 }}>Site du contact
+                <select className="input" value={edit.siteId ?? ''} onChange={set('siteId')}>
+                  <option value="">Tous les sites</option>{sites.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
+                <span className="small muted" style={{ fontWeight: 400 }}>{edit.siteId ? 'Proposé seulement sur ce site (ventes, achats, caisse).' : 'Proposé sur tous les sites.'}{edit.id && edit.siteId !== (rows?.find((r) => r.id === edit.id)?.siteId ?? '') ? ' Le code reste le même.' : ''}</span></label>}
             <div className="vg-avatar-edit">
               <Logo c={edit} src={logo === undefined ? edit.logo && `/api${edit.logo}` : logo} />
               <div className="row">
@@ -176,10 +210,6 @@ export default function ContactsPage() {
               <Field label={label('rccm', 'RCCM')} required={need('rccm')} value={edit.rccm} onChange={set('rccm')} placeholder="CI-ABJ-…" />
               <Field label="Adresse" value={edit.address} onChange={set('address')} />
               <Field label="Ville" value={edit.city} onChange={set('city')} />
-              {multiSite && <label className="field">Site
-                <select className="input" value={edit.siteId ?? ''} onChange={set('siteId')}>
-                  <option value="">Tous les sites</option>{sites.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
-                <span className="small muted">{edit.siteId ? 'Proposé seulement sur ce site (ventes, achats, caisse).' : 'Proposé sur tous les sites.'}{edit.id && edit.siteId !== (rows?.find((r) => r.id === edit.id)?.siteId ?? '') ? ' Le code reste le même.' : ''}</span></label>}
               <Field label="Pays (code ISO)" maxLength={2} value={edit.countryCode} onChange={set('countryCode')} />
               <Field label={label('paymentTermsDays', 'Délai de paiement (jours, 0 = comptant)')} required={need('paymentTermsDays')} type="number" min={0} max={365} value={edit.paymentTermsDays} onChange={set('paymentTermsDays')} />
             </div>

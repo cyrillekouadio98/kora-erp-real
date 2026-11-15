@@ -245,7 +245,8 @@ export class ContactsController {
       if (!before) throw notFound('Contact');
       if (before.archived_at) throw conflict('Ce contact est archivé : restaurez-le avant de le modifier.', 'contact_archived');
       const patch = toColumns(input);
-      assertComplete({ ...before, ...patch });
+      // Simple affectation à un site : pas d'exigence de fiche complète (anciens contacts incomplets).
+      if (Object.keys(input).some((k) => k !== 'siteId')) assertComplete({ ...before, ...patch });
       if (input.siteId !== undefined) await this.assertSite(trx, t, input.siteId);
       // Nouveau type de tiers : nouveau code avec le bon préfixe (les pièces déjà émises gardent l'ancien).
       if (input.kind && input.kind !== before.kind) patch.code = await this.nextCode(trx, t, input.kind, input.siteId !== undefined ? input.siteId : before.site_id);
