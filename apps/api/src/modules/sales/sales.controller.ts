@@ -29,8 +29,11 @@ export const LineSchema = z.object({
   unit: z.string().trim().max(20).nullable().optional(),
   unitPrice: z.coerce.number().min(0, { message: 'Le prix ne peut pas être négatif' }).max(1e13).transform((v) => Math.round(v * 100) / 100),
   discountPct: z.coerce.number().min(0).max(100, { message: 'La remise ne peut pas dépasser 100 %' }).optional(),
+  /** Remise en montant (FCFA) sur le total HT de la ligne. */
+  discountAmount: z.coerce.number().min(0, { message: 'La remise ne peut pas être négative' }).max(1e13).transform((v) => Math.round(v * 100) / 100).optional(),
   vatRate: z.coerce.number().refine((v) => VAT_RATES.includes(v), { message: 'Taux de TVA : 18 %, 9 % ou 0 %' }),
-}).strict();
+}).strict().refine((l) => !l.discountAmount || l.discountAmount <= l.quantity * l.unitPrice * (1 - (l.discountPct ?? 0) / 100) + 0.5,
+  { message: 'La remise dépasse le montant de la ligne', path: ['discountAmount'] });
 
 const DocSchema = z.object({
   contactId: z.string().min(1, { message: 'Choisissez un client' }),

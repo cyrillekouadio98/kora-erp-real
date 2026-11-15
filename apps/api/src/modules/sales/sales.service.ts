@@ -15,7 +15,7 @@ import { MailService } from '../mail/mail.service';
 import { StockService } from '../stock/stock.service';
 import { TreasuryService } from '../treasury/treasury.service';
 
-export interface LineInput { productId?: string | null; description: string; quantity: number; unit?: string | null; unitPrice: number; discountPct?: number; vatRate: number }
+export interface LineInput { productId?: string | null; description: string; quantity: number; unit?: string | null; unitPrice: number; discountPct?: number; discountAmount?: number; vatRate: number }
 export interface DocInput {
   contactId: string; issueDate?: string; dueDate?: string | null; validUntil?: string | null; deliveryDate?: string | null; customerRef?: string | null;
   notes?: string | null; restock?: boolean; warehouseId?: string | null; lines: LineInput[];
@@ -30,8 +30,9 @@ export const today = () => new Date().toISOString().slice(0, 10);
 export const addDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400_000).toISOString().slice(0, 10);
 
 /** Montants en francs CFA entiers : chaque ligne est arrondie, puis les lignes sont additionnées. */
-export function computeLine(l: Pick<LineInput, 'quantity' | 'unitPrice' | 'discountPct' | 'vatRate'>) {
-  const ht = Math.round(l.quantity * l.unitPrice * (1 - (l.discountPct ?? 0) / 100));
+export function computeLine(l: Pick<LineInput, 'quantity' | 'unitPrice' | 'discountPct' | 'discountAmount' | 'vatRate'>) {
+  // Remise en % puis remise en montant, sans descendre sous zéro.
+  const ht = Math.max(0, Math.round(l.quantity * l.unitPrice * (1 - (l.discountPct ?? 0) / 100) - (l.discountAmount ?? 0)));
   return { ht, vat: Math.round((ht * l.vatRate) / 100) };
 }
 /** Statut d'une facture émise d'après ce qui a été encaissé et crédité par avoir. */
@@ -86,7 +87,7 @@ export class SalesService {
     await trx.deleteFrom('sales_document_line').where('document_id', '=', documentId).execute();
     await trx.insertInto('sales_document_line').values(lines.map((l, i) => ({
       company_id: t.companyId, document_id: documentId, position: i + 1, product_id: l.productId ?? null, description: l.description,
-      quantity: l.quantity, unit: l.unit ?? null, unit_price: l.unitPrice, discount_pct: l.discountPct ?? 0, vat_rate: l.vatRate,
+      quantity: l.quantity, unit: l.unit ?? null, unit_price: l.unitPrice, discount_pct: l.discountPct ?? 0, discount_amount: l.discountAmount ?? 0, vat_rate: l.vatRate,
       total_ht: totals.lines[i].ht, total_vat: totals.lines[i].vat,
     }))).execute();
     return totals;
@@ -163,7 +164,9 @@ export class SalesService {
       ...(d.type === 'invoice' ? balance(d) : { remaining: 0, refundDue: 0 }), sourceInvoiceId: d.source_invoice_id, vatBreakdown, reminders,
       related: related.map((r) => ({ ...r, totalTtc: Number(r.totalTtc) })),
       lines: lines.map((l) => ({ id: l.id, productId: l.product_id, description: l.description, quantity: Number(l.quantity), unit: l.unit,
-        unitPrice: Number(l.unit_price), discountPct: Number(l.discount_pct), vatRate: Number(l.vat_rate), totalHt: Number(l.total_ht), totalVat: Number(l.total_vat) })),
+        unitPrice: Number(l.unit_price), discountPct: Number(l.discount_pct), discountAmount: Number(l.discount_amount), vatRate: Number(l.vat_rate), totalHt: Number(l.total_ht), totalVat: Number(l.total_vat),
+        // Remise totale de la ligne en FCFA (pourcentage et montant confondus).
+        discount: Math.max(0, Math.round(Number(l.quantity) * Number(l.unit_price)) - Number(l.total_ht)) })),
       payments: payments.map((p) => ({ ...p, amount: Number(p.amount) })),
       lastPaidOn: payments.at(-1)?.paidOn ?? null,
     };

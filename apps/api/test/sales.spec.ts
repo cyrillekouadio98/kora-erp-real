@@ -23,6 +23,14 @@ describe('Calcul des montants', () => {
     expect(t.lines).toEqual([{ ht: 40500, vat: 7290 }, { ht: 833, vat: 75 }, { ht: 100000, vat: 0 }]);
     expect(t).toMatchObject({ ht: 141333, vat: 7365, ttc: 148698 });
   });
+
+  it('applique une remise en montant, après la remise en %', () => {
+    const t = computeTotals([
+      { description: 'Mangeoire', quantity: 4, unitPrice: 2500, discountAmount: 1000, vatRate: 18 },
+      { description: 'Abreuvoir', quantity: 2, unitPrice: 5000, discountPct: 10, discountAmount: 500, vatRate: 0 },
+    ]);
+    expect(t.lines).toEqual([{ ht: 9000, vat: 1620 }, { ht: 8500, vat: 0 }]);
+  });
 });
 
 describe('Ventes : articles, devis, factures, encaissements', () => {
@@ -72,6 +80,19 @@ describe('Ventes : articles, devis, factures, encaissements', () => {
     });
     expect(draft.status).toBe(201);
     expect(draft.body).toMatchObject({ status: 'draft', number: null, totalHt: 45500, totalVat: 8190, totalTtc: 53690 });
+
+    // Remise en montant : enregistrée, affichée en FCFA, et refusée au-delà du montant de la ligne.
+    const withAmount = await owner.agent.post('/company/sales/documents').send({
+      type: 'quote', contactId: customerId, lines: [{ description: 'Livraison', quantity: 2, unitPrice: 5000, discountAmount: 1500, vatRate: 18 }],
+    });
+    expect(withAmount.body).toMatchObject({ totalHt: 8500, totalTtc: 10030 });
+    expect(withAmount.body.lines[0]).toMatchObject({ discountAmount: 1500, discountPct: 0, discount: 1500, totalHt: 8500 });
+    expect(draft.body.lines[0]).toMatchObject({ discountPct: 10, discount: 4500 });
+    const tooMuch = await owner.agent.post('/company/sales/documents').send({
+      type: 'quote', contactId: customerId, lines: [{ description: 'Livraison', quantity: 1, unitPrice: 5000, discountAmount: 6000, vatRate: 18 }],
+    });
+    expect(tooMuch.status).toBe(400);
+    expect((await owner.agent.delete(`/company/sales/documents/${withAmount.body.id}`)).status).toBe(200);
 
     const sent = await owner.agent.post(`/company/sales/documents/${draft.body.id}/validate`);
     expect(sent.body).toMatchObject({ status: 'sent', number: `DEV-${year}-00001`, validUntil: addDays(today(), 30) });

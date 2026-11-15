@@ -277,7 +277,7 @@ export class PosService {
       }).returning('id').executeTakeFirstOrThrow();
       await trx.insertInto('sales_document_line').values(input.lines.map((l, i) => ({
         company_id: t.companyId, document_id: d.id, position: i + 1, product_id: l.productId ?? null, description: l.description, quantity: l.quantity, unit: l.unit ?? null,
-        unit_price: l.unitPrice, discount_pct: l.discountPct ?? 0, vat_rate: l.vatRate, total_ht: totals.lines[i].ht, total_vat: totals.lines[i].vat,
+        unit_price: l.unitPrice, discount_pct: l.discountPct ?? 0, discount_amount: l.discountAmount ?? 0, vat_rate: l.vatRate, total_ht: totals.lines[i].ht, total_vat: totals.lines[i].vat,
       }))).execute();
       await trx.updateTable('sales_document').set({ status: 'issued', number, customer: JSON.stringify(customer), validated_at: new Date(), validated_by: t.ctx.userId }).where('id', '=', d.id).execute();
       await this.stock.applySalesDocument(trx, t, d.id);

@@ -120,7 +120,7 @@ export interface SalesDocumentTable {
 }
 export interface SalesDocumentLineTable {
   company_id: string; id: Generated<string>; document_id: string; position: number; product_id: string | null; description: string;
-  quantity: Num; unit: string | null; unit_price: Num; discount_pct: NumDefault; vat_rate: Num; total_ht: Num; total_vat: Num;
+  quantity: Num; unit: string | null; unit_price: Num; discount_pct: NumDefault; discount_amount: NumDefault; vat_rate: Num; total_ht: Num; total_vat: Num;
 }
 export type PaymentMethod = 'cash' | 'mobile_money' | 'bank_transfer' | 'cheque' | 'card';
 export interface SalesPaymentTable {

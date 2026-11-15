@@ -52,7 +52,7 @@ export class PurchasesService {
     await trx.deleteFrom('purchase_document_line').where('document_id', '=', documentId).execute();
     await trx.insertInto('purchase_document_line').values(lines.map((l, i) => ({
       company_id: t.companyId, document_id: documentId, position: i + 1, product_id: l.productId ?? null, description: l.description,
-      quantity: l.quantity, unit: l.unit ?? null, unit_price: l.unitPrice, discount_pct: l.discountPct ?? 0, vat_rate: l.vatRate,
+      quantity: l.quantity, unit: l.unit ?? null, unit_price: l.unitPrice, discount_pct: l.discountPct ?? 0, discount_amount: l.discountAmount ?? 0, vat_rate: l.vatRate,
       total_ht: totals.lines[i].ht, total_vat: totals.lines[i].vat,
     }))).execute();
     return totals;
@@ -114,7 +114,8 @@ export class PurchasesService {
         totalHt: Number(d.total_ht), totalVat: Number(d.total_vat), totalTtc: Number(d.total_ttc), paidAmount: Number(d.paid_amount),
         remaining: d.type === 'invoice' && d.status !== 'draft' ? remainingOf(d) : 0, vatBreakdown, related,
         lines: lines.map((l) => ({ id: l.id, productId: l.product_id, description: l.description, quantity: Number(l.quantity), unit: l.unit,
-          unitPrice: Number(l.unit_price), discountPct: Number(l.discount_pct), vatRate: Number(l.vat_rate), totalHt: Number(l.total_ht), totalVat: Number(l.total_vat) })),
+          unitPrice: Number(l.unit_price), discountPct: Number(l.discount_pct), discountAmount: Number(l.discount_amount), vatRate: Number(l.vat_rate), totalHt: Number(l.total_ht), totalVat: Number(l.total_vat),
+          discount: Math.max(0, Math.round(Number(l.quantity) * Number(l.unit_price)) - Number(l.total_ht)) })),
         payments: payments.map((p) => ({ ...p, amount: Number(p.amount) })),
       };
     });

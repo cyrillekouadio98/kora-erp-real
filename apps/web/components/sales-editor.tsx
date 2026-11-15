@@ -5,14 +5,16 @@ import { api } from '@/lib/api';
 import { DOC_LABEL, money, PURCHASE_LABEL, VAT_RATES } from '@/lib/format';
 import { Alert, Field, useAction } from '@/components/ui';
 
-interface Line { productId: string | null; description: string; quantity: number | string; unit: string | null; unitPrice: number | string; discountPct: number | string; vatRate: number }
-const EMPTY_LINE: Line = { productId: null, description: '', quantity: 1, unit: null, unitPrice: 0, discountPct: 0, vatRate: 18 };
+interface Line { productId: string | null; description: string; quantity: number | string; unit: string | null; unitPrice: number | string; discountPct: number | string; discountAmount: number | string; vatRate: number }
+const EMPTY_LINE: Line = { productId: null, description: '', quantity: 1, unit: null, unitPrice: 0, discountPct: 0, discountAmount: 0, vatRate: 18 };
 /** Ne garde que les champs saisissables d'une ligne (l'API refuse les champs calculés comme totalHt). */
-const toLine = (l: any): Line => ({ productId: l.productId ?? null, description: l.description ?? '', quantity: l.quantity ?? 1, unit: l.unit ?? null, unitPrice: l.unitPrice ?? 0, discountPct: l.discountPct ?? 0, vatRate: l.vatRate ?? 18 });
+const toLine = (l: any): Line => ({ productId: l.productId ?? null, description: l.description ?? '', quantity: l.quantity ?? 1, unit: l.unit ?? null, unitPrice: l.unitPrice ?? 0, discountPct: l.discountPct ?? 0, discountAmount: l.discountAmount ?? 0, vatRate: l.vatRate ?? 18 });
+/** Remise saisie en FCFA plutôt qu'en % (ligne déjà enregistrée avec un montant, ou choix de l'utilisateur). */
+const inAmount = (l: Line) => Number(l.discountAmount || 0) > 0 || (l as any).mode === 'amount';
 
 /** Même règle que l'API : chaque ligne arrondie au franc, puis additionnée. */
 function lineTotals(l: Line) {
-  const ht = Math.round(Number(l.quantity || 0) * Number(l.unitPrice || 0) * (1 - Number(l.discountPct || 0) / 100));
+  const ht = Math.max(0, Math.round(Number(l.quantity || 0) * Number(l.unitPrice || 0) * (1 - Number(l.discountPct || 0) / 100) - Number(l.discountAmount || 0)));
   return { ht, vat: Math.round((ht * l.vatRate) / 100) };
 }
 
@@ -75,7 +77,7 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
   const save = () => run(async () => {
     const body: any = {
       contactId, notes: notes || null,
-      lines: lines.map(toLine).map((l) => ({ ...l, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), discountPct: Number(l.discountPct || 0), unit: l.unit || null })),
+      lines: lines.map(toLine).map((l) => ({ ...l, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), discountPct: Number(l.discountPct || 0), discountAmount: Number(l.discountAmount || 0), unit: l.unit || null })),
       ...(limitKey ? { [limitKey]: limitDate || null } : {}),
       ...(isPurchaseInvoice ? { supplierRef: supplierRef || null, issueDate } : {}),
       ...(isCredit ? { restock } : {}),
@@ -120,7 +122,7 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
       </div>
 
       <div className="table-wrap"><table className="lines">
-        <thead><tr><th style={{ minWidth: 170 }}>Article</th><th style={{ minWidth: 200 }}>Désignation</th><th className="n">Qté</th><th className="n">Prix unit. HT</th><th className="n">Remise %</th><th>TVA</th><th className="n">Total HT</th><th></th></tr></thead>
+        <thead><tr><th style={{ minWidth: 170 }}>Article</th><th style={{ minWidth: 200 }}>Désignation</th><th className="n">Qté</th><th className="n">Prix unit. HT</th><th className="n">Remise</th><th>TVA</th><th className="n">Total HT</th><th></th></tr></thead>
         <tbody>
           {lines.map((l, i) => (
             <tr key={i}>
@@ -130,7 +132,14 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
               <td><input className="input" required value={l.description} onChange={(e) => setLine(i, { description: e.target.value })} aria-label={`Désignation ligne ${i + 1}`} /></td>
               <td><input className="input n" type="number" min="0.001" step="any" required value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} aria-label={`Quantité ligne ${i + 1}`} style={{ width: 80 }} /></td>
               <td><input className="input n" type="number" min="0" step="any" required value={l.unitPrice} onChange={(e) => setLine(i, { unitPrice: e.target.value })} aria-label={`Prix ligne ${i + 1}`} style={{ width: 120 }} /></td>
-              <td><input className="input n" type="number" min="0" max="100" step="any" value={l.discountPct} onChange={(e) => setLine(i, { discountPct: e.target.value })} aria-label={`Remise ligne ${i + 1}`} style={{ width: 70 }} /></td>
+              <td><div className="row" style={{ gap: 4, flexWrap: 'nowrap' }}>
+                {inAmount(l)
+                  ? <input className="input n" type="number" min="0" step="any" value={l.discountAmount} onChange={(e) => setLine(i, { discountAmount: e.target.value })} aria-label={`Remise ligne ${i + 1} en FCFA`} style={{ width: 100 }} />
+                  : <input className="input n" type="number" min="0" max="100" step="any" value={l.discountPct} onChange={(e) => setLine(i, { discountPct: e.target.value })} aria-label={`Remise ligne ${i + 1} en %`} style={{ width: 70 }} />}
+                <select className="input" value={inAmount(l) ? 'amount' : 'pct'} aria-label={`Type de remise ligne ${i + 1}`} style={{ minWidth: 76 }}
+                  onChange={(e) => setLine(i, e.target.value === 'amount' ? { mode: 'amount', discountPct: 0 } as any : { mode: 'pct', discountAmount: 0 } as any)}>
+                  <option value="pct">%</option><option value="amount">FCFA</option></select>
+              </div></td>
               <td><select className="input" value={l.vatRate} onChange={(e) => setLine(i, { vatRate: Number(e.target.value) })} aria-label={`TVA ligne ${i + 1}`} style={{ minWidth: 78 }}>{VAT_RATES.map((r) => <option key={r} value={r}>{r} %</option>)}</select></td>
               <td className="n" style={{ whiteSpace: 'nowrap' }}>{money(totals[i].ht)}</td>
               <td>{lines.length > 1 && <button type="button" className="btn sm danger" onClick={() => editLines(lines.filter((_, j) => j !== i))} aria-label={`Supprimer la ligne ${i + 1}`}>✕</button>}</td>

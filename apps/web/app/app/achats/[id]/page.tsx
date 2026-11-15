@@ -90,12 +90,12 @@ export default function PurchaseDocumentPage() {
               <thead><tr><th>Désignation</th><th className="n">Qté</th><th className="n">Prix unit. HT</th><th className="n">Remise</th><th className="n">TVA</th><th className="n">Total HT</th></tr></thead>
               <tbody>{doc.lines.map((l: any) => (
                 <tr key={l.id}><td>{l.description}</td><td className="n">{l.quantity.toLocaleString('fr-FR')}{l.unit ? ` ${l.unit}` : ''}</td><td className="n">{money(l.unitPrice)}</td>
-                  <td className="n">{l.discountPct ? `${l.discountPct} %` : '—'}</td><td className="n">{l.vatRate} %</td><td className="n">{money(l.totalHt)}</td></tr>))}</tbody>
+                  <td className="n">{l.discount > 0 ? <>{money(l.discount)}{l.discountPct ? <div className="small muted">{l.discountPct} %</div> : null}</> : '—'}</td><td className="n">{l.vatRate} %</td><td className="n">{money(l.totalHt)}</td></tr>))}</tbody>
             </table></div>
             <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <table className="vat"><thead><tr><th>Taux</th><th className="n">Base HT</th><th className="n">TVA</th></tr></thead>
                 <tbody>{doc.vatBreakdown.map((v: any) => <tr key={v.rate}><td>{v.rate} %</td><td className="n">{money(v.base)}</td><td className="n">{money(v.vat)}</td></tr>)}</tbody></table>
-              <dl className="totals"><dt>Total HT</dt><dd>{money(doc.totalHt)}</dd><dt>TVA</dt><dd>{money(doc.totalVat)}</dd><dt className="grand">Total TTC</dt><dd className="grand">{money(doc.totalTtc)}</dd>
+              <dl className="totals">{doc.lines.some((l: any) => l.discount > 0) && <><dt>Remises accordées</dt><dd>− {money(doc.lines.reduce((x: number, l: any) => x + (l.discount ?? 0), 0))}</dd></>}<dt>Total HT</dt><dd>{money(doc.totalHt)}</dd><dt>TVA</dt><dd>{money(doc.totalVat)}</dd><dt className="grand">Total TTC</dt><dd className="grand">{money(doc.totalTtc)}</dd>
                 {isInvoice && <PaidRows payments={doc.payments} />}
                 {isInvoice && doc.paidAmount > 0 && <><dt className="grand">Reste à payer</dt><dd className="grand">{money(doc.remaining)}</dd></>}</dl>
             </div>
