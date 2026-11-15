@@ -8,7 +8,7 @@ import { CONTACTS_IMPORT } from '@/components/import-configs';
 import { Alert, Field, hue, Pill, shrinkImage, useAction } from '@/components/ui';
 
 const KIND: Record<string, [string, 'ok' | 'warn' | 'mute']> = { customer: ['Client', 'ok'], supplier: ['Fournisseur', 'warn'], both: ['Client et fournisseur', 'mute'] };
-const EMPTY = { kind: 'customer', legalType: 'company', name: '', taxId: '', rccm: '', email: '', phone: '', address: '', city: '', countryCode: 'CI', paymentTermsDays: '' as number | '', notes: '' };
+const EMPTY = { kind: 'customer', legalType: 'company', name: '', taxId: '', rccm: '', email: '', phone: '', address: '', city: '', countryCode: 'CI', paymentTermsDays: '' as number | '', notes: '', siteId: '' as string };
 const FIELDS = Object.keys(EMPTY) as (keyof typeof EMPTY)[];
 /** Champs obligatoires selon la forme : une entreprise doit pouvoir être facturée, un particulier joint. */
 const REQUIRED: Record<string, string[]> = { company: ['name', 'phone', 'email', 'taxId', 'rccm', 'paymentTermsDays'], individual: ['name', 'phone'] };
@@ -26,7 +26,7 @@ function Logo({ c, src = c.logo && `/api${c.logo}` }: { c: any; src?: string | n
 }
 
 /** Vignette d'un contact : logo, coordonnées, et ce qu'il doit ou ce qu'on lui doit. */
-function ContactCard({ c, onOpen, action }: { c: any; onOpen?: () => void; action?: React.ReactNode }) {
+function ContactCard({ c, onOpen, action, site }: { c: any; onOpen?: () => void; action?: React.ReactNode; site?: string }) {
   const buys = c.kind !== 'supplier', sells = c.kind !== 'customer';
   const body = <>
     <Logo c={c} />
@@ -38,6 +38,7 @@ function ContactCard({ c, onOpen, action }: { c: any; onOpen?: () => void; actio
       <div className="vg-tags">
         <span className="vg-badge">{c.code}</span>
         <Pill tone={KIND[c.kind][1]}>{KIND[c.kind][0]}</Pill>
+        {site && <Pill tone="mute">{site}</Pill>}
         {c.archivedAt && <Pill>Archivé</Pill>}
       </div>
       <div className="vg-stats">
@@ -53,6 +54,10 @@ function ContactCard({ c, onOpen, action }: { c: any; onOpen?: () => void; actio
 
 export default function ContactsPage() {
   const { can, ctx } = useSession();
+  // Plusieurs sites : un contact peut être réservé à l'un d'eux (il n'est alors proposé que là).
+  const sites = ctx?.sites ?? [];
+  const multiSite = sites.length > 1;
+  const siteLabel = (c: any) => (!multiSite ? undefined : c.siteId ? sites.find((x) => x.id === c.siteId)?.name ?? 'Autre site' : 'Tous les sites');
   const writable = !ctx?.readOnly;
   const [rows, setRows] = useState<any[] | null>(null);
   const [q, setQ] = useState('');
@@ -71,6 +76,7 @@ export default function ContactsPage() {
   const save = () => run(async () => {
     // Délai non renseigné (particulier) : comptant par défaut, côté serveur.
     const body = Object.fromEntries(FIELDS.filter((k) => !(k === 'paymentTermsDays' && edit[k] === '')).map((k) => [k, edit[k]]));
+    if (!multiSite) delete (body as any).siteId; else (body as any).siteId = edit.siteId || null;
     const saved = edit.id ? await api(`/company/contacts/${edit.id}`, { method: 'PATCH', body }) : await api('/company/contacts', { body });
     if (logo !== undefined) await api(`/company/contacts/${saved.id}/logo`, { method: 'PUT', body: { logo } });
     setEdit(null); await load();
@@ -80,7 +86,8 @@ export default function ContactsPage() {
   // Code attribué automatiquement selon le type de tiers : aperçu du prochain numéro pour un nouveau contact ou un changement de type.
   const [nextCode, setNextCode] = useState('');
   const codeKind = edit && (!edit.id || edit.kind !== edit.initialKind) ? edit.kind : null;
-  useEffect(() => { setNextCode(''); if (codeKind) api(`/company/contacts/next-code?kind=${codeKind}`).then((r) => setNextCode(r.code), () => {}); }, [codeKind]);
+  const codeSite = codeKind && multiSite ? edit.siteId || '' : '';
+  useEffect(() => { setNextCode(''); if (codeKind) api(`/company/contacts/next-code?kind=${codeKind}${codeSite ? `&siteId=${codeSite}` : ''}`).then((r) => setNextCode(r.code), () => {}); }, [codeKind, codeSite]);
   const need = (k: string) => !!edit && REQUIRED[edit.legalType].includes(k);
   const label = (k: string, text: string) => (need(k) ? `${text} *` : text);
   const editable = writable && can('contacts.update');
@@ -93,7 +100,7 @@ export default function ContactsPage() {
         <div className="row">
           {can('contacts.export') && <a className="btn" href={`/api/company/contacts/export?${params}`}>Exporter (CSV)</a>}
           {can('contacts.create') && writable && <ImportButton config={CONTACTS_IMPORT} onDone={load} />}
-          {can('contacts.create') && writable && <button className="btn primary" onClick={() => open({ ...EMPTY })}>Nouveau contact</button>}
+          {can('contacts.create') && writable && <button className="btn primary" onClick={() => open({ ...EMPTY, siteId: multiSite ? ctx?.siteId ?? '' : '' })}>Nouveau contact</button>}
         </div>
       </div>
       <Alert>{!edit && error}</Alert>
@@ -111,7 +118,7 @@ export default function ContactsPage() {
       </div>
       {view === 'cards' ? (
         <div className="vg-grid">
-          {rows?.map((c) => <ContactCard key={c.id} c={c} onOpen={editable && !c.archivedAt ? () => open(c) : undefined}
+          {rows?.map((c) => <ContactCard key={c.id} c={c} site={siteLabel(c)} onOpen={editable && !c.archivedAt ? () => open(c) : undefined}
             action={c.archivedAt && writable && can('contacts.cancel') ? <button className="btn sm" disabled={busy} onClick={() => toggleArchive(c)}>Restaurer</button> : undefined} />)}
           {rows && !rows.length && <p className="muted">{q || kind || archived !== 'false' ? 'Aucun contact ne correspond à ces critères.' : 'Aucun contact pour l’instant. Ajoutez vos premiers clients et fournisseurs.'}</p>}
         </div>
@@ -121,7 +128,7 @@ export default function ContactsPage() {
           {rows?.map((c) => (
             <tr key={c.id} style={c.archivedAt ? { opacity: .6 } : undefined}>
               <td style={{ whiteSpace: 'nowrap' }}><code className="k">{c.code}</code></td>
-              <td><div className="row" style={{ flexWrap: 'nowrap' }}><span className="vg-mini"><Logo c={c} /></span><div><b>{c.name}</b>{c.archivedAt && <> <Pill>Archivé</Pill></>}<div className="small muted">{[c.email, c.taxId && `NCC ${c.taxId}`].filter(Boolean).join(' · ')}</div></div></div></td>
+              <td><div className="row" style={{ flexWrap: 'nowrap' }}><span className="vg-mini"><Logo c={c} /></span><div><b>{c.name}</b>{c.archivedAt && <> <Pill>Archivé</Pill></>}<div className="small muted">{[c.email, c.taxId && `NCC ${c.taxId}`, siteLabel(c)].filter(Boolean).join(' · ')}</div></div></div></td>
               <td><Pill tone={KIND[c.kind][1]}>{KIND[c.kind][0]}</Pill></td>
               <td style={{ whiteSpace: 'nowrap' }}>{c.phone ?? '—'}</td>
               <td>{c.city ?? '—'}</td>
@@ -169,6 +176,10 @@ export default function ContactsPage() {
               <Field label={label('rccm', 'RCCM')} required={need('rccm')} value={edit.rccm} onChange={set('rccm')} placeholder="CI-ABJ-…" />
               <Field label="Adresse" value={edit.address} onChange={set('address')} />
               <Field label="Ville" value={edit.city} onChange={set('city')} />
+              {multiSite && <label className="field">Site
+                <select className="input" value={edit.siteId ?? ''} onChange={set('siteId')}>
+                  <option value="">Tous les sites</option>{sites.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
+                <span className="small muted">{edit.siteId ? 'Proposé seulement sur ce site (ventes, achats, caisse).' : 'Proposé sur tous les sites.'}{edit.id && edit.siteId !== (rows?.find((r) => r.id === edit.id)?.siteId ?? '') ? ' Le code reste le même.' : ''}</span></label>}
               <Field label="Pays (code ISO)" maxLength={2} value={edit.countryCode} onChange={set('countryCode')} />
               <Field label={label('paymentTermsDays', 'Délai de paiement (jours, 0 = comptant)')} required={need('paymentTermsDays')} type="number" min={0} max={365} value={edit.paymentTermsDays} onChange={set('paymentTermsDays')} />
             </div>

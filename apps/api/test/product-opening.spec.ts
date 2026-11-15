@@ -1,5 +1,5 @@
 import { INestApplication } from '@nestjs/common';
-import { createApp, resetDb, signup } from './helpers';
+import { createApp, resetDb, signup, TIERS } from './helpers';
 
 describe("Création d'un article avec son stock initial", () => {
   let app: INestApplication;
@@ -112,5 +112,35 @@ describe("Création d'un article avec son stock initial", () => {
     const again = await owner.agent.patch(`/company/products/${p.id}`).send({ salePrice: 9999, openingStock: { quantity: 3 } });
     expect(again.body.error.code).toBe('already_has_movements');
     expect((await owner.agent.get('/company/products')).body.find((x: any) => x.id === p.id).salePrice).toBe(2700);
+  });
+
+  it('rattache les clients et fournisseurs au site affiché, avec des codes par site', async () => {
+    const sites = (await owner.agent.get('/company/sites')).body;
+    const main = sites.find((x: any) => x.code === 'S01').id, s2 = sites.find((x: any) => x.code === 'S02').id;
+    const as = async (siteId: string | null) => expect((await owner.agent.post('/company/sites/active').send({ siteId })).status).toBe(200);
+
+    await as(s2);
+    expect((await owner.agent.get('/company/contacts/next-code?kind=customer&siteId=' + s2)).body.code).toBe('CLI-S02-00001');
+    const farm = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'customer', name: 'Ferme Kouassi' })).body;
+    expect(farm).toMatchObject({ siteId: s2, code: 'CLI-S02-00001' });
+    const supplier = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'supplier', name: 'Couvoir du Centre' })).body;
+    expect(supplier).toMatchObject({ siteId: s2, code: 'FRS-S02-00001' });
+    await as(null);
+    const common = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'customer', name: 'Client national' })).body;
+    expect(common.siteId).toBeNull();
+    expect(common.code).toMatch(/^CLI-\d{5}$/);
+    const mainCustomer = (await owner.agent.post('/company/contacts').send({ ...TIERS, kind: 'customer', name: 'Boutique Plateau', siteId: main })).body;
+    expect(mainCustomer.code).toBe('CLI-S01-00001');
+
+    const names = async () => (await owner.agent.get('/company/contacts')).body.map((c: any) => c.name);
+    await as(main);
+    expect(await names()).toEqual(expect.arrayContaining(['Client national', 'Boutique Plateau']));
+    expect(await names()).not.toContain('Ferme Kouassi');
+    await as(s2);
+    expect(await names()).toEqual(expect.arrayContaining(['Ferme Kouassi', 'Couvoir du Centre', 'Client national']));
+    expect(await names()).not.toContain('Boutique Plateau');
+    await as(null);
+    // Changement de site : le code ne change pas.
+    expect((await owner.agent.patch(`/company/contacts/${farm.id}`).send({ siteId: null })).body).toMatchObject({ siteId: null, code: 'CLI-S02-00001' });
   });
 });

@@ -94,7 +94,7 @@ export interface ContactTable {
   company_id: string; id: Generated<string>; code: string; kind: 'customer' | 'supplier' | 'both'; legal_type: Generated<'company' | 'individual'>;
   name: string; tax_id: string | null; rccm: string | null; email: string | null; phone: string | null; address: string | null; city: string | null;
   country_code: Generated<string>; payment_terms_days: Generated<number>; notes: string | null; archived_at: TsNullable;
-  created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
+  site_id: ColumnType<string | null, string | null | undefined, string | null>; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 
 type DateCol = ColumnType<string, string | undefined, string>;

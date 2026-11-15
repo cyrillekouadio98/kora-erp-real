@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { AllowWhenReadOnly, Permission, Tenant } from '../../common/decorators';
 import { badRequest, conflict, notFound } from '../../common/errors';
 import { isUuid } from '../../common/ids';
+import { assertSiteAccess, siteScope } from '../../common/sites';
 import { parseImage } from '../../common/images';
 import { nextNumber, peekNumber } from '../../common/numbering';
 import type { TenantInfo } from '../../common/request-context';
@@ -23,11 +24,13 @@ const ContactSchema = z.object({
   email: z.string().trim().toLowerCase().email({ message: 'Adresse e-mail invalide' }).nullable().optional().or(z.literal('').transform(() => null)),
   countryCode: z.string().trim().length(2).transform((v) => v.toUpperCase()).optional(),
   paymentTermsDays: z.coerce.number().int().min(0).max(365).optional(),
+  /** Site du contact (null = tous les sites). */
+  siteId: z.string().uuid({ message: 'Site inconnu' }).nullable().optional(),
 }).strict();
 
 const COLUMNS = {
   kind: 'kind', legalType: 'legal_type', name: 'name', taxId: 'tax_id', rccm: 'rccm', email: 'email', phone: 'phone',
-  address: 'address', city: 'city', notes: 'notes', countryCode: 'country_code', paymentTermsDays: 'payment_terms_days',
+  address: 'address', city: 'city', notes: 'notes', countryCode: 'country_code', paymentTermsDays: 'payment_terms_days', siteId: 'site_id',
 } as const;
 
 /** Préfixe de numérotation automatique selon le type de tiers. */
@@ -35,7 +38,7 @@ const PREFIX = { customer: 'CLI', supplier: 'FRS', both: 'TIE' } as const;
 
 const SELECT = [
   'id', 'code', 'kind', 'legal_type as legalType', 'name', 'tax_id as taxId', 'rccm', 'email', 'phone', 'address', 'city',
-  'country_code as countryCode', 'payment_terms_days as paymentTermsDays', 'notes', 'archived_at as archivedAt', 'created_at as createdAt', 'updated_at as updatedAt',
+  'country_code as countryCode', 'payment_terms_days as paymentTermsDays', 'notes', 'site_id as siteId', 'archived_at as archivedAt', 'created_at as createdAt', 'updated_at as updatedAt',
 ] as const;
 
 const ListQuery = z.object({
@@ -71,8 +74,11 @@ function toColumns(input: Record<string, unknown>) {
 export class ContactsController {
   constructor(private readonly db: DatabaseService, private readonly audit: AuditService) {}
 
-  private list(trx: TenantTrx, query: z.infer<typeof ListQuery>) {
+  private list(trx: TenantTrx, t: TenantInfo, query: z.infer<typeof ListQuery>) {
     let q = trx.selectFrom('contact').select(SELECT).orderBy('name').limit(1000);
+    // Site affiché : ses contacts et les contacts communs à tous les sites.
+    const scope = siteScope(t);
+    if (scope) q = q.where((eb) => eb.or([eb('site_id', 'is', null), ...(scope.length ? [eb('site_id', 'in', scope)] : [])]));
     if (query.archived === 'false') q = q.where('archived_at', 'is', null);
     if (query.archived === 'true') q = q.where('archived_at', 'is not', null);
     if (query.kind) q = q.where('kind', 'in', [query.kind, 'both']);
@@ -105,10 +111,11 @@ export class ContactsController {
   }
 
   /** Code attribué automatiquement selon le type de tiers : CLI-00001, FRS-00001, TIE-00001… */
-  private async nextCode(trx: TenantTrx, t: TenantInfo, kind: keyof typeof PREFIX) {
+  private async nextCode(trx: TenantTrx, t: TenantInfo, kind: keyof typeof PREFIX, siteId: string | null | undefined) {
     const taken = async (c: string) => !!(await trx.selectFrom('contact').select('id').where('code', '=', c).executeTakeFirst());
+    const seq = await this.codeSequence(trx, kind, siteId);
     for (;;) {
-      const next = await nextNumber(trx, t.companyId, `contact_${kind}`, PREFIX[kind]);
+      const next = await nextNumber(trx, t.companyId, seq.docType, seq.prefix);
       if (!(await taken(next))) return next;
     }
   }
@@ -118,7 +125,7 @@ export class ContactsController {
   index(@Tenant() t: TenantInfo, @Query() query: unknown) {
     const q = parse(ListQuery, query);
     return this.db.tenant(t.ctx, async (trx) => {
-      const rows = await this.withLogo(trx, await this.list(trx, q));
+      const rows = await this.withLogo(trx, await this.list(trx, t, q));
       const stats = await this.stats(trx, rows.map((r) => r.id));
       return rows.map((r) => ({ ...r, ...stats.get(r.id) }));
     });
@@ -130,7 +137,7 @@ export class ContactsController {
   async export(@Tenant() t: TenantInfo, @Query() query: unknown, @Res() res: Response) {
     const q = parse(ListQuery, query);
     const rows = await this.db.tenant(t.ctx, async (trx) => {
-      const r = await this.list(trx, q);
+      const r = await this.list(trx, t, q);
       await this.audit.tenant(trx, t.ctx, { action: 'contact.exported', data: { count: r.length } });
       return r;
     });
@@ -142,9 +149,26 @@ export class ContactsController {
   /** Code que recevra un nouveau contact de ce type (aperçu du formulaire, rien n'est réservé). */
   @Permission('contacts.read') @AllowWhenReadOnly()
   @Get('next-code')
-  nextCodePreview(@Tenant() t: TenantInfo, @Query('kind') kind: string) {
+  nextCodePreview(@Tenant() t: TenantInfo, @Query('kind') kind: string, @Query('siteId') siteId?: string) {
     const k = parse(z.enum(['customer', 'supplier', 'both']), kind);
-    return this.db.tenant(t.ctx, async (trx) => ({ code: await peekNumber(trx, `contact_${k}`, PREFIX[k]) }));
+    return this.db.tenant(t.ctx, async (trx) => {
+      const seq = await this.codeSequence(trx, k, siteId && isUuid(siteId) ? siteId : null);
+      return { code: await peekNumber(trx, seq.docType, seq.prefix) };
+    });
+  }
+
+  /** Séquence des codes : une par type et par site (CLI-S02-00001…), une par type pour les contacts communs (CLI-00001…). */
+  private async codeSequence(trx: TenantTrx, kind: keyof typeof PREFIX, siteId: string | null | undefined) {
+    const site = siteId ? await trx.selectFrom('site').select(['id', 'code']).where('id', '=', siteId).executeTakeFirst() : undefined;
+    if (!site) return { docType: `contact_${kind}`, prefix: PREFIX[kind] };
+    return { docType: `contact_${kind}_site_${site.id}`, prefix: `${PREFIX[kind]}-${site.code.toUpperCase().replace(/[^A-Z0-9]/g, '') || 'SITE'}` };
+  }
+
+  /** Site d'un contact : actif, et permis à l'utilisateur. */
+  private async assertSite(trx: TenantTrx, t: TenantInfo, siteId: string | null | undefined) {
+    if (!siteId) return;
+    if (!(await trx.selectFrom('site').select('id').where('id', '=', siteId).where('archived_at', 'is', null).executeTakeFirst())) throw badRequest('Site introuvable.', undefined, 'unknown_site');
+    assertSiteAccess(t, siteId);
   }
 
   @Permission('contacts.read') @AllowWhenReadOnly()
@@ -196,7 +220,13 @@ export class ContactsController {
     const input = parse(ContactSchema, body);
     assertComplete({ ...toColumns(input), legal_type: input.legalType ?? 'company' });
     return this.db.tenant(t.ctx, async (trx) => {
-      const code = await this.nextCode(trx, t, input.kind);
+      // Site : celui choisi ; à défaut, le site affiché (entreprise multi-sites), sinon commun à tous les sites.
+      if (input.siteId === undefined) {
+        const sites = Number((await trx.selectFrom('site').select((eb) => eb.fn.countAll<string>().as('n')).where('archived_at', 'is', null).executeTakeFirstOrThrow()).n);
+        input.siteId = sites > 1 ? t.siteId : null;
+      }
+      await this.assertSite(trx, t, input.siteId);
+      const code = await this.nextCode(trx, t, input.kind, input.siteId);
       const created = await trx.insertInto('contact').values({
         ...toColumns(input), code, company_id: t.companyId, created_by: t.ctx.userId,
       } as any).returning(SELECT).executeTakeFirstOrThrow();
@@ -216,8 +246,9 @@ export class ContactsController {
       if (before.archived_at) throw conflict('Ce contact est archivé : restaurez-le avant de le modifier.', 'contact_archived');
       const patch = toColumns(input);
       assertComplete({ ...before, ...patch });
+      if (input.siteId !== undefined) await this.assertSite(trx, t, input.siteId);
       // Nouveau type de tiers : nouveau code avec le bon préfixe (les pièces déjà émises gardent l'ancien).
-      if (input.kind && input.kind !== before.kind) patch.code = await this.nextCode(trx, t, input.kind);
+      if (input.kind && input.kind !== before.kind) patch.code = await this.nextCode(trx, t, input.kind, input.siteId !== undefined ? input.siteId : before.site_id);
       if (!Object.keys(patch).length) return trx.selectFrom('contact').select(SELECT).where('id', '=', id).executeTakeFirstOrThrow();
       const after = await trx.updateTable('contact').set(patch).where('id', '=', id).returning(SELECT).executeTakeFirstOrThrow();
       const changes = Object.fromEntries(Object.keys(patch).filter((c) => (before as any)[c] !== patch[c]).map((c) => [c, { from: (before as any)[c], to: patch[c] }]));
