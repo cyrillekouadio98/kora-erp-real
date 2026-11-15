@@ -726,3 +726,28 @@ table.import-map .req { color: var(--crit); }
   .tk-total { font-size: 14px; border-color: #000; }
   .tk-lines, .tk-sub { border-color: #000; }
 }
+
+/* Devis, bons de commande, factures et avoirs (ventes et achats) : impression au format A5 portrait. */
+@page doc-a5 { size: A5 portrait; margin: 8mm 8mm 10mm; @bottom-right { content: "Page " counter(page) " / " counter(pages); font-size: 7.5px; color: #555; } }
+@media print {
+  body:has(article.doc) .main > .wrap { page: doc-a5; }
+  article.doc { gap: 8px; font-size: 9px; line-height: 1.35; }
+  article.doc .small { font-size: 8px; }
+  article.doc .doc-head { gap: 8px; flex-wrap: nowrap; }
+  article.doc .doc-logo { max-width: 110px; max-height: 40px; margin-bottom: 4px; }
+  article.doc .doc-company { font-size: 12px; }
+  article.doc .doc-title { font-size: 14px; }
+  article.doc .doc-customer { max-width: 62%; padding: 5px 8px; border-radius: 4px; }
+  article.doc table { font-size: 8.5px; }
+  article.doc th { font-size: 7.5px; padding: 3px 4px; }
+  article.doc td { padding: 3px 4px; }
+  article.doc td.n, article.doc th.n { white-space: nowrap; }
+  article.doc thead { display: table-header-group; }
+  article.doc tr { break-inside: avoid; }
+  article.doc table.vat td, article.doc table.vat th { padding: 2px 4px; }
+  article.doc .totals { font-size: 9px; gap: 2px 10px; min-width: 170px; }
+  article.doc .totals .grand { font-size: 10.5px; }
+  article.doc .stamp { margin: 4px 0; padding: 3px 8px; }
+  article.doc .stamp b { font-size: 11px; }
+  article.doc .stamp span { font-size: 8px; }
+}
