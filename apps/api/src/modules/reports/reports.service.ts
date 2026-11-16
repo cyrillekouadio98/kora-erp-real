@@ -317,6 +317,58 @@ export class ReportsService {
     });
   }
 
+  /**
+   * Point journalier, site par site : pour chaque jour, ventes (factures et tickets, avoirs déduits), coût des produits
+   * vendus (sorties de stock des ventes au coût moyen), marge (ventes HT − coût), dépenses saisies directement sur les
+   * caisses du site (hors retraits de l'exploitant) et résultat (marge − dépenses de caisse).
+   */
+  async daily(t: TenantInfo, from: string, to: string) {
+    return this.db.tenant(t.ctx, async (trx) => {
+      const sites = await inScope(trx.selectFrom('site').select(['id', 'code', 'name']).where('archived_at', 'is', null), t, 'id').orderBy('code').execute();
+      const sales = await inScope(trx.selectFrom('sales_document').where('type', 'in', ['invoice', 'credit_note']).where('status', 'not in', ['draft', 'cancelled'])
+        .where('issue_date', '>=', from).where('issue_date', '<=', to)
+        .select(['site_id', sql<string>`to_char(issue_date, 'YYYY-MM-DD')`.as('day'),
+          sql<string>`sum(case when type = 'invoice' then total_ttc else -total_ttc end)`.as('ttc'),
+          sql<string>`sum(case when type = 'invoice' then total_ht else -total_ht end)`.as('ht'),
+          sql<string>`count(*) filter (where type = 'invoice')`.as('n')])
+        .groupBy(['site_id', 'day']), t, 'site_id').execute();
+      const cogs = await inScope(trx.selectFrom('stock_movement as m')
+        .innerJoin('sales_document as d', (j) => j.onRef('d.id', '=', 'm.source_id').onRef('d.company_id', '=', 'm.company_id'))
+        .where('m.date', '>=', from).where('m.date', '<=', to)
+        .select(['d.site_id', sql<string>`to_char(m.date, 'YYYY-MM-DD')`.as('day'), sql<string>`sum(case when m.direction = 'out' then m.value else -m.value end)`.as('v')])
+        .groupBy(['d.site_id', 'day']), t, 'd.site_id').execute();
+      const expenses = await inScope(trx.selectFrom('treasury_movement as m')
+        .innerJoin('treasury_account as a', (j) => j.onRef('a.id', '=', 'm.account_id').onRef('a.company_id', '=', 'm.company_id'))
+        .where('a.kind', '=', 'cash').where('m.source_type', '=', 'expense').where('m.category', '<>', 'owner_withdrawal')
+        .where('m.status', '=', 'posted').where('m.reversed_by', 'is', null).where('m.reversal_of', 'is', null)
+        .where('m.date', '>=', from).where('m.date', '<=', to)
+        .select(['a.site_id', sql<string>`to_char(m.date, 'YYYY-MM-DD')`.as('day'), sql<string>`sum(m.amount)`.as('v'), sql<string>`count(*)`.as('n'),
+          sql<string>`string_agg(m.label || ' (' || m.amount::bigint || ')', ' · ' ORDER BY m.created_at)`.as('labels')])
+        .groupBy(['a.site_id', 'day']), t, 'a.site_id').execute();
+
+      const days: string[] = [];
+      for (let d = from; d <= to; d = shift(d, 1)) days.push(d);
+      const zero = () => ({ salesTtc: 0, salesHt: 0, invoices: 0, cogs: 0, margin: 0, expenses: 0, expenseCount: 0, result: 0 });
+      return {
+        from, to,
+        sites: sites.map((s) => {
+          const rows = days.map((day) => {
+            const sa = sales.find((r) => r.site_id === s.id && r.day === day), co = cogs.find((r) => r.site_id === s.id && r.day === day);
+            const ex = expenses.find((r) => r.site_id === s.id && r.day === day);
+            const salesHt = round(Number(sa?.ht ?? 0)), cost = round(Number(co?.v ?? 0)), spent = round(Number(ex?.v ?? 0));
+            return { date: day, salesTtc: round(Number(sa?.ttc ?? 0)), salesHt, invoices: Number(sa?.n ?? 0), cogs: cost, margin: salesHt - cost,
+              expenses: spent, expenseCount: Number(ex?.n ?? 0), expenseLabels: ex?.labels ?? null, result: salesHt - cost - spent };
+          });
+          const totals = rows.reduce((acc, r) => {
+            for (const k of Object.keys(acc) as (keyof ReturnType<typeof zero>)[]) acc[k] += r[k];
+            return acc;
+          }, zero());
+          return { siteId: s.id, siteCode: s.code, siteName: s.name, days: rows.reverse(), totals };
+        }),
+      };
+    });
+  }
+
   private async period(trx: TenantTrx, t: TenantInfo, from: string, to: string, payroll: boolean) {
     const sales = await inScope(trx.selectFrom('sales_document').where('type', 'in', ['invoice', 'credit_note']).where('status', 'not in', ['draft', 'cancelled'])
       .where('issue_date', '>=', from).where('issue_date', '<=', to)

@@ -30,6 +30,15 @@ export class ReportsController {
     return this.reports.build(t, f.from, f.to);
   }
 
+  /** Point journalier par site : ventes, coût des produits vendus, marge, dépenses de caisse et résultat de chaque jour. */
+  @Permission('reports.read') @AllowWhenReadOnly()
+  @Get('daily')
+  daily(@Tenant() t: TenantInfo, @Query() query: unknown) {
+    const f = period(query);
+    if (Date.parse(f.to) - Date.parse(f.from) > 92 * 86_400_000) throw badRequest('Le point journalier couvre trois mois au plus.', undefined, 'period_too_long');
+    return this.reports.daily(t, f.from, f.to);
+  }
+
   /** Stocks : valeur au début et à la fin, flux, rotation, couverture et détail par article. */
   @Permission('reports.read') @AllowWhenReadOnly()
   @Get('stock')

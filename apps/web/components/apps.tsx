@@ -6,6 +6,11 @@ const ICONS: Record<string, React.ReactNode> = {
   dashboard: <>
     <rect x="6" y="26" width="10" height="16" rx="2" fill={P} /><rect x="19" y="16" width="10" height="26" rx="2" fill={C} /><rect x="32" y="6" width="10" height="36" rx="2" fill={Y} />
   </>,
+  daily: <>
+    <rect x="7" y="9" width="34" height="33" rx="4" fill={O} /><rect x="7" y="9" width="34" height="9" rx="4" fill={C} />
+    <rect x="14" y="4" width="4" height="10" rx="2" fill={N} /><rect x="30" y="4" width="4" height="10" rx="2" fill={N} />
+    <rect x="13" y="30" width="5" height="7" rx="1" fill={W} /><rect x="21.5" y="25" width="5" height="12" rx="1" fill={Y} /><rect x="30" y="22" width="5" height="15" rx="1" fill={W} />
+  </>,
   sales: <>
     <path d="M8 16h32l-3 26H11z" fill={O} /><path d="M8 16h32l-1.4 12H9.4z" fill={C} opacity=".85" />
     <path d="M17 19v-6a7 7 0 0 1 14 0v6" stroke={P} strokeWidth="3.5" fill="none" strokeLinecap="round" />
@@ -137,6 +142,7 @@ export const APPS: App[] = [
     { href: '/app/pos', label: 'Caisses' }, { href: '/app/pos/sessions', label: 'Sessions' }, { href: '/app/pos/tickets', label: 'Tickets' },
   ] },
   { key: 'reports', label: 'Rapports', href: '/app/rapports', perm: 'reports.read' },
+  { key: 'daily', label: 'Point journalier', href: '/app/point-journalier', perm: 'reports.read' },
   { key: 'accounting', label: 'Comptabilité', href: '/app/comptabilite', perm: 'accounting.read', module: 'accounting' },
   { key: 'stock', label: 'Stocks', href: '/app/stocks', perm: 'stock.read', pages: [
     { href: '/app/stocks', label: "Vue d'ensemble" }, { href: '/app/stocks/operations', label: 'Entrées et sorties' },
@@ -174,7 +180,7 @@ export const appLabel = (a: { key: string; label: string }, activity?: string) =
 
 /** Teinte (degrés HSL) de chaque application, reprise de la couleur dominante de son icône : elle colore l'intérieur du module. */
 export const APP_HUE: Record<string, number> = {
-  dashboard: 262, sales: 22, pos: 340, purchases: 172, treasury: 40, reports: 222, accounting: 206, stock: 318, calendar: 214, products: 2,
+  dashboard: 262, daily: 32, sales: 22, pos: 340, purchases: 172, treasury: 40, reports: 222, accounting: 206, stock: 318, calendar: 214, products: 2,
   contacts: 296, employees: 212, leave: 192, evaluations: 44, payroll: 152, me: 172, sites: 22, company: 206, users: 280,
   roles: 44, billing: 172, emails: 2, audit: 214, support: 2, security: 152, manual: 196,
 };
