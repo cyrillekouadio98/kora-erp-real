@@ -84,7 +84,7 @@ export class TreasuryController {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="tresorerie-${new Date().toISOString().slice(0, 10)}.csv"`);
     res.send(toCsv([...r.movements].reverse().map((m: any) => ({
-      date: m.date, compte: m.accountName, libelle: m.label, categorie: m.category, tiers: m.contactName, reference: m.reference,
+      date: m.date, heure: new Date(m.createdAt).toISOString().slice(11, 16), compte: m.accountName, libelle: m.label, articles: m.items ?? '', categorie: m.category, tiers: m.contactName, reference: m.reference,
       entree: m.direction === 'in' ? m.amount : '', sortie: m.direction === 'out' ? m.amount : '', ...(m.balanceAfter !== undefined ? { solde: m.balanceAfter } : {}),
     }))));
   }

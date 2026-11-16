@@ -76,6 +76,11 @@ describe('Point de vente : caisses, sessions, tickets', () => {
     // Les tickets ne chargent pas la liste des factures ; la recherche par numéro les retrouve.
     expect((await owner.agent.get('/company/sales/documents').query({ type: 'invoice' })).body).toHaveLength(0);
     expect((await owner.agent.get('/company/sales/documents').query({ type: 'invoice', q: 'TK-' })).body).toHaveLength(1);
+    // Journal de trésorerie : heure d'enregistrement et articles vendus sur la ligne d'encaissement.
+    const journal = (await owner.agent.get('/company/treasury/movements')).body.movements;
+    const sale = journal.find((m: any) => m.label.startsWith(`Ticket TK-${year}-00001`));
+    expect(sale).toMatchObject({ items: 'Riz parfumé 5 kg × 2, Huile 1 L × 3', sourceType: 'sales_payment' });
+    expect(new Date(sale.createdAt).getTime()).toBeGreaterThan(Date.now() - 60_000);
   });
 
   it('accepte un paiement mixte espèces + mobile money et refuse un paiement insuffisant ou un rendu sur le mobile money', async () => {

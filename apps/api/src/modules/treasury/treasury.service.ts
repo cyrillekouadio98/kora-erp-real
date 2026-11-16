@@ -218,7 +218,7 @@ export class TreasuryService {
         const like = `%${f.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
         q = q.where((eb) => eb.or([eb('m.label', 'ilike', like), eb('m.reference', 'ilike', like), eb('c.name', 'ilike', like)]));
       }
-      const rows = (await q.execute()).map((r) => ({ ...r, amount: Number(r.amount) }));
+      const rows = await this.withItems(trx, (await q.execute()).map((r) => ({ ...r, amount: Number(r.amount) })));
       // Solde progressif quand on consulte un seul compte sans autre filtre que la période.
       if (f.accountId && !f.category && !f.q) {
         let running = f.from ? await this.balance(trx, f.accountId, addDaysIso(f.from, -1)) : Number((await this.account(trx, f.accountId)).opening_balance);
@@ -228,6 +228,40 @@ export class TreasuryService {
       }
       return { opening: null, movements: rows.reverse(), closing: null };
     });
+  }
+
+  /**
+   * Articles de la pièce réglée par chaque mouvement (« Riz 25 kg × 2, Huile 5 L × 1 ») : encaissements de factures
+   * et tickets de caisse, remboursements clients, règlements fournisseurs.
+   */
+  private async withItems<R extends { sourceType: string | null; sourceId: string | null }>(trx: TenantTrx, rows: R[]) {
+    const ids = (type: string) => [...new Set(rows.filter((r) => r.sourceType === type && r.sourceId).map((r) => r.sourceId!))];
+    const fmt = (l: { description: string; quantity: string }) => `${l.description} × ${Number(l.quantity).toLocaleString('fr-FR')}`;
+    const items = new Map<string, string>();
+    const add = (key: string, lines: { description: string; quantity: string }[]) => { if (lines.length) items.set(key, lines.map(fmt).join(', ')); };
+    const group = <L extends { key: string; description: string; quantity: string }>(ls: L[]) => {
+      const by = new Map<string, L[]>();
+      for (const l of ls) by.set(l.key, [...(by.get(l.key) ?? []), l]);
+      return by;
+    };
+    const sales = ids('sales_payment');
+    if (sales.length) {
+      const ls = await trx.selectFrom('sales_payment as p').innerJoin('sales_document_line as l', (j) => j.onRef('l.document_id', '=', 'p.document_id').onRef('l.company_id', '=', 'p.company_id'))
+        .select(['p.id as key', 'l.description', 'l.quantity']).where('p.id', 'in', sales).orderBy('l.position').execute();
+      for (const [k, v] of group(ls)) add(`sales_payment:${k}`, v);
+    }
+    const refunds = ids('sales_refund');
+    if (refunds.length) {
+      const ls = await trx.selectFrom('sales_document_line as l').select(['l.document_id as key', 'l.description', 'l.quantity']).where('l.document_id', 'in', refunds).orderBy('l.position').execute();
+      for (const [k, v] of group(ls)) add(`sales_refund:${k}`, v);
+    }
+    const purchases = ids('purchase_payment');
+    if (purchases.length) {
+      const ls = await trx.selectFrom('purchase_payment as p').innerJoin('purchase_document_line as l', (j) => j.onRef('l.document_id', '=', 'p.document_id').onRef('l.company_id', '=', 'p.company_id'))
+        .select(['p.id as key', 'l.description', 'l.quantity']).where('p.id', 'in', purchases).orderBy('l.position').execute();
+      for (const [k, v] of group(ls)) add(`purchase_payment:${k}`, v);
+    }
+    return rows.map((r) => ({ ...r, items: r.sourceId ? items.get(`${r.sourceType}:${r.sourceId}`) ?? null : null }));
   }
 
   async addManual(t: TenantInfo, input: ManualInput) {
