@@ -98,7 +98,7 @@ export class SalesService {
       let q = trx.selectFrom('sales_document as d').innerJoin('contact as c', (j) => j.onRef('c.id', '=', 'd.contact_id').onRef('c.company_id', '=', 'd.company_id'))
         .select(['d.id', 'd.type', 'd.status', 'd.number', 'd.issue_date as issueDate', 'd.due_date as dueDate', 'd.valid_until as validUntil',
           'd.total_ht as totalHt', 'd.total_vat as totalVat', 'd.total_ttc as totalTtc', 'd.paid_amount as paidAmount', 'd.credited_amount as creditedAmount', 'd.refunded_amount as refundedAmount', 'd.currency',
-          'd.delivery_date as deliveryDate', 'd.customer_ref as customerRef',
+          'd.delivery_date as deliveryDate', 'd.customer_ref as customerRef', 'd.created_at as createdAt', 'd.validated_at as validatedAt',
           'c.id as contactId', 'c.name as contactName', 'c.code as contactCode', 'd.site_id as siteId',
           (eb) => eb.selectFrom('site as s').select('s.name').whereRef('s.id', '=', 'd.site_id').whereRef('s.company_id', '=', 'd.company_id').as('siteName')])
         .where('d.type', '=', f.type).orderBy('d.created_at', 'desc').limit(1000);
@@ -111,8 +111,14 @@ export class SalesService {
         q = q.where((eb) => eb.or([eb('d.number', 'ilike', like), eb('c.name', 'ilike', like), eb('c.code', 'ilike', like)]));
       }
       const rows = await q.execute();
+      // Articles de chaque pièce (« Riz 25 kg × 2, Huile 5 L × 1 »), dans l'ordre des lignes.
+      const lines = rows.length ? await trx.selectFrom('sales_document_line').select(['document_id', 'description', 'quantity'])
+        .where('document_id', 'in', rows.map((r) => r.id)).orderBy('document_id').orderBy('position').execute() : [];
+      const items = new Map<string, string[]>();
+      for (const l of lines) items.set(l.document_id, [...(items.get(l.document_id) ?? []), `${l.description} × ${Number(l.quantity).toLocaleString('fr-FR')}`]);
       const now = today();
       return rows.map((r) => ({
+        items: items.get(r.id)?.join(', ') ?? '',
         ...r, totalHt: Number(r.totalHt), totalVat: Number(r.totalVat), totalTtc: Number(r.totalTtc), paidAmount: Number(r.paidAmount), creditedAmount: Number(r.creditedAmount),
         remaining: r.type === 'invoice' && r.status !== 'draft' ? balance({ total_ttc: r.totalTtc, paid_amount: r.paidAmount, credited_amount: r.creditedAmount, refunded_amount: r.refundedAmount }).remaining : 0,
         overdue: r.type === 'invoice' && OPEN_INVOICE.includes(r.status) && !!r.dueDate && r.dueDate < now,

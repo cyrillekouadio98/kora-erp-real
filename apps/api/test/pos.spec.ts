@@ -81,6 +81,11 @@ describe('Point de vente : caisses, sessions, tickets', () => {
     const sale = journal.find((m: any) => m.label.startsWith(`Ticket TK-${year}-00001`));
     expect(sale).toMatchObject({ items: 'Riz parfumé 5 kg × 2, Huile 1 L × 3', sourceType: 'sales_payment' });
     expect(new Date(sale.createdAt).getTime()).toBeGreaterThan(Date.now() - 60_000);
+    const [ticket] = (await owner.agent.get('/company/pos/tickets').query({ sessionId: session.id })).body;
+    expect(ticket).toMatchObject({ items: 2, itemNames: 'Riz parfumé 5 kg × 2, Huile 1 L × 3' });
+    // Liste des ventes (recherche par numéro de ticket) : articles et heure de validation.
+    const [listed] = (await owner.agent.get('/company/sales/documents').query({ type: 'invoice', q: 'TK-' })).body;
+    expect(listed).toMatchObject({ items: 'Riz parfumé 5 kg × 2, Huile 1 L × 3', validatedAt: expect.any(String), createdAt: expect.any(String) });
   });
 
   it('accepte un paiement mixte espèces + mobile money et refuse un paiement insuffisant ou un rendu sur le mobile money', async () => {

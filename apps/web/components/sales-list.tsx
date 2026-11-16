@@ -55,13 +55,14 @@ export function SalesList({ type }: { type: DocType }) {
         </label>
       </div>
       <div className="table-wrap"><table>
-        <thead><tr><th>Numéro</th><th>Client</th><th>Date</th>{isOrder && <th>Réf. client</th>}{!isCredit && <th>{isInvoice ? 'Échéance' : isOrder ? 'Livraison prévue' : 'Valable jusqu’au'}</th>}<th>Statut</th><th className="n">Total TTC</th>{isInvoice && <th className="n">Reste à payer</th>}</tr></thead>
+        <thead><tr><th>Numéro</th><th>Client et articles</th><th>Date et heure</th>{isOrder && <th>Réf. client</th>}{!isCredit && <th>{isInvoice ? 'Échéance' : isOrder ? 'Livraison prévue' : 'Valable jusqu’au'}</th>}<th>Statut</th><th className="n">Total TTC</th>{isInvoice && <th className="n">Reste à payer</th>}</tr></thead>
         <tbody>
           {rows?.map((d) => (
             <tr key={d.id}>
               <td style={{ whiteSpace: 'nowrap' }}><Link href={`/app/ventes/${d.id}`}>{d.number ?? 'Brouillon'}</Link></td>
-              <td><b>{d.contactName}</b><div className="small muted">{d.contactCode}{siteOf(d.siteId) && <> <span className="site-tag">{siteOf(d.siteId)}</span></>}</div></td>
-              <td style={{ whiteSpace: 'nowrap' }}>{date(d.issueDate)}</td>
+              <td style={{ minWidth: 220 }}><b>{d.contactName}</b><div className="small muted">{d.contactCode}{siteOf(d.siteId) && <> <span className="site-tag">{siteOf(d.siteId)}</span></>}</div>
+                {d.items && <div className="small" title={d.items} style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}><span className="muted">{isCredit ? 'Articles : ' : 'Vendu : '}</span>{d.items}</div>}</td>
+              <td style={{ whiteSpace: 'nowrap' }}>{date(d.issueDate)}<div className="small muted" title={d.validatedAt ? 'Heure de validation' : 'Heure de création'}>{new Date(d.validatedAt ?? d.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</div></td>
               {isOrder && <td className="small">{d.customerRef ?? '—'}</td>}
               {!isCredit && <td style={{ whiteSpace: 'nowrap' }}>{date(isInvoice ? d.dueDate : isOrder ? d.deliveryDate : d.validUntil)}{d.overdue && <> <Pill tone="crit">En retard</Pill></>}</td>}
               <td><Pill tone={docStatus(type, d.status)[1]}>{docStatus(type, d.status)[0]}</Pill></td>

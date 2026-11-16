@@ -347,6 +347,9 @@ export class PosService {
         .select(['d.id', 'd.number', 'd.status', 'd.validated_at as at', 'd.total_ttc as totalTtc', 'd.credited_amount as creditedAmount', 'x.number as sessionNumber', 'r.name as registerName',
           'c.name as customer', 'u.full_name as cashier',
           (eb) => eb.selectFrom('sales_document_line as l').select(eb.fn.countAll<string>().as('k')).whereRef('l.document_id', '=', 'd.id').whereRef('l.company_id', '=', 'd.company_id').as('items'),
+          // Articles vendus, « Riz 25 kg × 2, Huile 5 L × 1 », dans l'ordre du ticket.
+          (eb) => eb.selectFrom('sales_document_line as l').select(sql<string>`string_agg(l.description || ' × ' || trim(trailing '.' from trim(trailing '0' from l.quantity::text)), ', ' ORDER BY l.position)`.as('n'))
+            .whereRef('l.document_id', '=', 'd.id').whereRef('l.company_id', '=', 'd.company_id').as('itemNames'),
           (eb) => eb.selectFrom('sales_payment as p').select(sql<string>`string_agg(DISTINCT p.method, ',')`.as('m')).whereRef('p.document_id', '=', 'd.id').whereRef('p.company_id', '=', 'd.company_id').as('methods')])
         .where('d.pos_session_id', 'is not', null), t, 'd.site_id').orderBy('d.validated_at', 'desc').limit(500);
       if (f.sessionId) q = q.where('d.pos_session_id', '=', f.sessionId);

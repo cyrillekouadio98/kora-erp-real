@@ -33,7 +33,7 @@ export default function PosTickets() {
       </div>
       {rows && rows.length > 0 && <p className="small muted" style={{ margin: 0 }}>{rows.length} ticket{rows.length > 1 ? 's' : ''} · {money(total)}{rows.length === 500 ? ' (500 derniers)' : ''}</p>}
       <div className="table-wrap"><table>
-        <thead><tr><th>Ticket</th><th>Heure</th><th>Caisse</th><th>Caissier</th><th>Client</th><th className="n">Articles</th><th>Paiement</th><th className="n">Total TTC</th></tr></thead>
+        <thead><tr><th>Ticket</th><th>Heure</th><th>Caisse</th><th>Caissier</th><th>Client</th><th>Articles vendus</th><th>Paiement</th><th className="n">Total TTC</th></tr></thead>
         <tbody>
           {rows?.map((r) => (
             <tr key={r.id} className="clickable" style={{ cursor: 'pointer' }} onClick={() => run(async () => setTicket(await api(`/company/pos/tickets/${r.id}`)))}>
@@ -42,7 +42,7 @@ export default function PosTickets() {
               <td>{r.registerName}<div className="small muted">{r.sessionNumber}</div></td>
               <td>{r.cashier}</td>
               <td>{r.customer}</td>
-              <td className="n">{r.items}</td>
+              <td className="small" style={{ minWidth: 200 }} title={r.itemNames ?? ""}>{r.itemNames ?? r.items}</td>
               <td className="small">{r.methods.map((m: string) => POS_METHODS[m] ?? m).join(' + ')}</td>
               <td className="n" style={{ whiteSpace: 'nowrap' }}><b>{money(r.totalTtc)}</b></td>
             </tr>
