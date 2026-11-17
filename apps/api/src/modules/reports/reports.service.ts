@@ -330,6 +330,8 @@ export class ReportsService {
         .select(['site_id', sql<string>`to_char(issue_date, 'YYYY-MM-DD')`.as('day'),
           sql<string>`sum(case when type = 'invoice' then total_ttc else -total_ttc end)`.as('ttc'),
           sql<string>`sum(case when type = 'invoice' then total_ht else -total_ht end)`.as('ht'),
+          // Non encaissé : ce qui reste dû aujourd'hui sur les factures du jour (paiements, avoirs et remboursements déduits).
+          sql<string>`sum(case when type = 'invoice' then greatest(0, total_ttc - paid_amount - credited_amount + refunded_amount) else 0 end)`.as('unpaid'),
           sql<string>`count(*) filter (where type = 'invoice')`.as('n')])
         .groupBy(['site_id', 'day']), t, 'site_id').execute();
       const cogs = await inScope(trx.selectFrom('stock_movement as m')
@@ -348,7 +350,7 @@ export class ReportsService {
 
       const days: string[] = [];
       for (let d = from; d <= to; d = shift(d, 1)) days.push(d);
-      const zero = () => ({ salesTtc: 0, salesHt: 0, invoices: 0, cogs: 0, margin: 0, expenses: 0, expenseCount: 0, result: 0 });
+      const zero = () => ({ salesTtc: 0, salesHt: 0, cashed: 0, uncashed: 0, invoices: 0, cogs: 0, margin: 0, expenses: 0, expenseCount: 0, result: 0 });
       return {
         from, to,
         sites: sites.map((s) => {
@@ -356,7 +358,8 @@ export class ReportsService {
             const sa = sales.find((r) => r.site_id === s.id && r.day === day), co = cogs.find((r) => r.site_id === s.id && r.day === day);
             const ex = expenses.find((r) => r.site_id === s.id && r.day === day);
             const salesHt = round(Number(sa?.ht ?? 0)), cost = round(Number(co?.v ?? 0)), spent = round(Number(ex?.v ?? 0));
-            return { date: day, salesTtc: round(Number(sa?.ttc ?? 0)), salesHt, invoices: Number(sa?.n ?? 0), cogs: cost, margin: salesHt - cost,
+            const salesTtc = round(Number(sa?.ttc ?? 0)), uncashed = round(Number(sa?.unpaid ?? 0));
+            return { date: day, salesTtc, salesHt, cashed: salesTtc - uncashed, uncashed, invoices: Number(sa?.n ?? 0), cogs: cost, margin: salesHt - cost,
               expenses: spent, expenseCount: Number(ex?.n ?? 0), expenseLabels: ex?.labels ?? null, result: salesHt - cost - spent };
           });
           const totals = rows.reduce((acc, r) => {

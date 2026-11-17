@@ -24,6 +24,8 @@ describe('Point journalier par site', () => {
     // Vente du site principal : 3 sacs à 15 000 (coût 12 000 chacun).
     const inv = (await owner.agent.post('/company/sales/documents').send({ type: 'invoice', contactId: customer, lines: [{ productId: rice, description: 'Riz 25 kg', quantity: 3, unitPrice: 15000, vatRate: 0 }] })).body;
     expect((await owner.agent.post(`/company/sales/documents/${inv.id}/validate`)).status).toBe(200);
+    // Le client paie 20 000 sur 45 000 : 25 000 restent non encaissés.
+    expect((await owner.agent.post(`/company/sales/documents/${inv.id}/payments`).send({ amount: 20000, method: 'cash' })).status).toBeLessThan(300);
 
     // Dépenses : une sur la caisse du site principal (comptée), une retrait de l'exploitant (non comptée), une sur la caisse de Cocody.
     const accounts = (await owner.agent.get('/company/treasury/accounts')).body;
@@ -39,10 +41,10 @@ describe('Point journalier par site', () => {
     expect(r.status).toBe(200);
     const m = r.body.sites.find((x: any) => x.siteId === main), c = r.body.sites.find((x: any) => x.siteId === s2);
     expect(m.days).toHaveLength(1);
-    expect(m.days[0]).toMatchObject({ date: d, salesTtc: 45000, salesHt: 45000, invoices: 1, cogs: 36000, margin: 9000, expenses: 2500, expenseCount: 1, result: 6500 });
+    expect(m.days[0]).toMatchObject({ date: d, salesTtc: 45000, cashed: 20000, uncashed: 25000, salesHt: 45000, invoices: 1, cogs: 36000, margin: 9000, expenses: 2500, expenseCount: 1, result: 6500 });
     expect(m.days[0].expenseLabels).toContain('Carburant moto');
-    expect(c.days[0]).toMatchObject({ salesTtc: 0, cogs: 0, margin: 0, expenses: 1000, result: -1000 });
-    expect(m.totals).toMatchObject({ salesTtc: 45000, cogs: 36000, margin: 9000, expenses: 2500, result: 6500 });
+    expect(c.days[0]).toMatchObject({ salesTtc: 0, cashed: 0, uncashed: 0, cogs: 0, margin: 0, expenses: 1000, result: -1000 });
+    expect(m.totals).toMatchObject({ salesTtc: 45000, cashed: 20000, uncashed: 25000, cogs: 36000, margin: 9000, expenses: 2500, result: 6500 });
 
     // Site affiché : seul ce site est présenté.
     await owner.agent.post('/company/sites/active').send({ siteId: s2 });
