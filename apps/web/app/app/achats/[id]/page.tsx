@@ -84,8 +84,11 @@ export default function PurchaseDocumentPage() {
                 </>}</div>
             </header>
             <div className="doc-customer"><div className="small muted">Fournisseur</div><b>{doc.supplier.name}</b>
-              <div className="small">{[doc.supplier.address, doc.supplier.city].filter(Boolean).join(', ')}</div>
-              <div className="small">{[doc.supplier.taxId && `NCC ${doc.supplier.taxId}`, doc.supplier.phone].filter(Boolean).join(' · ')}</div></div>
+              {doc.supplier.address && <div className="small">{doc.supplier.address}</div>}
+              {doc.supplier.city && <div className="small">Ville : {doc.supplier.city}</div>}
+              {doc.supplier.phone && <div className="small">Tél. : {doc.supplier.phone}</div>}
+              {doc.supplier.email && <div className="small">E-mail : {doc.supplier.email}</div>}
+              <div className="small">{[doc.supplier.taxId && `NCC ${doc.supplier.taxId}`, doc.supplier.rccm && `RCCM ${doc.supplier.rccm}`].filter(Boolean).join(' · ')}</div></div>
             <div className="table-wrap"><table>
               <thead><tr><th>Désignation</th><th className="n">Qté</th><th className="n">Prix unit. HT</th><th className="n">Remise</th><th className="n">TVA</th><th className="n">Total HT</th></tr></thead>
               <tbody>{doc.lines.map((l: any) => (

@@ -32,8 +32,11 @@ function PublicDocument() {
             {doc.type === 'order' && doc.customerRef && <div className="small">Votre référence : {doc.customerRef}</div>}</div>
         </header>
         <div className="doc-customer"><div className="small muted">Client</div><b>{doc.customer.name}</b>
-          <div className="small">{[doc.customer.address, doc.customer.city].filter(Boolean).join(', ')}</div>
-          <div className="small">{doc.customer.taxId && `NCC ${doc.customer.taxId}`}</div></div>
+          {doc.customer.address && <div className="small">{doc.customer.address}</div>}
+              {doc.customer.city && <div className="small">Ville : {doc.customer.city}</div>}
+              {doc.customer.phone && <div className="small">Tél. : {doc.customer.phone}</div>}
+              {doc.customer.email && <div className="small">E-mail : {doc.customer.email}</div>}
+          {doc.customer.taxId && <div className="small">NCC {doc.customer.taxId}</div>}</div>
         <div className="table-wrap"><table>
           <thead><tr><th>Désignation</th><th className="n">Qté</th><th className="n">Prix unit. HT</th><th className="n">Remise</th><th className="n">TVA</th><th className="n">Total HT</th></tr></thead>
           <tbody>{doc.lines.map((l: any) => <tr key={l.id}><td>{l.description}</td><td className="n">{l.quantity.toLocaleString('fr-FR')}{l.unit ? ` ${l.unit}` : ''}</td>

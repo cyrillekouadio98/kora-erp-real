@@ -142,7 +142,10 @@ export default function SalesDocumentPage() {
                 {isCredit && doc.related?.[0] && <div className="small">Sur la facture {doc.related[0].number}</div>}</div>
             </header>
             <div className="doc-customer"><div className="small muted">Client</div><b>{doc.customer.name}</b>
-              <div className="small">{[doc.customer.address, doc.customer.city].filter(Boolean).join(', ')}</div>
+              {doc.customer.address && <div className="small">{doc.customer.address}</div>}
+              {doc.customer.city && <div className="small">Ville : {doc.customer.city}</div>}
+              {doc.customer.phone && <div className="small">Tél. : {doc.customer.phone}</div>}
+              {doc.customer.email && <div className="small">E-mail : {doc.customer.email}</div>}
               <div className="small">{[doc.customer.taxId && `NCC ${doc.customer.taxId}`, doc.customer.rccm && `RCCM ${doc.customer.rccm}`].filter(Boolean).join(' · ')}</div></div>
             <div className="table-wrap"><table>
               <thead><tr><th>Désignation</th><th className="n">Qté</th><th className="n">Prix unit. HT</th><th className="n">Remise</th><th className="n">TVA</th><th className="n">Total HT</th></tr></thead>
