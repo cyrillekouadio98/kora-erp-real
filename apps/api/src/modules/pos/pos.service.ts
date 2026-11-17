@@ -256,9 +256,11 @@ export class PosService {
       if (!c || c.archived_at || c.kind === 'supplier') throw badRequest('Client introuvable ou archivé.', undefined, 'unknown_contact');
 
       const productIds = [...new Set(input.lines.map((l) => l.productId).filter((x): x is string => !!x))];
+      const prices = new Map<string, string>();
       if (productIds.length) {
-        const found = await trx.selectFrom('product').select(['id', 'archived_at']).where('id', 'in', productIds).execute();
+        const found = await trx.selectFrom('product').select(['id', 'archived_at', 'sale_price']).where('id', 'in', productIds).execute();
         if (found.length !== productIds.length) throw badRequest('Un ou plusieurs articles sont introuvables.', undefined, 'unknown_product');
+        for (const p of found) prices.set(p.id, p.sale_price);
       }
       const totals = computeTotals(input.lines);
       const cash = input.payments.filter((p) => p.method === 'cash').reduce((a, p) => a + p.amount, 0);
@@ -278,6 +280,7 @@ export class PosService {
       await trx.insertInto('sales_document_line').values(input.lines.map((l, i) => ({
         company_id: t.companyId, document_id: d.id, position: i + 1, product_id: l.productId ?? null, description: l.description, quantity: l.quantity, unit: l.unit ?? null,
         unit_price: l.unitPrice, discount_pct: l.discountPct ?? 0, discount_amount: l.discountAmount ?? 0, vat_rate: l.vatRate, total_ht: totals.lines[i].ht, total_vat: totals.lines[i].vat,
+        list_price: l.productId ? prices.get(l.productId) ?? null : null,
       }))).execute();
       await trx.updateTable('sales_document').set({ status: 'issued', number, customer: JSON.stringify(customer), validated_at: new Date(), validated_by: t.ctx.userId }).where('id', '=', d.id).execute();
       await this.stock.applySalesDocument(trx, t, d.id);

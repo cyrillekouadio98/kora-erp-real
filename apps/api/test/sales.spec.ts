@@ -92,6 +92,20 @@ describe('Ventes : articles, devis, factures, encaissements', () => {
       type: 'quote', contactId: customerId, lines: [{ description: 'Livraison', quantity: 1, unitPrice: 5000, discountAmount: 6000, vatRate: 18 }],
     });
     expect(tooMuch.status).toBe(400);
+
+    // Article vendu sous son prix catalogue (prix baissé à la main) : la facture montre le prix catalogue et l'écart en remise.
+    const kbc = (await owner.agent.post('/company/products').send({ name: 'KBC', salePrice: 34000, vatRate: 0 })).body.id;
+    const lowered = await owner.agent.post('/company/sales/documents').send({
+      type: 'quote', contactId: customerId, lines: [
+        { productId: kbc, description: 'KBC', quantity: 10, unitPrice: 32000, vatRate: 0 },
+        { productId: kbc, description: 'KBC', quantity: 1, unitPrice: 34000, discountAmount: 1000, vatRate: 0 },
+        { productId: kbc, description: 'KBC', quantity: 1, unitPrice: 36000, vatRate: 0 },
+      ],
+    });
+    expect(lowered.body.lines[0]).toMatchObject({ unitPrice: 32000, listPrice: 34000, discount: 20000, totalHt: 320000 });
+    expect(lowered.body.lines[1]).toMatchObject({ listPrice: null, discount: 1000, totalHt: 33000 });
+    expect(lowered.body.lines[2]).toMatchObject({ listPrice: null, discount: 0, totalHt: 36000 });
+    expect((await owner.agent.delete(`/company/sales/documents/${lowered.body.id}`)).status).toBe(200);
     expect((await owner.agent.delete(`/company/sales/documents/${withAmount.body.id}`)).status).toBe(200);
 
     const sent = await owner.agent.post(`/company/sales/documents/${draft.body.id}/validate`);

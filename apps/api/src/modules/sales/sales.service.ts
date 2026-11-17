@@ -41,6 +41,15 @@ export function invoiceStatus(total: number, paid: number, credited: number): Sa
   if (paid + credited >= total) return 'paid';
   return paid > 0 || credited > 0 ? 'partially_paid' : 'issued';
 }
+/**
+ * Prix présenté sur le document et remise totale de la ligne. Si l'article a été vendu sous son prix catalogue
+ * (prix modifié à la main), le prix catalogue est affiché et l'écart compte dans la remise, avec la remise saisie.
+ */
+export const shownPrice = (l: { quantity: string; unit_price: string; total_ht: string; list_price?: string | null }) => {
+  const unit = Number(l.unit_price), list = Number(l.list_price ?? 0);
+  const base = list > unit ? list : unit;
+  return { listPrice: list > unit ? list : null, discount: Math.max(0, Math.round(Number(l.quantity) * base) - Number(l.total_ht)) };
+};
 /** Reste à payer et trop-perçu (le client a payé plus que ce qui reste dû après avoir). */
 export const balance = (d: { total_ttc: string; paid_amount: string; credited_amount: string; refunded_amount?: string }) => {
   const due = Number(d.total_ttc) - Number(d.paid_amount) - Number(d.credited_amount) + Number(d.refunded_amount ?? 0);
@@ -78,17 +87,19 @@ export class SalesService {
 
   private async writeLines(trx: TenantTrx, t: TenantInfo, documentId: string, lines: LineInput[]) {
     const productIds = [...new Set(lines.map((l) => l.productId).filter((x): x is string => !!x))];
+    const prices = new Map<string, string>();
     if (productIds.length) {
       if (!productIds.every(isUuid)) throw badRequest('Article introuvable.', undefined, 'unknown_product');
-      const found = await trx.selectFrom('product').select('id').where('id', 'in', productIds).execute();
+      const found = await trx.selectFrom('product').select(['id', 'sale_price']).where('id', 'in', productIds).execute();
       if (found.length !== productIds.length) throw badRequest('Un ou plusieurs articles sont introuvables.', undefined, 'unknown_product');
+      for (const p of found) prices.set(p.id, p.sale_price);
     }
     const totals = computeTotals(lines);
     await trx.deleteFrom('sales_document_line').where('document_id', '=', documentId).execute();
     await trx.insertInto('sales_document_line').values(lines.map((l, i) => ({
       company_id: t.companyId, document_id: documentId, position: i + 1, product_id: l.productId ?? null, description: l.description,
       quantity: l.quantity, unit: l.unit ?? null, unit_price: l.unitPrice, discount_pct: l.discountPct ?? 0, discount_amount: l.discountAmount ?? 0, vat_rate: l.vatRate,
-      total_ht: totals.lines[i].ht, total_vat: totals.lines[i].vat,
+      list_price: l.productId ? prices.get(l.productId) ?? null : null, total_ht: totals.lines[i].ht, total_vat: totals.lines[i].vat,
     }))).execute();
     return totals;
   }
@@ -172,7 +183,7 @@ export class SalesService {
       lines: lines.map((l) => ({ id: l.id, productId: l.product_id, description: l.description, quantity: Number(l.quantity), unit: l.unit,
         unitPrice: Number(l.unit_price), discountPct: Number(l.discount_pct), discountAmount: Number(l.discount_amount), vatRate: Number(l.vat_rate), totalHt: Number(l.total_ht), totalVat: Number(l.total_vat),
         // Remise totale de la ligne en FCFA (pourcentage et montant confondus).
-        discount: Math.max(0, Math.round(Number(l.quantity) * Number(l.unit_price)) - Number(l.total_ht)) })),
+        ...shownPrice(l) })),
       payments: payments.map((p) => ({ ...p, amount: Number(p.amount) })),
       lastPaidOn: payments.at(-1)?.paidOn ?? null,
     };
