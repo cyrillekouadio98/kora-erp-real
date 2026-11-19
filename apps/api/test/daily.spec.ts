@@ -44,6 +44,10 @@ describe('Point journalier par site', () => {
     expect(m.days[0]).toMatchObject({ date: d, salesTtc: 45000, cashed: 20000, uncashed: 25000, salesHt: 45000, invoices: 1, cogs: 36000, margin: 9000, expenses: 2500, expenseCount: 1, result: 6500 });
     expect(m.days[0].expenseLabels).toContain('Carburant moto');
     expect(c.days[0]).toMatchObject({ salesTtc: 0, cashed: 0, uncashed: 0, cogs: 0, margin: 0, expenses: 1000, result: -1000 });
+    // Caisse : 20 000 reçus en espèces − 2 500 de dépense = 17 500 ; solde réel = 50 000 + 20 000 − 2 500 − 5 000 (retrait) = 62 500.
+    expect(m.days[0]).toMatchObject({ cashIn: 20000, netCash: 17500, cashBalance: 62500 });
+    expect(c.days[0]).toMatchObject({ cashIn: 0, netCash: -1000, cashBalance: 49000 });
+    expect(m.totals).toMatchObject({ cashIn: 20000, netCash: 17500, cashBalance: 62500 });
     expect(m.totals).toMatchObject({ salesTtc: 45000, cashed: 20000, uncashed: 25000, cogs: 36000, margin: 9000, expenses: 2500, result: 6500 });
 
     // Site affiché : seul ce site est présenté.

@@ -348,25 +348,49 @@ export class ReportsService {
           sql<string>`string_agg(m.label || ' (' || m.amount::bigint || ')', ' · ' ORDER BY m.created_at)`.as('labels')])
         .groupBy(['a.site_id', 'day']), t, 'a.site_id').execute();
 
+      // Espèces reçues des clients sur les caisses du site (encaissements moins remboursements), contre-passations exclues.
+      const cashIn = await inScope(trx.selectFrom('treasury_movement as m')
+        .innerJoin('treasury_account as a', (j) => j.onRef('a.id', '=', 'm.account_id').onRef('a.company_id', '=', 'm.company_id'))
+        .where('a.kind', '=', 'cash').where('m.source_type', 'in', ['sales_payment', 'sales_refund'])
+        .where('m.status', '=', 'posted').where('m.reversed_by', 'is', null).where('m.reversal_of', 'is', null)
+        .where('m.date', '>=', from).where('m.date', '<=', to)
+        .select(['a.site_id', sql<string>`to_char(m.date, 'YYYY-MM-DD')`.as('day'), sql<string>`sum(case when m.direction = 'in' then m.amount else -m.amount end)`.as('v')])
+        .groupBy(['a.site_id', 'day']), t, 'a.site_id').execute();
+      // Solde réel des caisses du site en fin de journée : solde d'ouverture + tous les mouvements validés (comme la trésorerie).
+      const opening = await inScope(trx.selectFrom('treasury_account as a').where('a.kind', '=', 'cash')
+        .select(['a.site_id', sql<string>`sum(a.opening_balance)`.as('v')]).groupBy('a.site_id'), t, 'a.site_id').execute();
+      const flows = await inScope(trx.selectFrom('treasury_movement as m')
+        .innerJoin('treasury_account as a', (j) => j.onRef('a.id', '=', 'm.account_id').onRef('a.company_id', '=', 'm.company_id'))
+        .where('a.kind', '=', 'cash').where('m.status', '=', 'posted').where('m.date', '<=', to)
+        .select(['a.site_id', sql<string>`case when m.date < ${from}::date then '' else to_char(m.date, 'YYYY-MM-DD') end`.as('day'),
+          sql<string>`sum(case when m.direction = 'in' then m.amount else -m.amount end)`.as('v')])
+        .groupBy(['a.site_id', 'day']), t, 'a.site_id').execute();
+
       const days: string[] = [];
       for (let d = from; d <= to; d = shift(d, 1)) days.push(d);
-      const zero = () => ({ salesTtc: 0, salesHt: 0, cashed: 0, uncashed: 0, invoices: 0, cogs: 0, margin: 0, expenses: 0, expenseCount: 0, result: 0 });
+      const zero = () => ({ salesTtc: 0, salesHt: 0, cashed: 0, uncashed: 0, invoices: 0, cogs: 0, margin: 0, expenses: 0, expenseCount: 0, result: 0, cashIn: 0, netCash: 0 });
       return {
         from, to,
         sites: sites.map((s) => {
+          const flow = (day: string) => Number(flows.find((r) => r.site_id === s.id && r.day === day)?.v ?? 0);
+          let balance = Number(opening.find((r) => r.site_id === s.id)?.v ?? 0) + flow('');
           const rows = days.map((day) => {
+            balance += flow(day);
+            const received = round(Number(cashIn.find((r) => r.site_id === s.id && r.day === day)?.v ?? 0));
             const sa = sales.find((r) => r.site_id === s.id && r.day === day), co = cogs.find((r) => r.site_id === s.id && r.day === day);
             const ex = expenses.find((r) => r.site_id === s.id && r.day === day);
             const salesHt = round(Number(sa?.ht ?? 0)), cost = round(Number(co?.v ?? 0)), spent = round(Number(ex?.v ?? 0));
             const salesTtc = round(Number(sa?.ttc ?? 0)), uncashed = round(Number(sa?.unpaid ?? 0));
             return { date: day, salesTtc, salesHt, cashed: salesTtc - uncashed, uncashed, invoices: Number(sa?.n ?? 0), cogs: cost, margin: salesHt - cost,
-              expenses: spent, expenseCount: Number(ex?.n ?? 0), expenseLabels: ex?.labels ?? null, result: salesHt - cost - spent };
+              expenses: spent, expenseCount: Number(ex?.n ?? 0), expenseLabels: ex?.labels ?? null, result: salesHt - cost - spent,
+              cashIn: received, netCash: received - spent, cashBalance: round(balance) };
           });
           const totals = rows.reduce((acc, r) => {
             for (const k of Object.keys(acc) as (keyof ReturnType<typeof zero>)[]) acc[k] += r[k];
             return acc;
           }, zero());
-          return { siteId: s.id, siteCode: s.code, siteName: s.name, days: rows.reverse(), totals };
+          const last = rows[rows.length - 1];
+          return { siteId: s.id, siteCode: s.code, siteName: s.name, days: rows.reverse(), totals: { ...totals, cashBalance: last?.cashBalance ?? 0 } };
         }),
       };
     });

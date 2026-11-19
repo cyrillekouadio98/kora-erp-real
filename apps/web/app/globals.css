@@ -758,7 +758,8 @@ table.import-map .req { color: var(--crit); }
 .daily-site .daily-labels { max-width: 260px; margin-left: auto; white-space: normal; text-align: right; }
 .daily-site tfoot td { border-top: 2px solid var(--line); }
 .daily-site .kpi.warn .v { color: var(--crit); }
-.daily-site .kpis { grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 8px; }
+.daily-site .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 760px) { .daily-site .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .daily-site .kpi .v { font-size: 17px; }
 .daily-site th { white-space: normal; padding: 8px; vertical-align: bottom; }
 .daily-site td { padding: 8px; font-size: 13px; }

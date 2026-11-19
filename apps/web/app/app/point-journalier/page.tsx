@@ -22,7 +22,7 @@ const dayLabel = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('f
 const pct = (part: number, of: number) => (of ? `${Math.round((part / of) * 100)} %` : '—');
 const signed = (n: number) => <b style={{ color: n < 0 ? 'var(--crit)' : n > 0 ? 'var(--ok)' : undefined }}>{money(n)}</b>;
 
-type Day = { date: string; salesTtc: number; salesHt: number; cashed: number; uncashed: number; invoices: number; cogs: number; margin: number; expenses: number; expenseCount: number; expenseLabels: string | null; result: number };
+type Day = { date: string; salesTtc: number; salesHt: number; cashed: number; uncashed: number; invoices: number; cogs: number; margin: number; expenses: number; expenseCount: number; expenseLabels: string | null; result: number; cashIn: number; netCash: number; cashBalance: number };
 type Site = { siteId: string; siteCode: string; siteName: string; days: Day[]; totals: Omit<Day, 'date' | 'expenseLabels'> };
 
 /** Point journalier : chaque site à part, jour par jour — ventes, coût des produits vendus, marge, dépenses de caisse, résultat. */
@@ -35,8 +35,8 @@ export default function DailyPointPage() {
   useEffect(() => { if (from && to && from <= to) run(async () => setData(await api(`/company/reports/daily?from=${from}&to=${to}`))); }, [from, to]); // eslint-disable-line
 
   const exportCsv = () => downloadCsv(`point-journalier-${from}-${to}.csv`, [
-    ['Site', 'Date', 'Ventes TTC', 'Ventes encaissées', 'Ventes non encaissées', 'Ventes HT', 'Coût des produits vendus', 'Marge', 'Dépenses de caisse', 'Résultat'],
-    ...(data?.sites ?? []).flatMap((s) => [...s.days].reverse().map((d) => [s.siteName, d.date, d.salesTtc, d.cashed, d.uncashed, d.salesHt, d.cogs, d.margin, d.expenses, d.result])),
+    ['Site', 'Date', 'Ventes TTC', 'Ventes encaissées', 'Ventes non encaissées', 'Ventes HT', 'Coût des produits vendus', 'Marge', 'Dépenses de caisse', 'Résultat', 'Espèces encaissées', 'Net en caisse', 'Solde des caisses en fin de journée'],
+    ...(data?.sites ?? []).flatMap((s) => [...s.days].reverse().map((d) => [s.siteName, d.date, d.salesTtc, d.cashed, d.uncashed, d.salesHt, d.cogs, d.margin, d.expenses, d.result, d.cashIn, d.netCash, d.cashBalance])),
   ]);
   const shownSite = ctx?.siteId ? ` · ${ctx.sites.find((x) => x.id === ctx.siteId)?.name}` : '';
 
@@ -56,11 +56,11 @@ export default function DailyPointPage() {
         <label className="row small" style={{ gap: 6, alignSelf: 'center' }}><input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> Afficher les jours sans activité</label>
       </div>
       <Alert>{error}</Alert>
-      <p className="small muted no-print" style={{ margin: 0 }}>Ventes : factures et tickets de caisse, avoirs déduits. Encaissé : part des ventes du jour déjà payée (à ce jour) ; non encaissé : reste à payer par les clients sur ces ventes. Coût des produits vendus : sorties de stock des ventes au coût moyen. Marge = ventes HT − coût. Dépenses : saisies directement sur les caisses du site (hors retraits de l&apos;exploitant). Résultat = marge − dépenses de caisse.</p>
+      <p className="small muted no-print" style={{ margin: 0 }}>Ventes : factures et tickets de caisse, avoirs déduits. Encaissé : part des ventes du jour déjà payée (à ce jour) ; non encaissé : reste à payer par les clients sur ces ventes. Coût des produits vendus : sorties de stock des ventes au coût moyen. Marge = ventes HT − coût. Dépenses : saisies directement sur les caisses du site (hors retraits de l&apos;exploitant). Résultat = marge − dépenses de caisse. Net en caisse = espèces reçues des clients sur les caisses du site − dépenses de caisse ; solde : argent réellement en caisse en fin de journée (toutes opérations de caisse comprises).</p>
       {data && <div className="stack" style={{ opacity: busy ? 0.6 : 1 }}>
         {data.sites.map((s) => {
           const t = s.totals;
-          const days = all ? s.days : s.days.filter((d) => d.salesTtc || d.cogs || d.expenses);
+          const days = all ? s.days : s.days.filter((d) => d.salesTtc || d.cogs || d.expenses || d.cashIn);
           return (
             <section key={s.siteId} className="card daily-site">
               <header><h2>{s.siteName} <span className="small muted">{s.siteCode}</span></h2></header>
@@ -72,9 +72,10 @@ export default function DailyPointPage() {
                 <div className="card kpi"><div className="l">Marge</div><div className="v">{money(t.margin)}</div><div className="small muted">{pct(t.margin, t.salesHt)} des ventes HT</div></div>
                 <div className="card kpi"><div className="l">Dépenses de caisse</div><div className="v">{money(t.expenses)}</div><div className="small muted">{t.expenseCount} dépense{t.expenseCount > 1 ? 's' : ''}</div></div>
                 <div className={`card kpi result ${t.result < 0 ? 'neg' : 'pos'}`}><div className="l">Résultat</div><div className="v">{money(t.result)}</div><div className="small muted">marge − dépenses de caisse</div></div>
+                <div className={`card kpi result ${t.netCash < 0 ? 'neg' : 'pos'}`}><div className="l">Net en caisse</div><div className="v">{money(t.netCash)}</div><div className="small muted">{money(t.cashIn)} reçus en espèces − dépenses</div><div className="small muted">Solde des caisses : <b>{money(t.cashBalance)}</b></div></div>
               </div>
               <div className="table-wrap"><table>
-                <thead><tr><th>Jour</th><th className="n">Ventes TTC</th><th className="n">Encaissées</th><th className="n">Non encaissées</th><th className="n">Ventes HT</th><th className="n">Coût des produits vendus</th><th className="n">Marge</th><th className="n">Dépenses de caisse</th><th className="n">Résultat</th></tr></thead>
+                <thead><tr><th>Jour</th><th className="n">Ventes TTC</th><th className="n">Encaissées</th><th className="n">Non encaissées</th><th className="n">Ventes HT</th><th className="n">Coût des produits vendus</th><th className="n">Marge</th><th className="n">Dépenses de caisse</th><th className="n">Résultat</th><th className="n">Net en caisse</th></tr></thead>
                 <tbody>
                   {days.map((d) => (
                     <tr key={d.date}>
@@ -87,13 +88,15 @@ export default function DailyPointPage() {
                       <td className="n">{money(d.margin)}<div className="small muted">{pct(d.margin, d.salesHt)}</div></td>
                       <td className="n" title={d.expenseLabels ?? ''}>{money(d.expenses)}{d.expenseLabels && <div className="small muted daily-labels">{d.expenseLabels}</div>}</td>
                       <td className="n">{signed(d.result)}</td>
+                      <td className="n"><b>{signed(d.netCash)}</b><div className="small muted">reçu {money(d.cashIn)}</div><div className="small muted">solde {money(d.cashBalance)}</div></td>
                     </tr>
                   ))}
-                  {!days.length && <tr><td colSpan={9} className="muted" style={{ textAlign: 'center', padding: 20 }}>Aucune vente ni dépense de caisse sur cette période.</td></tr>}
+                  {!days.length && <tr><td colSpan={10} className="muted" style={{ textAlign: 'center', padding: 20 }}>Aucune vente ni dépense de caisse sur cette période.</td></tr>}
                 </tbody>
                 {days.length > 1 && <tfoot><tr className="total">
                   <td><b>Total</b></td><td className="n"><b>{money(t.salesTtc)}</b></td><td className="n"><b>{money(t.cashed)}</b></td><td className="n"><b>{money(t.uncashed)}</b></td><td className="n"><b>{money(t.salesHt)}</b></td><td className="n"><b>{money(t.cogs)}</b></td>
                   <td className="n"><b>{money(t.margin)}</b></td><td className="n"><b>{money(t.expenses)}</b></td><td className="n">{signed(t.result)}</td>
+                  <td className="n"><b>{signed(t.netCash)}</b><div className="small muted">solde {money(t.cashBalance)}</div></td>
                 </tr></tfoot>}
               </table></div>
             </section>
