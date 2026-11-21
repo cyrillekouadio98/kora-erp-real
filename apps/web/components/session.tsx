@@ -7,6 +7,9 @@ import { SUB_STATUS } from '@/lib/format';
 import { activeHref, AppIcon, appLabel, appTone, currentApp } from './apps';
 import { Pill } from './ui';
 
+/** Version affichée : majeure.mineure (ex. 1.0), injectée depuis package.json par next.config. */
+const VERSION = (process.env.NEXT_PUBLIC_APP_VERSION ?? '').split('.').slice(0, 2).join('.');
+
 export interface Me {
   user: { id: string; email: string; fullName: string; mfaEnabled: boolean };
   platformRoles: string[]; activeCompanyId: string | null;
@@ -95,6 +98,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
           {me.companies.length === 0 && !me.platformRoles.length && <div className="alert info">Vous n'avez accès à aucune entreprise. Créez-en une depuis le tableau de bord ou demandez une invitation.</div>}
           {children}
+          <footer className="app-version small muted">Kora ERP v{VERSION}</footer>
         </div></main>
       </div>
     </Ctx.Provider>

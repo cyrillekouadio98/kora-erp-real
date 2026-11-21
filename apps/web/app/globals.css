@@ -766,3 +766,7 @@ table.import-map .req { color: var(--crit); }
 .daily-site td.n { white-space: nowrap; }
 .daily-site .daily-labels { white-space: normal; }
 @media print { .daily-site { break-inside: avoid-page; } .daily-site + .daily-site { break-before: page; } }
+
+/* Version de l'application en pied de page */
+.app-version { text-align: center; padding-top: 8px; font-size: 12px; }
+@media print { .app-version { display: none; } }
