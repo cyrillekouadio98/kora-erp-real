@@ -3,7 +3,8 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
-import { date, money, qty, STOCK_MOVES } from '@/lib/format';
+import { date, DEFAULT_OPENING_COUNTERPART, money, qty, STOCK_MOVES } from '@/lib/format';
+import { CounterpartSelect } from '@/components/opening-counterpart';
 import { useSession } from '@/components/session';
 import { ImportButton } from '@/components/import';
 import { STOCK_IMPORT } from '@/components/import-configs';
@@ -63,7 +64,7 @@ export default function StockPage() {
       router.push(`/app/achats/${po.id}`);
       return;
     }
-    if (m.type === 'opening') await api(`/company/stock/${m.item.id}/opening`, { body: { quantity: Number(m.quantity), unitCost: Number(m.unitCost), date: m.date, warehouseId: m.warehouseId || null } });
+    if (m.type === 'opening') await api(`/company/stock/${m.item.id}/opening`, { body: { quantity: Number(m.quantity), unitCost: Number(m.unitCost), date: m.date, warehouseId: m.warehouseId || null, counterpart: m.counterpart } });
     if (m.type === 'count') {
       const r = await api(`/company/stock/${m.item.id}/count`, { body: { counted: Number(m.counted), reason: m.reason, warehouseId: warehouseId || null } });
       setNotice(r.difference ? `« ${m.item.name} » : écart de ${qty(r.difference)} ${m.item.unit} enregistré.` : `« ${m.item.name} » : aucun écart.`);
@@ -135,7 +136,7 @@ export default function StockPage() {
               <td className="n">{i.minStock ?? '—'}</td>
               <td className="n"><div className="row" style={{ justifyContent: 'flex-end', gap: 6, flexWrap: 'nowrap' }}>
                 <button className="btn sm" onClick={() => api(`/company/stock/${i.id}/movements`).then((r) => open({ type: 'card', item: i, ...r }))}>Fiche</button>
-                {admin && !i.lastMovement && !warehouseId && <button className="btn sm primary" onClick={() => open({ type: 'opening', item: i, quantity: '', unitCost: i.purchasePrice ?? '', date: today(), warehouseId: '' })}>Stock initial</button>}
+                {admin && !i.lastMovement && !warehouseId && <button className="btn sm primary" onClick={() => open({ type: 'opening', item: i, quantity: '', unitCost: i.purchasePrice ?? '', date: today(), warehouseId: '', counterpart: DEFAULT_OPENING_COUNTERPART })}>Stock initial</button>}
                 {can('stock.validate') && writable && i.lastMovement && <button className="btn sm" onClick={() => open({ type: 'count', item: i, counted: expectedFor(i), reason: '' })}>Ajuster</button>}
                 {admin && <button className="btn sm" onClick={() => open({ type: 'threshold', item: i, minStock: i.minStock ?? '' })}>Seuil</button>}
               </div></td>
@@ -185,7 +186,7 @@ export default function StockPage() {
             </>}
             {modal.type === 'opening' && <>
               <h2>Stock initial — {modal.item.name}</h2>
-              <p className="small muted" style={{ margin: 0 }}>Quantité présente avant l'utilisation de Kora, et son coût d'achat unitaire. Elle sera passée en comptabilité en à-nouveaux (311000 / 471000).</p>
+              <p className="small muted" style={{ margin: 0 }}>Quantité présente avant l'utilisation de Kora, et son coût d'achat unitaire. Elle sera passée en comptabilité en à-nouveaux : 311000 au débit, le compte d'origine choisi au crédit.</p>
               <Alert>{error}</Alert>
               <div className="grid2">
                 <Field label={`Quantité (${modal.item.unit})`} type="number" min="0.001" step="any" required value={modal.quantity} onChange={set('quantity')} />
@@ -195,6 +196,7 @@ export default function StockPage() {
                   {data.warehouses.map((w: any) => <option key={w.id} value={w.isDefault ? '' : w.id}>{w.code} · {w.name}</option>)}</select></label>}
                 <div className="field small" style={{ alignSelf: 'end' }}>Valeur : <b>{money(Number(modal.quantity || 0) * Number(modal.unitCost || 0))}</b></div>
               </div>
+              <CounterpartSelect label="Origine du stock (contrepartie comptable)" value={modal.counterpart} onChange={(v) => setModal({ ...modal, counterpart: v })} />
             </>}
             {modal.type === 'count' && <>
               <h2>Ajuster le stock — {modal.item.name}</h2>

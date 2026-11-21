@@ -6,7 +6,7 @@ import { isUuid, uuidv7 } from '../../common/ids';
 import type { TenantInfo } from '../../common/request-context';
 import { DatabaseService, TenantTrx } from '../../db/database.service';
 import type { MovementSource, PaymentMethod, TreasuryKind } from '../../db/schema';
-import { AccountingService } from '../accounting/accounting.service';
+import { AccountingService, DEFAULT_OPENING_COUNTERPART, OpeningCounterpart } from '../accounting/accounting.service';
 import { AuditService } from '../audit/audit.service';
 
 /** Catégories saisissables à la main (les autres sont posées par les ventes, achats, virements et arrêtés). */
@@ -116,7 +116,7 @@ export class TreasuryService {
         const mine = sums.filter((m) => m.account_id === a.id);
         const signed = (m: { direction: string; amount: string }) => (m.direction === 'in' ? 1 : -1) * Number(m.amount);
         return {
-          id: a.id, kind: a.kind, name: a.name, bankName: a.bank_name, accountNumber: a.account_number, ledgerCode: a.ledger_code, openingBalance: Number(a.opening_balance), openingDate: a.opening_date,
+          id: a.id, kind: a.kind, name: a.name, bankName: a.bank_name, accountNumber: a.account_number, ledgerCode: a.ledger_code, openingBalance: Number(a.opening_balance), openingDate: a.opening_date, openingCounterpart: a.opening_counterpart,
           archivedAt: a.archived_at, siteId: a.site_id, balance: Number(a.opening_balance) + mine.reduce((s, m) => s + signed(m), 0),
           monthIn: mine.filter((m) => m.date >= monthStart && m.direction === 'in').reduce((s, m) => s + Number(m.amount), 0),
           monthOut: mine.filter((m) => m.date >= monthStart && m.direction === 'out').reduce((s, m) => s + Number(m.amount), 0),
@@ -125,7 +125,7 @@ export class TreasuryService {
     });
   }
 
-  async createAccount(t: TenantInfo, input: { kind: TreasuryKind; name: string; bankName?: string | null; accountNumber?: string | null; openingBalance?: number; openingDate?: string; siteId?: string | null }) {
+  async createAccount(t: TenantInfo, input: { kind: TreasuryKind; name: string; bankName?: string | null; accountNumber?: string | null; openingBalance?: number; openingDate?: string; openingCounterpart?: OpeningCounterpart; siteId?: string | null }) {
     this.assertBank(t, input.kind);
     const siteId = input.siteId ?? workingSite(t);
     assertSiteAccess(t, siteId);
@@ -142,7 +142,7 @@ export class TreasuryService {
       await trx.insertInto('ledger_account').values({ company_id: t.companyId, code: ledgerCode, name: input.name, is_system: true }).execute();
       const a = await trx.insertInto('treasury_account').values({
         company_id: t.companyId, kind: input.kind, name: input.name, bank_name: input.bankName ?? null, account_number: input.accountNumber ?? null, ledger_code: ledgerCode,
-        opening_balance: input.openingBalance ?? 0, opening_date: input.openingDate ?? today(), ...(siteId ? { site_id: siteId } : {}),
+        opening_balance: input.openingBalance ?? 0, opening_date: input.openingDate ?? today(), opening_counterpart: input.openingCounterpart ?? DEFAULT_OPENING_COUNTERPART, ...(siteId ? { site_id: siteId } : {}),
       }).returning('id').executeTakeFirstOrThrow();
       await this.accounting.postOpening(trx, t, a.id);
       await this.audit.tenant(trx, t.ctx, { action: 'treasury_account.created', entityType: 'treasury_account', entityId: a.id, data: { name: input.name, kind: input.kind, openingBalance: input.openingBalance ?? 0 } });
@@ -150,7 +150,7 @@ export class TreasuryService {
     });
   }
 
-  async updateAccount(t: TenantInfo, id: string, input: { name?: string; bankName?: string | null; accountNumber?: string | null; openingBalance?: number; openingDate?: string }) {
+  async updateAccount(t: TenantInfo, id: string, input: { name?: string; bankName?: string | null; accountNumber?: string | null; openingBalance?: number; openingDate?: string; openingCounterpart?: OpeningCounterpart }) {
     return this.db.tenant(t.ctx, async (trx) => {
       const a = await this.account(trx, id, true);
       if (input.name && input.name !== a.name) {
@@ -171,6 +171,8 @@ export class TreasuryService {
       if (input.accountNumber !== undefined) patch.account_number = input.accountNumber;
       if (input.openingBalance !== undefined) patch.opening_balance = input.openingBalance;
       if (input.openingDate) patch.opening_date = input.openingDate;
+      // La contrepartie vaut pour les prochains écarts du solde d'ouverture ; le déjà passé se reclasse depuis la comptabilité.
+      if (input.openingCounterpart) patch.opening_counterpart = input.openingCounterpart;
       if (Object.keys(patch).length) await trx.updateTable('treasury_account').set(patch).where('id', '=', id).execute();
       if (input.openingBalance !== undefined || input.openingDate) await this.accounting.postOpening(trx, t, id);
       // Le solde d'ouverture change tout l'historique du compte : il est tracé avec sa valeur précédente.

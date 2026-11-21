@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
+import { OPENING_COUNTERPARTS } from '../accounting/accounting.service';
 import { AllowWhenReadOnly, Permission, Tenant } from '../../common/decorators';
 import type { TenantInfo } from '../../common/request-context';
 import { parse, uuidParam } from '../../common/validation';
@@ -128,6 +129,7 @@ export class StockController {
     return this.stock.opening(t, productId, parse(z.object({
       quantity: z.coerce.number().positive({ message: 'La quantité doit être positive' }).max(1e9),
       unitCost: z.coerce.number().min(0, { message: 'Le coût ne peut pas être négatif' }).max(1e13), date: isoDate.optional(), warehouseId: uuidParam.nullable().optional(),
+      counterpart: z.enum(OPENING_COUNTERPARTS, { message: 'Compte de contrepartie non proposé' }).optional(),
     }).strict(), body));
   }
 

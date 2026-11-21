@@ -8,7 +8,7 @@ import { badRequest } from '../../common/errors';
 import { parse } from '../../common/validation';
 import { toCsv } from '../exports/export.controller';
 import { isoDate } from '../sales/sales.controller';
-import { AccountingService } from './accounting.service';
+import { AccountingService, OPENING_COUNTERPARTS } from './accounting.service';
 import { BalancesService } from './balances.service';
 import { FinancialService } from './financial.service';
 import { FormationService, LEGAL_FORMS, STEPS } from './formation.service';
@@ -91,6 +91,22 @@ export class AccountingController {
   close(@Tenant() t: TenantInfo, @Param('year') year: string, @Body() body: unknown) {
     this.financial.assertYear(Number(year));
     return this.financial.close(t, Number(year), parse(z.object({ acknowledgeWarnings: z.boolean().default(false) }).strict(), body ?? {}).acknowledgeWarnings);
+  }
+
+  /** Solde du compte d'attente 471000 et son origine. */
+  @Permission('accounting.read') @AllowWhenReadOnly()
+  @Get('suspense')
+  suspense(@Tenant() t: TenantInfo) { return this.accounting.suspense(t); }
+
+  /** Reclasse le compte d'attente vers le compte de l'origine réelle des fonds (écriture d'OD validée). */
+  @Permission('accounting.validate') @HttpCode(200)
+  @Post('suspense/reclassify')
+  reclassifySuspense(@Tenant() t: TenantInfo, @Body() body: unknown) {
+    return this.accounting.reclassifySuspense(t, parse(z.object({
+      counterpart: z.enum(OPENING_COUNTERPARTS, { message: 'Compte de contrepartie non proposé' }),
+      amount: z.coerce.number().positive({ message: 'Le montant doit être positif' }).max(1e13).optional(),
+      date: isoDate,
+    }).strict(), body));
   }
 
   @Permission('accounting.read') @AllowWhenReadOnly()

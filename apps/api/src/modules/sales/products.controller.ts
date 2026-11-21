@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
+import { OPENING_COUNTERPARTS } from '../accounting/accounting.service';
 import { AllowWhenReadOnly, Permission, Tenant } from '../../common/decorators';
 import { badRequest, conflict, forbidden, notFound } from '../../common/errors';
 import { isUuid } from '../../common/ids';
@@ -34,6 +35,7 @@ const OpeningStockSchema = z.object({
   quantity: z.coerce.number().positive({ message: 'La quantité en stock doit être positive' }).max(1e9),
   unitCost: money.optional(),
   warehouseId: z.string().uuid({ message: 'Entrepôt inconnu' }).nullable().optional(),
+  counterpart: z.enum(OPENING_COUNTERPARTS, { message: 'Compte de contrepartie non proposé' }).optional(),
 }).strict();
 
 const COLUMNS = { kind: 'kind', name: 'name', description: 'description', unit: 'unit', salePrice: 'sale_price', purchasePrice: 'purchase_price', vatRate: 'vat_rate', barcode: 'barcode', siteId: 'site_id' } as const;

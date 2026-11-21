@@ -148,7 +148,7 @@ export type PurchasePaymentTable = SalesPaymentTable;
 export type TreasuryKind = 'cash' | 'bank' | 'mobile_money';
 export interface TreasuryAccountTable {
   company_id: string; site_id: Generated<string>; id: Generated<string>; kind: TreasuryKind; name: string; bank_name: string | null; account_number: string | null; ledger_code: string;
-  opening_balance: NumDefault; opening_date: ColumnType<string, string | undefined, string>; archived_at: TsNullable; created_at: Generated<Date>; updated_at: Generated<Date>;
+  opening_balance: NumDefault; opening_date: ColumnType<string, string | undefined, string>; opening_counterpart: ColumnType<string, string | undefined, string>; archived_at: TsNullable; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
 export type MovementSource = 'sales_payment' | 'purchase_payment' | 'sales_refund' | 'payroll' | 'expense' | 'income' | 'transfer' | 'cash_count' | 'stock_purchase' | 'formation' | 'reversal';
 export interface TreasuryMovementTable {

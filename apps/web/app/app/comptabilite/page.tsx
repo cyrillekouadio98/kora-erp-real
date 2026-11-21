@@ -6,6 +6,7 @@ import { useSession } from '@/components/session';
 import { ImportButton } from '@/components/import';
 import { ENTRIES_IMPORT } from '@/components/import-configs';
 import { Formation } from '@/components/formation';
+import { CounterpartSelect } from '@/components/opening-counterpart';
 import { Alert, Field, Pill, useAction } from '@/components/ui';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -763,6 +764,8 @@ function Closing({ version, changed }: { version: number; changed: () => void })
   const selected = year ?? years?.find((y) => !y.closed && y.year < Number(today().slice(0, 4)))?.year ?? years?.[0]?.year ?? null;
   const { data: c } = useLatest<any>(selected ? `/company/accounting/fiscal-years/${selected}/checklist` : null, [version, selected]);
   return (
+    <div style={{ display: 'grid', gap: 18 }}>
+    <Suspense version={version} changed={changed} />
     <div className="row" style={{ alignItems: 'flex-start' }}>
       <div className="card" style={{ minWidth: 220 }}><header><h2>Exercices</h2></header>
         <div style={{ display: 'grid', gap: 6 }}>{years?.map((y) => (
@@ -792,6 +795,45 @@ function Closing({ version, changed }: { version: number; changed: () => void })
           </>}
         </div>
       )}
+    </div>
+    </div>
+  );
+}
+
+const SUSPENSE_ORIGINS: Record<string, string> = {
+  stock_opening: 'Stocks initiaux', treasury_opening: "Soldes d'ouverture des caisses et banques", manual: 'Déjà reclassé (écritures d’OD)',
+};
+
+/** Compte d'attente 471000 : son origine et son reclassement vers le compte qui correspond aux fonds de départ. */
+function Suspense({ version, changed }: { version: number; changed: () => void }) {
+  const { can, ctx } = useSession();
+  const { data: s } = useLatest<any>('/company/accounting/suspense', [version]);
+  const [form, setForm] = useState({ counterpart: '121000', amount: '', date: today() });
+  const { busy, error, run } = useAction();
+  if (!s || !s.balance) return null;
+  const total = Math.abs(s.balance);
+  const amount = form.amount === '' ? total : Number(form.amount);
+  return (
+    <div className="card" style={{ display: 'grid', gap: 12 }}>
+      <header><h2>Compte d'attente 471000 à reclasser</h2><span className="small muted">solde {s.balance < 0 ? 'créditeur' : 'débiteur'} de <b>{money(total)}</b></span></header>
+      <p className="small muted" style={{ margin: 0 }}>Ce montant est la contrepartie provisoire de vos stocks et soldes de départ. Indiquez d'où viennent réellement ces fonds : Kora passe une écriture d'OD validée ({s.balance < 0 ? `débit 471000, crédit du compte choisi` : `débit du compte choisi, crédit 471000`}). Vous pouvez répartir le montant en plusieurs fois.</p>
+      <div className="table-wrap"><table><thead><tr><th>Origine</th><th className="n">Écritures</th><th className="n">Montant</th></tr></thead>
+        <tbody>{s.origins.map((o: any) => <tr key={o.sourceType}><td>{SUSPENSE_ORIGINS[o.sourceType] ?? o.sourceType}</td><td className="n">{o.entries}</td><td className="n">{money(-o.balance)}</td></tr>)}</tbody></table></div>
+      <Alert>{error}</Alert>
+      {can('accounting.validate') && !ctx?.readOnly && <form style={{ display: 'grid', gap: 10 }} onSubmit={(e) => {
+        e.preventDefault();
+        const name = form.counterpart;
+        if (!window.confirm(`Reclasser ${money(amount)} du compte d'attente 471000 vers le compte ${name} ?\n\nUne écriture d'OD validée sera passée au ${fmtDate(form.date)}. Elle pourra être contre-passée si besoin.`)) return;
+        run(async () => { await api('/company/accounting/suspense/reclassify', { body: { counterpart: form.counterpart, date: form.date, ...(form.amount !== '' ? { amount: Number(form.amount) } : {}) } }); setForm({ ...form, amount: '' }); changed(); });
+      }}>
+        <div className="grid2">
+          <CounterpartSelect label="Vers le compte" exclude="471000" value={form.counterpart} onChange={(v) => setForm({ ...form, counterpart: v })} />
+          <Field label="Montant (FCFA)" type="number" min={1} max={total} step="any" placeholder={`${total.toLocaleString('fr-FR')} (tout le solde)`} value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+          <Field label="Date de l'écriture" type="date" required value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
+        </div>
+        <div><button className="btn primary" disabled={busy || !(amount > 0 && amount <= total)}>Reclasser {money(amount)}</button></div>
+      </form>}
+      <p className="small muted" style={{ margin: 0 }}>En cas de doute sur l'origine des fonds, demandez à votre expert-comptable : c'est lui qui valide le bilan d'ouverture.</p>
     </div>
   );
 }

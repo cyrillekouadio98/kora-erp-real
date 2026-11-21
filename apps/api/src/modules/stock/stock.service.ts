@@ -6,7 +6,7 @@ import { nextNumber } from '../../common/numbering';
 import type { TenantInfo } from '../../common/request-context';
 import { DatabaseService, TenantTrx } from '../../db/database.service';
 import type { StockDocType, StockReason } from '../../db/schema';
-import { AccountingService } from '../accounting/accounting.service';
+import { AccountingService, DEFAULT_OPENING_COUNTERPART, OpeningCounterpart } from '../accounting/accounting.service';
 import { AuditService } from '../audit/audit.service';
 import { TreasuryService } from '../treasury/treasury.service';
 
@@ -38,6 +38,9 @@ export interface StockDocInput {
  * recalcule le coût moyen, une sortie part au coût moyen, un transfert déplace des quantités sans toucher à la valeur.
  * Les quantités sont tenues par entrepôt ; aucune ne peut devenir négative (vérifié ici et par la base).
  */
+/** Stock initial : quantité, coût, date, entrepôt et contrepartie comptable du D 311. */
+export interface OpeningInput { quantity: number; unitCost: number; date?: string; warehouseId?: string | null; counterpart?: OpeningCounterpart }
+
 @Injectable()
 export class StockService {
   constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly accounting: AccountingService, private readonly treasury: TreasuryService) {}
@@ -414,8 +417,11 @@ export class StockService {
   }
 
   // ------------------------------------------------------------------ saisies directes sur un article
-  /** Stock initial d'un article sans mouvement : entrée valorisée, passée en à-nouveaux (D 311 / C 471). */
-  async opening(t: TenantInfo, productId: string, input: { quantity: number; unitCost: number; date?: string; warehouseId?: string | null }) {
+  /**
+   * Stock initial d'un article sans mouvement : entrée valorisée, passée en à-nouveaux
+   * (D 311 / C contrepartie choisie : 121000 report à nouveau par défaut).
+   */
+  async opening(t: TenantInfo, productId: string, input: OpeningInput) {
     return this.db.tenant(t.ctx, (trx) => this.recordOpening(trx, t, productId, input));
   }
 
@@ -423,7 +429,7 @@ export class StockService {
    * Stock initial dans une transaction existante : utilisé par Stocks et par la création d'un article
    * (l'article et son stock de départ sont enregistrés ensemble, ou pas du tout).
    */
-  async recordOpening(trx: TenantTrx, t: TenantInfo, productId: string, input: { quantity: number; unitCost: number; date?: string; warehouseId?: string | null }) {
+  async recordOpening(trx: TenantTrx, t: TenantInfo, productId: string, input: OpeningInput) {
     {
       const p = await this.product(trx, productId);
       if (!p.track_stock) throw badRequest("Cet article n'est pas suivi en stock.", undefined, 'not_tracked');
@@ -431,13 +437,14 @@ export class StockService {
       if (any) throw conflict("Cet article a déjà des mouvements : corrigez son stock par un inventaire.", 'already_has_movements');
       const date = input.date ?? today();
       const value = franc(input.quantity * input.unitCost);
+      const counterpart = input.counterpart ?? DEFAULT_OPENING_COUNTERPART;
       const m = await this.move(trx, t, { productId, warehouseId: input.warehouseId, direction: 'in', quantity: input.quantity, value, date, reason: 'opening', label: 'Stock initial' });
       if (value > 0) {
         const label = `Stock initial — ${p.name}`;
         await this.accounting.postEntry(trx, t, { journal: 'AN', date, label, sourceType: 'stock_opening', sourceId: m!.id, lines: [
-          { account: '311000', label, debit: value }, { account: '471000', label, credit: value }] });
+          { account: '311000', label, debit: value }, { account: counterpart, label, credit: value }] });
       }
-      await this.audit.tenant(trx, t.ctx, { action: 'stock.opening_recorded', entityType: 'product', entityId: productId, data: { name: p.name, quantity: input.quantity, value } });
+      await this.audit.tenant(trx, t.ctx, { action: 'stock.opening_recorded', entityType: 'product', entityId: productId, data: { name: p.name, quantity: input.quantity, value, counterpart } });
       return { ok: true };
     }
   }

@@ -2,7 +2,8 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
-import { ACCOUNT_KINDS, date, EXPENSE_CATEGORIES, INCOME_CATEGORIES, money, MOVEMENT_CATEGORIES } from '@/lib/format';
+import { CounterpartSelect } from '@/components/opening-counterpart';
+import { ACCOUNT_KINDS, date, DEFAULT_OPENING_COUNTERPART, EXPENSE_CATEGORIES, INCOME_CATEGORIES, money, MOVEMENT_CATEGORIES } from '@/lib/format';
 import { useSession } from '@/components/session';
 import { Alert, Field, Pill, useAction } from '@/components/ui';
 
@@ -60,7 +61,7 @@ export default function TreasuryView({ kind }: { kind?: TreasuryKind }) {
       const r = await api(`/company/treasury/accounts/${m.accountId}/count`, { body: { counted: Number(m.counted), note: m.note || null } });
       setResult(r.difference === 0 ? 'Arrêté de caisse : aucun écart. 👍' : `Arrêté de caisse : écart de ${money(r.difference)} enregistré (attendu ${money(r.expected)}, compté ${money(r.counted)}).`);
     } else if (m.type === 'account') {
-      const body = { name: m.name, bankName: m.bankName || null, accountNumber: m.accountNumber || null, openingBalance: Number(m.openingBalance || 0), openingDate: m.openingDate };
+      const body = { name: m.name, bankName: m.bankName || null, accountNumber: m.accountNumber || null, openingBalance: Number(m.openingBalance || 0), openingDate: m.openingDate, openingCounterpart: m.openingCounterpart || DEFAULT_OPENING_COUNTERPART };
       if (m.id) await api(`/company/treasury/accounts/${m.id}`, { method: 'PATCH', body }); else await api('/company/treasury/accounts', { body: { ...body, kind: m.kind } });
     } else if (m.type === 'reverse') {
       await api(`/company/treasury/movements/${m.movement.id}/reverse`, { body: { reason: m.reason } });
@@ -143,7 +144,7 @@ export default function TreasuryView({ kind }: { kind?: TreasuryKind }) {
         ))}
       </div>
       {kind && accounts.length > 0 && !shown.length && <p className="muted" style={{ margin: 0 }}>{page!.empty}</p>}
-      {can('cash.admin') && writable && <div><button className="btn sm" onClick={() => open({ type: 'account', kind: kind ?? 'bank', name: '', bankName: '', accountNumber: '', openingBalance: 0, openingDate: today() })}>{page?.add ?? '+ Ajouter un compte (banque, caisse, mobile money)'}</button></div>}
+      {can('cash.admin') && writable && <div><button className="btn sm" onClick={() => open({ type: 'account', kind: kind ?? 'bank', name: '', bankName: '', accountNumber: '', openingBalance: 0, openingDate: today(), openingCounterpart: DEFAULT_OPENING_COUNTERPART })}>{page?.add ?? '+ Ajouter un compte (banque, caisse, mobile money)'}</button></div>}
 
       <div className="card">
         <header><h2>{page ? `Journal — ${page.title.toLowerCase()}` : 'Journal de trésorerie'}</h2>
@@ -233,7 +234,8 @@ export default function TreasuryView({ kind }: { kind?: TreasuryKind }) {
                 <Field label="Solde d'ouverture (FCFA)" type="number" min={modal.kind === 'cash' ? 0 : undefined} value={modal.openingBalance} onChange={set('openingBalance')} />
                 <Field label="Date d'ouverture" type="date" required max={today()} value={modal.openingDate} onChange={set('openingDate')} />
               </div>
-              <p className="small muted" style={{ margin: 0 }}>Le solde d'ouverture est le montant réellement présent sur le compte à la date d'ouverture, avant tout mouvement saisi dans Kora.</p>
+              <CounterpartSelect label="Origine du solde d'ouverture (contrepartie comptable)" value={modal.openingCounterpart || DEFAULT_OPENING_COUNTERPART} onChange={(v) => setModal({ ...modal, openingCounterpart: v })} />
+              <p className="small muted" style={{ margin: 0 }}>Le solde d'ouverture est le montant réellement présent sur le compte à la date d'ouverture, avant tout mouvement saisi dans Kora.{modal.id && <> L'origine choisie s'applique aux prochaines modifications du solde ; un montant déjà passé au compte d'attente 471000 se reclasse depuis Comptabilité → Clôture d’exercice.</>}</p>
               {modal.id && <div><button type="button" className="btn sm danger" disabled={busy} onClick={() => run(async () => { await api(`/company/treasury/accounts/${modal.id}/archive`, { body: {} }); setModal(null); await refresh(); })}>Archiver ce compte</button></div>}
             </>}
             {modal.type === 'reverse' && <>

@@ -16,6 +16,16 @@ export const ACCOUNTS = {
   customer: '411000', supplier: '401000', suspense: '471000', vatCollected: '443100', vatDeductible: '445200', transfer: '585000', otherCharges: '658000', otherIncome: '758000',
   salesGoods: '701000', salesServices: '706000', purchaseGoods: '601000', purchaseServices: '605000',
 };
+/**
+ * Contreparties proposées pour les soldes d'ouverture (stock initial, caisses et banques) :
+ * report à nouveau (activité passée), capital (apport), compte courant d'associé, fournisseur non payé,
+ * emprunt bancaire, ou compte d'attente quand l'origine reste à préciser par le comptable.
+ */
+export const OPENING_COUNTERPARTS = ['121000', '101000', '462000', '401000', '162000', '471000'] as const;
+export type OpeningCounterpart = (typeof OPENING_COUNTERPARTS)[number];
+/** Contrepartie par défaut : le stock et la trésorerie de départ viennent le plus souvent de l'activité passée. */
+export const DEFAULT_OPENING_COUNTERPART: OpeningCounterpart = '121000';
+
 const MOVEMENT_COUNTERPART: Record<string, string> = {
   rent: '622200', electricity: '605200', water: '605100', fuel: '605300', transport: '618000', telecom: '628000', supplies: '605500', maintenance: '624000',
   salaries: '661000', taxes: '641000', bank_fees: '631000', owner_withdrawal: '104000', other_expense: '658000', capital: '101000', loan: '162000', other_income: '758000',
@@ -193,7 +203,7 @@ export class AccountingService {
 
   /** Écart entre le solde d'ouverture d'un compte de trésorerie et ce qui est déjà passé en à-nouveaux. */
   private async openingGap(trx: TenantTrx, accountId: string) {
-    const a = await trx.selectFrom('treasury_account').select(['id', 'name', 'ledger_code', 'opening_balance', 'opening_date']).where('id', '=', accountId).executeTakeFirstOrThrow();
+    const a = await trx.selectFrom('treasury_account').select(['id', 'name', 'ledger_code', 'opening_balance', 'opening_date', 'opening_counterpart']).where('id', '=', accountId).executeTakeFirstOrThrow();
     const posted = await trx.selectFrom('journal_line as l').innerJoin('journal_entry as e', (j) => j.onRef('e.id', '=', 'l.entry_id').onRef('e.company_id', '=', 'l.company_id'))
       .select((eb) => [eb.fn.sum<string>('l.debit').as('d'), eb.fn.sum<string>('l.credit').as('c')])
       .where('e.source_type', '=', 'treasury_opening').where('e.reference', '=', accountId).where('l.account_code', '=', a.ledger_code).executeTakeFirst();
@@ -201,8 +211,8 @@ export class AccountingService {
   }
 
   /**
-   * Passe en à-nouveaux le solde d'ouverture d'un compte de trésorerie (D 5x / C 471), ou seulement
-   * la différence quand il a été modifié. Le 471 est soldé par le comptable avec le bilan d'ouverture.
+   * Passe en à-nouveaux le solde d'ouverture d'un compte de trésorerie (D 5x / C contrepartie choisie
+   * sur le compte, 121000 par défaut), ou seulement la différence quand il a été modifié.
    */
   async postOpening(trx: TenantTrx, t: TenantInfo, accountId: string) {
     const { account: a, gap } = await this.openingGap(trx, accountId);
@@ -213,8 +223,48 @@ export class AccountingService {
       journal: 'AN', date: a.opening_date, label, reference: a.id, sourceType: 'treasury_opening', sourceId: null,
       lines: [
         { account: a.ledger_code, label, ...(gap > 0 ? { debit: amount } : { credit: amount }) },
-        { account: ACCOUNTS.suspense, label, ...(gap > 0 ? { credit: amount } : { debit: amount }) },
+        { account: a.opening_counterpart, label, ...(gap > 0 ? { credit: amount } : { debit: amount }) },
       ],
+    });
+  }
+
+  // ------------------------------------------------------------------ compte d'attente 471000
+  /** Solde du compte d'attente 471000 (débit − crédit) et son origine, pour le reclasser. */
+  async suspense(t: TenantInfo) {
+    return this.db.tenant(t.ctx, async (trx) => {
+      const rows = await trx.selectFrom('journal_line as l').innerJoin('journal_entry as e', (j) => j.onRef('e.id', '=', 'l.entry_id').onRef('e.company_id', '=', 'l.company_id'))
+        .select(['e.source_type', (eb) => eb.fn.countAll<string>().as('n'), (eb) => eb.fn.sum<string>('l.debit').as('d'), (eb) => eb.fn.sum<string>('l.credit').as('c')])
+        .where('l.account_code', '=', ACCOUNTS.suspense).where('e.status', '=', 'posted').groupBy('e.source_type').execute();
+      const origins = rows.map((r) => ({ sourceType: r.source_type, entries: Number(r.n), balance: round(Number(r.d ?? 0) - Number(r.c ?? 0)) })).filter((o) => o.balance);
+      const balance = round(origins.reduce((s, o) => s + o.balance, 0));
+      // Compte soldé : l'historique (ouvertures puis reclassements) n'a plus à être détaillé.
+      return { account: ACCOUNTS.suspense, balance, origins: balance ? origins : [] };
+    });
+  }
+
+  /**
+   * Reclasse tout ou partie du compte d'attente vers le compte qui correspond à l'origine réelle des fonds
+   * (OD : D 471000 / C contrepartie pour un solde créditeur, l'inverse pour un solde débiteur).
+   */
+  async reclassifySuspense(t: TenantInfo, input: { counterpart: OpeningCounterpart; amount?: number; date: string }) {
+    if (input.counterpart === ACCOUNTS.suspense) throw badRequest("Choisissez un autre compte que le compte d'attente.", undefined, 'same_account');
+    return this.db.tenant(t.ctx, async (trx) => {
+      const r = await trx.selectFrom('journal_line as l').innerJoin('journal_entry as e', (j) => j.onRef('e.id', '=', 'l.entry_id').onRef('e.company_id', '=', 'l.company_id'))
+        .select([(eb) => eb.fn.sum<string>('l.debit').as('d'), (eb) => eb.fn.sum<string>('l.credit').as('c')])
+        .where('l.account_code', '=', ACCOUNTS.suspense).where('e.status', '=', 'posted').where('e.date', '<=', input.date).executeTakeFirst();
+      const balance = round(Number(r?.d ?? 0) - Number(r?.c ?? 0));
+      if (!balance) throw conflict(`Le compte d'attente ${ACCOUNTS.suspense} est déjà soldé au ${input.date}.`, 'suspense_settled');
+      const amount = round(input.amount ?? Math.abs(balance));
+      if (amount <= 0 || amount > Math.abs(balance)) throw badRequest(`Le montant doit être compris entre 1 et ${Math.abs(balance).toLocaleString('fr-FR')} FCFA (solde du compte d'attente).`, undefined, 'amount_out_of_range');
+      const label = `Reclassement du compte d'attente ${ACCOUNTS.suspense} vers ${input.counterpart}`;
+      // Solde créditeur (cas courant : contrepartie des stocks et trésoreries de départ) : on débite le 471.
+      const credit = balance < 0;
+      const entry = await this.postEntry(trx, t, { journal: 'OD', date: input.date, label, sourceType: 'manual', lines: [
+        { account: ACCOUNTS.suspense, label, ...(credit ? { debit: amount } : { credit: amount }) },
+        { account: input.counterpart, label, ...(credit ? { credit: amount } : { debit: amount }) },
+      ] });
+      await this.audit.tenant(trx, t.ctx, { action: 'accounting.suspense_reclassified', entityType: 'journal_entry', entityId: entry.id, data: { counterpart: input.counterpart, amount, date: input.date, number: entry.number } });
+      return { ...entry, amount, remaining: round(Math.abs(balance) - amount) };
     });
   }
 

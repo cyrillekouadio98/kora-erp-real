@@ -101,7 +101,8 @@ describe('Comptabilité SYSCOHADA', () => {
       const r = row(acc.ledgerCode);
       expect({ name: acc.name, balance: r ? r.closingDebit - r.closingCredit : 0 }).toEqual({ name: acc.name, balance: acc.balance });
     }
-    expect(row('471000')).toMatchObject({ closingCredit: 1_000_000 }); // contrepartie du solde d'ouverture de la banque, à solder par le comptable
+    expect(row('121000')).toMatchObject({ closingCredit: 1_000_000 }); // contrepartie par défaut du solde d'ouverture de la banque : report à nouveau
+    expect(row('471000')).toBeUndefined();
 
     // Le grand livre complet reprend chaque compte de la balance, avec les mêmes mouvements et soldes.
     const gl = (await owner.agent.get('/company/accounting/general-ledger')).body;

@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Res
 import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { z } from 'zod';
+import { OPENING_COUNTERPARTS } from '../accounting/accounting.service';
 import { AllowWhenReadOnly, Permission, Tenant } from '../../common/decorators';
 import type { TenantInfo } from '../../common/request-context';
 import { parse } from '../../common/validation';
@@ -17,6 +18,7 @@ const AccountSchema = z.object({
   bankName: text(80), accountNumber: text(60),
   openingBalance: z.coerce.number().min(-1e13).max(1e13).transform((v) => Math.round(v)).optional(),
   openingDate: isoDate.optional(),
+  openingCounterpart: z.enum(OPENING_COUNTERPARTS, { message: 'Compte de contrepartie non proposé' }).optional(),
 }).strict();
 const MovementsQuery = z.object({
   accountId: z.string().uuid().optional(), kind: z.enum(['cash', 'bank', 'mobile_money']).optional(), from: isoDate.optional(), to: isoDate.optional(), category: z.string().max(40).optional(), q: z.string().trim().max(100).optional(),

@@ -30,12 +30,12 @@ describe('Stocks valorisés au CMUP', () => {
     expect((await owner.agent.patch(`/company/stock/${svc.body.id}`).send({ trackStock: true })).body.error.code).toBe('service_not_stockable');
   });
 
-  it('enregistre le stock initial une seule fois, en à-nouveaux 311 / 471', async () => {
+  it('enregistre le stock initial une seule fois, en à-nouveaux 311 / 121 (report à nouveau par défaut)', async () => {
     await owner.agent.post(`/company/stock/${rice}/opening`).send({ quantity: 100, unitCost: 10000 });
     expect(await stock()).toMatchObject({ stock_qty: 100, stock_value: 1_000_000, avg_cost: 10000 });
     expect((await owner.agent.post(`/company/stock/${rice}/opening`).send({ quantity: 1, unitCost: 1 })).body.error.code).toBe('already_has_movements');
     const an = (await owner.agent.get('/company/accounting/entries').query({ journal: 'AN' })).body[0];
-    expect(an.lines.map((l: any) => `${l.account} ${l.debit || -l.credit}`).sort()).toEqual(['311000 1000000', '471000 -1000000']);
+    expect(an.lines.map((l: any) => `${l.account} ${l.debit || -l.credit}`).sort()).toEqual(['121000 -1000000', '311000 1000000']);
   });
 
   it("recalcule le coût moyen à chaque achat (remise déduite)", async () => {

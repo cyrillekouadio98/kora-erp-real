@@ -164,6 +164,17 @@ export const PURCHASE_STATUS: Record<string, [string, 'ok' | 'warn' | 'crit' | '
   to_pay: ['À payer', 'warn'], partially_paid: ['Payée en partie', 'warn'], paid: ['Payée', 'ok'],
 };
 
+/** Contreparties des soldes d'ouverture (stock initial, caisses, banques) : l'origine des fonds de départ. */
+export const OPENING_COUNTERPARTS: [string, string, string][] = [
+  ['121000', 'Report à nouveau', 'activité des années passées'],
+  ['101000', 'Capital', 'apport des associés à la création'],
+  ['462000', "Compte courant d'associé", 'avancé par le dirigeant ou un associé'],
+  ['401000', 'Fournisseurs', 'reçu mais pas encore payé'],
+  ['162000', 'Emprunt bancaire', 'financé par un prêt'],
+  ['471000', "Compte d'attente", 'origine à préciser par le comptable'],
+];
+export const DEFAULT_OPENING_COUNTERPART = '121000';
+
 export const ACCOUNT_KINDS: Record<string, string> = { cash: 'Caisse', bank: 'Banque', mobile_money: 'Mobile money' };
 /** Compte proposé par défaut pour un mode de paiement (même règle que l'API). */
 export const KIND_FOR_METHOD: Record<string, string> = { cash: 'cash', mobile_money: 'mobile_money', bank_transfer: 'bank', cheque: 'bank', card: 'bank' };

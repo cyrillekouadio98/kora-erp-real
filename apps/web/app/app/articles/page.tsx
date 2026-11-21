@@ -2,7 +2,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { ACTIVITIES, date, money, VAT_RATES } from '@/lib/format';
+import { ACTIVITIES, date, DEFAULT_OPENING_COUNTERPART, money, VAT_RATES } from '@/lib/format';
+import { CounterpartSelect } from '@/components/opening-counterpart';
 import { useSession } from '@/components/session';
 import { ImportButton } from '@/components/import';
 import { productsImport } from '@/components/import-configs';
@@ -79,7 +80,7 @@ export default function ProductsPage() {
     body.barcode = body.barcode?.trim() || null;
     if (!multiSite) delete body.siteId; else if (body.siteId === 'auto') delete body.siteId; else body.siteId = body.siteId || null;
     if (openingEditable && Number(edit.openingQty) > 0) {
-      body.openingStock = { quantity: Number(edit.openingQty), warehouseId: edit.openingWarehouse || null,
+      body.openingStock = { quantity: Number(edit.openingQty), warehouseId: edit.openingWarehouse || null, counterpart: edit.openingCounterpart || DEFAULT_OPENING_COUNTERPART,
         ...(edit.openingCost !== '' && edit.openingCost != null ? { unitCost: Number(edit.openingCost) } : {}) };
     }
     if (edit.id) await api(`/company/products/${edit.id}`, { method: 'PATCH', body }); else await api('/company/products', { body });
@@ -188,6 +189,7 @@ export default function ProductsPage() {
                 {warehouses.length > 1 && <label className="field">Entrepôt<select className="input" value={edit.openingWarehouse ?? ''} onChange={(e) => { const w = warehouses.find((x) => x.id === e.target.value); setEdit({ ...edit, openingWarehouse: e.target.value, ...(w && edit.siteId && edit.siteId !== 'auto' ? { siteId: w.siteId } : {}) }); }}>
                   <option value="">Entrepôt du site</option>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}{w.siteName ? ` — ${w.siteName}` : ''}</option>)}</select></label>}
               </div>
+              {Number(edit.openingQty) > 0 && <CounterpartSelect label="Origine du stock (contrepartie comptable)" value={edit.openingCounterpart || DEFAULT_OPENING_COUNTERPART} onChange={(v) => setEdit({ ...edit, openingCounterpart: v })} />}
               <p className="small muted" style={{ margin: '4px 0 0' }}>Les quantités déjà en rayon ou en magasin. Le coût unitaire reprend le prix d&apos;achat s&apos;il n&apos;est pas saisi. Ensuite, le stock évolue avec les achats, les ventes et les inventaires.</p>
             </fieldset> : <p className="small muted" style={{ margin: 0 }}>Le stock de cette marchandise se suit dans Stocks : le stock initial s&apos;y saisit après l&apos;enregistrement.</p>)}
             <label className="field">Description<textarea className="input" rows={2} value={edit.description ?? ''} onChange={set('description')} /></label>
