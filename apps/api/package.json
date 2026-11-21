@@ -1,6 +1,6 @@
 {
   "name": "@kora/api",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "build": "tsc -p tsconfig.build.json && mkdir -p dist/db && cp -r src/db/migrations dist/db/",
