@@ -56,6 +56,7 @@ import { ExportController } from './modules/exports/export.controller';
 import { HealthController } from './modules/platform/health.controller';
 import { PlatformController } from './modules/platform/platform.controller';
 import { MailSettingsController } from './modules/platform/mail-settings.controller';
+import { FeaturesController } from './modules/platform/features.controller';
 import { SetupController } from './modules/platform/setup.controller';
 import { SetupService } from './modules/platform/setup.service';
 import { MembersController } from './modules/rbac/members.controller';
@@ -69,7 +70,7 @@ import { PlatformSupportController, SupportAccessController } from './modules/su
   ],
   controllers: [
     HealthController, AuthController, CompaniesController, MembersController, RolesController, BillingController, WebhooksController,
-    DevController, AuditController, SupportAccessController, PlatformSupportController, PlatformController, MailSettingsController, SetupController, ExportController,
+    DevController, AuditController, SupportAccessController, PlatformSupportController, PlatformController, MailSettingsController, FeaturesController, SetupController, ExportController,
     ContactsController, ProductsController, SalesController, PurchasesController, TreasuryController, AccountingController, StockController, PayrollController, PublicDocumentsController, EmailsController, LeaveController, DashboardController, JobsController, ReportsController, SitesController, CalendarController, EvaluationsController, PosController,
   ],
   providers: [

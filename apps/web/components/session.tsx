@@ -19,11 +19,13 @@ export interface CompanyContext {
   company: { id: string; name: string; currency: string; status: string; activity: 'trade' | 'services' | 'mixed' };
   isOwner: boolean; permissions: string[]; readOnly: boolean; subscriptionStatus: string | null;
   entitlements: { modules: string[]; quotas: Record<string, number | null> };
+  /** Nouveautés activées pour l'entreprise depuis la console éditeur. */
+  features: string[];
   /** Sites proposés (ceux permis à l'utilisateur), site affiché (null : tous) et limite éventuelle. */
   sites: { id: string; code: string; name: string; isDefault: boolean }[]; siteId: string | null; siteRestricted: boolean;
 }
 
-const Ctx = createContext<{ me: Me; ctx: CompanyContext | null; can: (p: string) => boolean; refresh: () => Promise<void> } | null>(null);
+const Ctx = createContext<{ me: Me; ctx: CompanyContext | null; can: (p: string) => boolean; has: (feature: string) => boolean; refresh: () => Promise<void> } | null>(null);
 export const useSession = () => useContext(Ctx)!;
 
 
@@ -48,12 +50,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (!me) return <main className="auth"><p className="muted">Chargement…</p></main>;
   const can = (p: string) => !!ctx?.permissions.includes(p);
+  const has = (feature: string) => !!ctx?.features?.includes(feature);
   const switchTo = async (companyId: string) => { await api('/auth/switch-company', { body: { companyId } }); await refresh(); router.push('/app'); };
   const logout = async () => { await api('/auth/logout', { method: 'POST', body: {} }); router.replace('/connexion'); };
   const status = ctx?.subscriptionStatus ? SUB_STATUS[ctx.subscriptionStatus] : null;
   const home = path === '/app';
   const app = currentApp(path);
-  const allowed = (x: { perm?: string; module?: string }) => (!x.perm || can(x.perm)) && (!x.module || !!ctx?.entitlements.modules.includes(x.module));
+  const allowed = (x: { perm?: string; module?: string; feature?: string }) => (!x.perm || can(x.perm)) && (!x.module || !!ctx?.entitlements.modules.includes(x.module)) && (!x.feature || has(x.feature));
   const pages = app?.pages?.filter(allowed) ?? [];
   const activePage = activeHref(path, pages.map((p) => p.href));
   // Site affiché : filtre toute l'application ; la page est rechargée pour que chaque écran relise ses données.
@@ -72,7 +75,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <Ctx.Provider value={{ me, ctx, can, refresh }}>
+    <Ctx.Provider value={{ me, ctx, can, has, refresh }}>
       <div className={home ? 'shell home' : app ? 'shell module' : 'shell'} style={!home && app ? appTone(app.key) : undefined}>
         <header className="topbar">
           {home || !app

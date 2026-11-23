@@ -50,10 +50,13 @@ export class SetupService {
   }
 
   private async actingAs(auth: AuthInfo, id: string, ip: string | null | undefined, permissions: string[]): Promise<TenantInfo> {
-    const { entitlements } = await this.db.platform((trx) => this.entitlements.forCompany(trx, id));
+    const { entitlements, features } = await this.db.platform(async (trx) => ({
+      ...await this.entitlements.forCompany(trx, id),
+      features: new Set((await trx.selectFrom('company_feature').select('feature').where('company_id', '=', id).execute()).map((f) => f.feature)),
+    }));
     return {
       ctx: { companyId: id, userId: auth.userId, actorType: 'platform', ip }, companyId: id, membershipId: '', isOwner: permissions.length > 0, permissions: new Set(permissions),
-      entitlements, companyStatus: 'active', subscriptionStatus: 'trialing', readOnly: false, siteId: null, allowedSiteIds: null,
+      entitlements, features, companyStatus: 'active', subscriptionStatus: 'trialing', readOnly: false, siteId: null, allowedSiteIds: null,
     };
   }
 

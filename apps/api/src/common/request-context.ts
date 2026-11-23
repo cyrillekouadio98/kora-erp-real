@@ -21,6 +21,8 @@ export interface TenantInfo {
   isOwner: boolean;
   permissions: Set<string>;
   entitlements: Entitlements;
+  /** Nouveautés activées pour l'entreprise depuis la console éditeur. */
+  features: Set<string>;
   companyStatus: 'active' | 'suspended' | 'closed';
   subscriptionStatus: SubscriptionStatus | null;
   readOnly: boolean;

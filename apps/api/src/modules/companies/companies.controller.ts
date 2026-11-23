@@ -44,7 +44,7 @@ export class CompaniesController {
     }));
     return {
       company, membershipId: t.membershipId, isOwner: t.isOwner, permissions: [...t.permissions].sort(),
-      entitlements: t.entitlements, subscriptionStatus: t.subscriptionStatus, readOnly: t.readOnly,
+      entitlements: t.entitlements, features: [...t.features].sort(), subscriptionStatus: t.subscriptionStatus, readOnly: t.readOnly,
       // Sites proposés dans l'en-tête : ceux permis à l'utilisateur ; site affiché (null : tous).
       sites: t.allowedSiteIds ? sites.filter((s) => t.allowedSiteIds!.includes(s.id)) : sites, siteId: t.siteId, siteRestricted: !!t.allowedSiteIds,
     };

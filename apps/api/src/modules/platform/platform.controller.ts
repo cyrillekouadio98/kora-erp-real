@@ -38,7 +38,8 @@ export class PlatformController {
         .select((eb) => ['c.id', 'c.name', 'c.status', 'c.status_reason as statusReason', 'c.created_at as createdAt', 'p.code as planCode', 's.status as subscriptionStatus', 's.current_period_end as currentPeriodEnd',
           // Entreprise préparée par l'éditeur : en préparation tant qu'elle n'est pas remise au client.
           sql<boolean>`cs.company_id IS NOT NULL AND cs.handed_over_at IS NULL`.as('preparing'),
-          eb.selectFrom('company_membership as m').whereRef('m.company_id', '=', 'c.id').where('m.status', '=', 'active').select(eb.fn.countAll<string>().as('n')).as('activeUsers')])
+          eb.selectFrom('company_membership as m').whereRef('m.company_id', '=', 'c.id').where('m.status', '=', 'active').select(eb.fn.countAll<string>().as('n')).as('activeUsers'),
+          eb.selectFrom('company_feature as f').whereRef('f.company_id', '=', 'c.id').select(eb.fn.countAll<string>().as('n')).as('features')])
         .orderBy('c.created_at', 'desc').limit(500);
       if (q) query = query.where('c.name', 'ilike', `%${q.replace(/[%_]/g, '')}%`);
       return query.execute();

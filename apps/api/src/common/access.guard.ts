@@ -1,3 +1,4 @@
+import { META_FEATURE } from './features';
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { config } from '../config';
@@ -65,7 +66,8 @@ export class AccessGuard implements CanActivate {
         .select('r.permissions').where('mr.membership_id', '=', m.id).execute();
       const ent = await this.entitlements.forCompany(trx, companyId);
       const sites = await trx.selectFrom('site').select('id').where('archived_at', 'is', null).execute();
-      return { m, permissions: new Set(roles.flatMap((r) => r.permissions)), sites: sites.map((s) => s.id), ...ent };
+      const features = await trx.selectFrom('company_feature').select('feature').execute();
+      return { m, permissions: new Set(roles.flatMap((r) => r.permissions)), sites: sites.map((s) => s.id), features: new Set(features.map((f) => f.feature)), ...ent };
     });
     if (!info) throw forbidden("Vous n'avez pas ou plus accès à cette entreprise.", 'no_membership');
 
@@ -77,10 +79,14 @@ export class AccessGuard implements CanActivate {
     if (allowedSiteIds) tctx.siteIds = allowedSiteIds;
     req.tenant = {
       ctx: tctx, companyId, membershipId: info.m.id, isOwner: info.m.is_owner, permissions: info.permissions,
-      entitlements: info.entitlements, companyStatus: info.m.company_status, subscriptionStatus: subStatus, readOnly,
+      entitlements: info.entitlements, features: info.features, companyStatus: info.m.company_status, subscriptionStatus: subStatus, readOnly,
       siteId: pick ?? (allowedSiteIds?.length === 1 ? allowedSiteIds[0] : null), allowedSiteIds,
     };
 
+    const feature = this.meta<string>(META_FEATURE, ctx);
+    if (feature && !info.features.has(feature)) {
+      throw forbidden("Cette fonctionnalité n'est pas activée pour votre entreprise. Contactez Kora ERP pour l'activer.", 'feature_not_enabled');
+    }
     if (permission) {
       const mod = entitlementFor(permission);
       if (mod && !info.entitlements.modules.includes(mod)) {

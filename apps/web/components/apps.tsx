@@ -119,7 +119,8 @@ const ICONS: Record<string, React.ReactNode> = {
   </>,
 };
 
-export interface AppPage { href: string; label: string; perm?: string; module?: string }
+/** feature : nouveauté visible seulement quand elle est activée pour l'entreprise (console éditeur). */
+export interface AppPage { href: string; label: string; perm?: string; module?: string; feature?: string }
 /** base : préfixe des adresses de l'application ; pages : son menu, affiché dans la barre du haut. */
 export interface App extends AppPage { key: string; base?: string; pages?: AppPage[] }
 

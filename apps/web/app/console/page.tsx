@@ -39,6 +39,7 @@ export default function ConsoleHome() {
             <td>{c.planCode}</td><td>{c.subscriptionStatus && <Pill tone={SUB_STATUS[c.subscriptionStatus]?.[1]}>{SUB_STATUS[c.subscriptionStatus]?.[0]}</Pill>}<div className="small muted">échéance {date(c.currentPeriodEnd)}</div></td>
             <td className="n">{c.activeUsers}</td><td className="small">{date(c.createdAt)}</td>
             <td className="n"><div className="row" style={{ justifyContent: 'flex-end' }}>
+              <Link className="btn sm" href={`/console/fonctionnalites/${c.id}`}>Fonctionnalités{Number(c.features) > 0 && ` (${c.features})`}</Link>
               <button className="btn sm" disabled={busy} onClick={() => requestAccess(c)}>Demander un accès</button>
               {c.status === 'active' ? <button className="btn sm danger" disabled={busy} onClick={() => suspend(c)}>Suspendre</button> : <button className="btn sm" disabled={busy} onClick={() => reactivate(c)}>Réactiver</button>}
             </div></td></tr>))}</tbody>
