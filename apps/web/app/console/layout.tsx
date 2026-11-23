@@ -20,6 +20,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
           <Link href="/console" className={path === '/console' ? 'active' : ''}>Clients et indicateurs</Link>
           <Link href="/console/preparation" className={path.startsWith('/console/preparation') ? 'active' : ''}>Préparer une entreprise</Link>
           <Link href="/console/factures" className={path === '/console/factures' ? 'active' : ''}>Factures d'abonnement</Link>
+          {me.platformRoles.includes('super_admin') && <Link href="/console/emails" className={path === '/console/emails' ? 'active' : ''}>Envoi des e-mails</Link>}
           {me.companies.length > 0 && <><small>Mon entreprise</small><Link href="/app">Espace entreprise</Link></>}
         </nav>
         <div className="foot"><div className="muted">{me.user.fullName}<br />Rôles : {me.platformRoles.join(', ')}</div>

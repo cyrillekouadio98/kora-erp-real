@@ -1,6 +1,9 @@
 import { Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import nodemailer from 'nodemailer';
 import { config } from '../../config';
+import { badRequest, conflict } from '../../common/errors';
+import { decrypt, encrypt } from '../../common/crypto';
+import { AuditService } from '../audit/audit.service';
 import { DatabaseService, Trx } from '../../db/database.service';
 
 export interface OutgoingMail {
@@ -34,22 +37,105 @@ ${m.action ? `<p style="margin:20px 0"><a href="${esc(m.action.url)}" style="bac
 export class MailService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger('E-mails');
   private timer?: NodeJS.Timeout;
-  private transport: Transport;
-  readonly mode: 'smtp' | 'development' = config.mail.smtpUrl ? 'smtp' : 'development';
+  /** Transport de la variable SMTP_URL (ou du mode développement). */
+  private readonly envTransport: Transport;
+  /** Transport imposé par les tests. */
+  private testTransport?: Transport;
+  /** Transport des réglages de la console, reconstruit quand ils changent. */
+  private console?: { key: string; transport: Transport };
+  /** Mode constaté au dernier envoi : les réglages de la console priment sur SMTP_URL. */
+  mode: 'smtp' | 'development' = config.mail.smtpUrl ? 'smtp' : 'development';
 
-  constructor(private readonly db: DatabaseService) {
+  constructor(private readonly db: DatabaseService, private readonly audit: AuditService) {
     if (config.mail.smtpUrl) {
       const smtp = nodemailer.createTransport(config.mail.smtpUrl);
-      this.transport = async (m) => { await smtp.sendMail(m); };
+      this.envTransport = async (m) => { await smtp.sendMail(m); };
     } else {
       // Mode développement : rien ne part ; le message reste consultable dans « E-mails envoyés ».
       // Le texte complet est écrit dans le terminal : il contient les liens (mot de passe oublié, invitation) utiles en développement.
-      this.transport = async (m) => { this.logger.log(`(non envoyé, mode développement) à ${m.to} : ${m.subject}\n${m.text}`); };
+      this.envTransport = async (m) => { this.logger.log(`(non envoyé, mode développement) à ${m.to} : ${m.subject}\n${m.text}`); };
     }
   }
 
   /** Remplace le transport (tests). */
-  useTransport(t: Transport) { this.transport = t; }
+  useTransport(t: Transport) { this.testTransport = t; }
+
+  /** Transport et adresse d'expédition en vigueur : réglages de la console, sinon SMTP_URL, sinon mode développement. */
+  private async resolve(trx: Trx): Promise<{ transport: Transport; fromAddress: string }> {
+    const envFrom = /<([^>]+)>/.exec(config.mail.from)?.[1] ?? config.mail.from;
+    if (this.testTransport) return { transport: this.testTransport, fromAddress: envFrom };
+    const s = await trx.selectFrom('platform_mail_settings').selectAll().executeTakeFirst();
+    if (!s) { this.mode = config.mail.smtpUrl ? 'smtp' : 'development'; return { transport: this.envTransport, fromAddress: envFrom }; }
+    const key = new Date(s.updated_at).toISOString();
+    if (this.console?.key !== key) {
+      const smtp = nodemailer.createTransport(smtpOptions(s, decrypt(s.password_enc)));
+      this.console = { key, transport: async (m) => { await smtp.sendMail(m); } };
+    }
+    this.mode = 'smtp';
+    return { transport: this.console.transport, fromAddress: s.from_address };
+  }
+
+  // ------------------------------------------------------------------ réglages (console éditeur)
+  /** Réglages en vigueur, sans le mot de passe. */
+  async settings() {
+    return this.db.platform(async (trx) => {
+      const s = await trx.selectFrom('platform_mail_settings').selectAll().executeTakeFirst();
+      const stats = await trx.selectFrom('email_message').select(['status', (eb) => eb.fn.countAll<string>().as('n')])
+        .where('created_at', '>=', new Date(Date.now() - 7 * 86_400_000)).groupBy('status').execute();
+      const lastError = await trx.selectFrom('email_message').select(['last_error', 'to_address', 'created_at']).where('last_error', 'is not', null).orderBy('created_at', 'desc').limit(1).executeTakeFirst();
+      return {
+        source: s ? 'console' : config.mail.smtpUrl ? 'environment' : 'none',
+        settings: s ? { host: s.host, port: s.port, secure: s.secure, username: s.username, fromAddress: s.from_address, updatedAt: s.updated_at } : null,
+        lastWeek: Object.fromEntries(stats.map((r) => [r.status, Number(r.n)])),
+        lastError: lastError ? { message: lastError.last_error, at: lastError.created_at } : null,
+      };
+    });
+  }
+
+  /** Vérifie la connexion au serveur (identifiants compris), puis enregistre ; le mot de passe peut être conservé. */
+  async saveSettings(actorId: string, input: { host: string; port: number; secure: boolean; username: string; password?: string; fromAddress: string }) {
+    return this.db.platform(async (trx) => {
+      const prev = await trx.selectFrom('platform_mail_settings').select('password_enc').forUpdate().executeTakeFirst();
+      const password = input.password ?? (prev ? decrypt(prev.password_enc) : null);
+      if (!password) throw badRequest('Indiquez le mot de passe de la boîte d’envoi.', undefined, 'password_required');
+      try {
+        await nodemailer.createTransport(smtpOptions(input, password)).verify();
+      } catch (e) {
+        throw badRequest(`Le serveur ${input.host}:${input.port} refuse la connexion : ${String((e as Error)?.message ?? e).slice(0, 300)}`, undefined, 'smtp_verify_failed');
+      }
+      const row = { host: input.host, port: input.port, secure: input.secure, username: input.username, password_enc: encrypt(password), from_address: input.fromAddress, updated_by: actorId, updated_at: new Date() };
+      await trx.insertInto('platform_mail_settings').values({ id: true, ...row }).onConflict((oc) => oc.column('id').doUpdateSet(row)).execute();
+      await this.audit.platform(trx, actorId, { action: 'mail_settings.saved', entityType: 'platform_mail_settings', data: { host: input.host, port: input.port, secure: input.secure, username: input.username, fromAddress: input.fromAddress, passwordChanged: !!input.password } });
+      this.console = undefined;
+      return { ok: true };
+    });
+  }
+
+  /** Revient à la variable SMTP_URL (ou au mode développement). */
+  async deleteSettings(actorId: string) {
+    return this.db.platform(async (trx) => {
+      await trx.deleteFrom('platform_mail_settings').execute();
+      await this.audit.platform(trx, actorId, { action: 'mail_settings.deleted', entityType: 'platform_mail_settings' });
+      this.console = undefined;
+      return { ok: true };
+    });
+  }
+
+  /** Envoie tout de suite un e-mail de test avec les réglages en vigueur ; l'erreur du serveur est renvoyée telle quelle. */
+  async sendTest(actorId: string, to: string) {
+    return this.db.platform(async (trx) => {
+      const { transport, fromAddress } = await this.resolve(trx);
+      if (this.mode === 'development' && !this.testTransport) throw conflict('Aucun serveur d’envoi n’est réglé : les e-mails ne partent pas.', 'no_smtp');
+      const { text, html } = renderMail({ paragraphs: ['Bonjour,', "Ceci est un e-mail de test envoyé depuis la console de Kora ERP. S'il vous parvient, l'envoi des e-mails fonctionne."] });
+      try {
+        await transport({ from: `"Kora ERP" <${fromAddress}>`, to, subject: 'Kora ERP — e-mail de test', text, html });
+      } catch (e) {
+        throw badRequest(`Échec de l'envoi : ${String((e as Error)?.message ?? e).slice(0, 300)}`, undefined, 'smtp_send_failed');
+      }
+      await this.audit.platform(trx, actorId, { action: 'mail_settings.tested', entityType: 'platform_mail_settings', data: { to } });
+      return { ok: true, from: fromAddress };
+    });
+  }
 
   async enqueue(trx: Trx, m: OutgoingMail) {
     const { text, html } = renderMail(m);
@@ -65,10 +151,10 @@ export class MailService implements OnApplicationBootstrap, OnModuleDestroy {
     await this.db.platform(async (trx) => {
       const due = await trx.selectFrom('email_message').selectAll().where('status', '=', 'queued').where('next_attempt_at', '<=', new Date())
         .orderBy('next_attempt_at').limit(limit).forUpdate().skipLocked().execute();
+      const { transport, fromAddress } = due.length ? await this.resolve(trx) : { transport: this.envTransport, fromAddress: '' };
       for (const m of due) {
-        const fromAddress = /<([^>]+)>/.exec(config.mail.from)?.[1] ?? config.mail.from;
         try {
-          await this.transport({ from: `"${m.from_name.replace(/"/g, '')}" <${fromAddress}>`, to: m.to_address, replyTo: m.reply_to ?? undefined, subject: m.subject, text: m.text_body, html: m.html_body });
+          await transport({ from: `"${m.from_name.replace(/"/g, '')}" <${fromAddress}>`, to: m.to_address, replyTo: m.reply_to ?? undefined, subject: m.subject, text: m.text_body, html: m.html_body });
           await trx.updateTable('email_message').set({ status: 'sent', sent_at: new Date(), attempts: m.attempts + 1, last_error: null }).where('id', '=', m.id).execute();
           summary.sent++;
         } catch (e) {
@@ -90,4 +176,10 @@ export class MailService implements OnApplicationBootstrap, OnModuleDestroy {
     this.timer = setInterval(() => { this.processQueue().catch((e) => this.logger.error(e)); }, config.mail.intervalMs);
   }
   onModuleDestroy() { if (this.timer) clearInterval(this.timer); }
+}
+
+/** Options nodemailer : SSL direct (465) ou STARTTLS exigé (587), délais courts pour ne pas bloquer la file. */
+export function smtpOptions(s: { host: string; port: number; secure: boolean; username: string }, password: string) {
+  return { host: s.host, port: s.port, secure: s.secure, requireTLS: !s.secure, auth: { user: s.username, pass: password },
+    connectionTimeout: 10_000, greetingTimeout: 10_000, socketTimeout: 20_000 };
 }
