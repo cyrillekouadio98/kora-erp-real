@@ -104,7 +104,7 @@ export interface ProductTable {
   company_id: string; id: Generated<string>; code: string; kind: Generated<'good' | 'service'>; name: string; description: string | null;
   unit: Generated<string>; sale_price: ColumnType<string, number | string | undefined, number | string>; purchase_price: ColumnType<string | null, number | string | null | undefined, number | string | null>;
   vat_rate: ColumnType<string, number | string | undefined, number | string>; archived_at: TsNullable; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
-  track_stock: Generated<boolean>; barcode: ColumnType<string | null, string | null | undefined, string | null>; min_stock: ColumnType<string | null, number | string | null | undefined, number | string | null>;
+  track_lots: Generated<boolean>; track_stock: Generated<boolean>; barcode: ColumnType<string | null, string | null | undefined, string | null>; min_stock: ColumnType<string | null, number | string | null | undefined, number | string | null>;
   stock_qty: NumDefault; stock_value: NumDefault; avg_cost: NumDefault; site_id: ColumnType<string | null, string | null | undefined, string | null>;
 }
 export type SalesDocType = 'quote' | 'order' | 'invoice' | 'credit_note';
@@ -142,7 +142,7 @@ export interface PurchaseDocumentTable {
   currency: Generated<string>; notes: string | null; total_ht: NumDefault; total_vat: NumDefault; total_ttc: NumDefault; paid_amount: NumDefault;
   source_order_id: string | null; warehouse_id: string | null; validated_at: TsNullable; validated_by: string | null; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
-export type PurchaseDocumentLineTable = SalesDocumentLineTable;
+export type PurchaseDocumentLineTable = SalesDocumentLineTable & { lot_number: ColumnType<string | null, string | null | undefined, string | null>; expiry_date: ColumnType<string | null, string | null | undefined, string | null> };
 export type PurchasePaymentTable = SalesPaymentTable;
 
 export type TreasuryKind = 'cash' | 'bank' | 'mobile_money';
@@ -199,6 +199,7 @@ export interface StockDocumentLineTable {
   company_id: string; id: Generated<string>; document_id: string; position: number; product_id: string;
   quantity: ColumnType<string | null, number | string | null | undefined, number | string | null>; expected: ColumnType<string | null, number | string | null | undefined, number | string | null>;
   unit_cost: ColumnType<string | null, number | string | null | undefined, number | string | null>; value: ColumnType<string | null, number | string | null | undefined, number | string | null>; note: string | null;
+  lot_number: ColumnType<string | null, string | null | undefined, string | null>; expiry_date: ColumnType<string | null, string | null | undefined, string | null>;
 }
 
 type NumNullable = ColumnType<string | null, number | string | null | undefined, number | string | null>;
@@ -277,6 +278,12 @@ export interface PlatformMailSettingsTable {
 
 export interface CompanyFeatureTable { company_id: string; feature: string; enabled_by: string | null; enabled_at: Generated<Date>; }
 
+/** Lot d'un article dans un entrepôt : quantité restante et date limite (fonctionnalité stock_lots). */
+export interface StockLotTable {
+  company_id: string; id: Generated<string>; product_id: string; warehouse_id: string; lot_number: string; expiry_date: string | null; quantity: Num; created_at: Generated<Date>;
+}
+export interface StockMovementLotTable { company_id: string; movement_id: string; lot_id: string; quantity: Num; }
+
 export interface DB {
   user_account: UserAccountTable; platform_role_assignment: PlatformRoleAssignmentTable; user_session: UserSessionTable;
   company: CompanyTable; company_membership: CompanyMembershipTable; role: RoleTable; membership_role: MembershipRoleTable;
@@ -291,5 +298,5 @@ export interface DB {
   ledger_account: LedgerAccountTable; journal: JournalTable; journal_entry: JournalEntryTable; journal_line: JournalLineTable;
   stock_movement: StockMovementTable; warehouse: WarehouseTable; stock_level: StockLevelTable; stock_document: StockDocumentTable; stock_document_line: StockDocumentLineTable;
   employee: EmployeeTable; employee_photo: EmployeePhotoTable; contact_logo: ContactLogoTable; company_logo: CompanyLogoTable; site: SiteTable; appointment: AppointmentTable; appointment_attendee: AppointmentAttendeeTable; evaluation_campaign: EvaluationCampaignTable; evaluation: EvaluationTable; payroll_settings: PayrollSettingsTable; payroll_run: PayrollRunTable; payslip: PayslipTable;
-  email_message: EmailMessageTable; platform_mail_settings: PlatformMailSettingsTable; company_feature: CompanyFeatureTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable; leave_request: LeaveRequestTable;
+  email_message: EmailMessageTable; platform_mail_settings: PlatformMailSettingsTable; company_feature: CompanyFeatureTable; stock_lot: StockLotTable; stock_movement_lot: StockMovementLotTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable; leave_request: LeaveRequestTable;
 }

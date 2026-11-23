@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } fr
 import { ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { OPENING_COUNTERPARTS } from '../accounting/accounting.service';
+import { RequireFeature } from '../../common/features';
 import { AllowWhenReadOnly, Permission, Tenant } from '../../common/decorators';
 import type { TenantInfo } from '../../common/request-context';
 import { parse, uuidParam } from '../../common/validation';
@@ -15,6 +16,7 @@ const TYPES = ['receipt', 'issue', 'transfer', 'inventory'] as const;
 const line = z.object({
   productId: uuidParam, quantity: quantity.nullable().optional(),
   unitCost: z.coerce.number().min(0, { message: 'Le coût ne peut pas être négatif' }).max(1e13).nullable().optional(), note: text(200),
+  lotNumber: z.string().trim().max(60).transform((v) => v || null).nullable().optional(), expiryDate: isoDate.nullable().optional(),
 }).strict();
 const docBody = {
   warehouseId: uuidParam.nullable().optional(), destWarehouseId: uuidParam.nullable().optional(), reason: z.string().max(30).optional(), date: isoDate.optional(),
@@ -119,7 +121,17 @@ export class StockController {
   @Permission('stock.admin')
   @Patch(':productId')
   settings(@Tenant() t: TenantInfo, @Param('productId') productId: string, @Body() body: unknown) {
-    return this.stock.setSettings(t, productId, parse(z.object({ minStock: quantity.nullable().optional(), trackStock: z.boolean().optional() }).strict(), body));
+    return this.stock.setSettings(t, productId, parse(z.object({ minStock: quantity.nullable().optional(), trackStock: z.boolean().optional(), trackLots: z.boolean().optional() }).strict(), body));
+  }
+
+  /** Lots en stock : périmés, bientôt périmés (sous « days » jours) ou tous. */
+  @Permission('stock.read') @RequireFeature('stock_lots') @AllowWhenReadOnly()
+  @Get('lots')
+  lots(@Tenant() t: TenantInfo, @Query() query: unknown) {
+    return this.stock.lots(t, parse(z.object({
+      status: z.enum(['all', 'expiring', 'expired']).default('all'), days: z.coerce.number().int().min(1).max(730).default(30),
+      productId: z.string().optional(), warehouseId: z.string().optional(),
+    }), query));
   }
 
   /** Stock initial (avant l'utilisation de Kora) d'un article sans mouvement. */
@@ -130,6 +142,7 @@ export class StockController {
       quantity: z.coerce.number().positive({ message: 'La quantité doit être positive' }).max(1e9),
       unitCost: z.coerce.number().min(0, { message: 'Le coût ne peut pas être négatif' }).max(1e13), date: isoDate.optional(), warehouseId: uuidParam.nullable().optional(),
       counterpart: z.enum(OPENING_COUNTERPARTS, { message: 'Compte de contrepartie non proposé' }).optional(),
+      lotNumber: z.string().trim().max(60).transform((v) => v || null).nullable().optional(), expiryDate: isoDate.nullable().optional(),
     }).strict(), body));
   }
 

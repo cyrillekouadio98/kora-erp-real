@@ -8,13 +8,13 @@ import { useSession } from '@/components/session';
 import { Alert, Field, Pill, useAction } from '@/components/ui';
 
 const today = () => new Date().toISOString().slice(0, 10);
-interface Line { productId: string; quantity: string; unitCost: string; note: string }
-const toLine = (l: any): Line => ({ productId: l.productId, quantity: l.quantity === null || l.quantity === undefined ? '' : String(l.quantity), unitCost: l.unitCost === null || l.unitCost === undefined ? '' : String(l.unitCost), note: l.note ?? '' });
+interface Line { productId: string; quantity: string; unitCost: string; note: string; lotNumber: string; expiryDate: string }
+const toLine = (l: any): Line => ({ productId: l.productId, quantity: l.quantity === null || l.quantity === undefined ? '' : String(l.quantity), unitCost: l.unitCost === null || l.unitCost === undefined ? '' : String(l.unitCost), note: l.note ?? '', lotNumber: l.lotNumber ?? '', expiryDate: l.expiryDate ?? '' });
 
 /** Page d'un bon de stock : saisie du brouillon, validation, puis bon imprimable. base : liste à laquelle il appartient. */
 export function StockDocument({ id, type: newType, base }: { id?: string; type?: string; base: string }) {
   const router = useRouter();
-  const { can, ctx } = useSession();
+  const { can, ctx, has } = useSession();
   // Sites : on part d'un entrepôt du site affiché (ou des sites permis) ; on peut livrer n'importe quel site.
   const multiSite = (ctx?.sites.length ?? 0) > 1 || !!ctx?.siteRestricted;
   const fromHere = (w: any) => (ctx?.siteId ? w.siteId === ctx.siteId : !ctx?.siteRestricted || !!ctx.sites.some((s) => s.id === w.siteId));
@@ -83,7 +83,7 @@ export function StockDocument({ id, type: newType, base }: { id?: string; type?:
     date: form.date, reference: form.reference || null, notes: form.notes || null,
     lines: lines.filter((l) => l.productId).map((l) => ({
       productId: l.productId, quantity: l.quantity === '' ? null : Number(l.quantity),
-      ...(type === 'receipt' ? { unitCost: l.unitCost === '' ? null : Number(l.unitCost) } : {}), note: l.note || null,
+      ...(type === 'receipt' ? { unitCost: l.unitCost === '' ? null : Number(l.unitCost), lotNumber: l.lotNumber || null, expiryDate: l.expiryDate || null } : {}), note: l.note || null,
     })),
   });
 
@@ -147,7 +147,7 @@ export function StockDocument({ id, type: newType, base }: { id?: string; type?:
                 <td className="n" style={{ color: l.quantity - l.expected < 0 ? 'var(--crit)' : l.quantity - l.expected > 0 ? 'var(--ok)' : undefined }}>{l.quantity === l.expected ? '—' : `${l.quantity > l.expected ? '+' : ''}${qty(l.quantity - l.expected)}`}</td>
                 <td className="n">{l.value ? money(l.value) : '—'}</td></tr>
             ) : (
-              <tr key={l.id}><td><b>{l.name}</b> <span className="small muted">{l.code}</span></td><td className="n">{qty(l.quantity)} {l.unit}</td><td className="n">{money(l.unitCost ?? 0)}</td><td className="n">{money(l.value ?? 0)}</td><td className="small">{l.note}</td></tr>
+              <tr key={l.id}><td><b>{l.name}</b> <span className="small muted">{l.code}</span>{l.lotNumber && <div className="small muted">Lot {l.lotNumber}{l.expiryDate && ` · péremption ${date(l.expiryDate)}`}</div>}</td><td className="n">{qty(l.quantity)} {l.unit}</td><td className="n">{money(l.unitCost ?? 0)}</td><td className="n">{money(l.value ?? 0)}</td><td className="small">{l.note}</td></tr>
             ))}</tbody>
             <tfoot><tr><th colSpan={type === 'inventory' ? 4 : 3}>{type === 'inventory' ? 'Écart total (au coût moyen)' : type === 'receipt' ? "Valeur totale (coût d'entrée)" : 'Valeur totale (au coût moyen pondéré)'}</th><th className="n">{money(doc.totalValue)}</th>{type !== 'inventory' && <th />}</tr></tfoot>
           </table></div>
@@ -248,7 +248,11 @@ export function StockDocument({ id, type: newType, base }: { id?: string; type?:
                   }} aria-label={`Article ligne ${i + 1}`}>
                     <option value="">— Choisir un article —</option>
                     {products.filter((x) => x.id === l.productId || !lines.some((o) => o.productId === x.id)).map((x) => <option key={x.id} value={x.id}>{x.code} · {x.name}</option>)}
-                  </select></td>
+                  </select>
+                  {type === 'receipt' && has('stock_lots') && p.trackLots && <div className="row" style={{ gap: 6, marginTop: 6, flexWrap: 'nowrap' }}>
+                    <input className="input" required disabled={!editable} placeholder="N° de lot" value={l.lotNumber} onChange={(e) => setLine(i, { lotNumber: e.target.value })} aria-label={`Numéro de lot ligne ${i + 1}`} style={{ width: 120 }} />
+                    <input className="input" type="date" disabled={!editable} value={l.expiryDate} onChange={(e) => setLine(i, { expiryDate: e.target.value })} aria-label={`Date limite ligne ${i + 1}`} title="Date limite (péremption)" style={{ width: 150 }} />
+                  </div>}</td>
                   <td className="n" style={{ whiteSpace: 'nowrap', color: short ? 'var(--crit)' : undefined }}>{l.productId ? `${qty(p.quantity ?? 0)} ${p.unit ?? ''}` : ''}</td>
                   <td className="n"><input className="input n" type="number" min="0.001" step="any" required disabled={!editable} value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} aria-label={`Quantité ligne ${i + 1}`} style={{ width: 90 }} /></td>
                   <td className="n">{type === 'receipt'
@@ -265,7 +269,7 @@ export function StockDocument({ id, type: newType, base }: { id?: string; type?:
         </table></div>
 
         <div className="row no-print" style={{ justifyContent: 'space-between' }}>
-          {!isInventory && editable ? <button type="button" className="btn" disabled={!unused.length} onClick={() => setLines([...lines, { productId: '', quantity: '', unitCost: '', note: '' }])}>+ Ajouter un article</button> : <span />}
+          {!isInventory && editable ? <button type="button" className="btn" disabled={!unused.length} onClick={() => setLines([...lines, { productId: '', quantity: '', unitCost: '', note: '', lotNumber: '', expiryDate: '' }])}>+ Ajouter un article</button> : <span />}
           <div><span className="muted small">{isInventory ? 'Écart estimé ' : 'Valeur estimée '}</span><b>{money(total)}</b></div>
         </div>
         <label className="field no-print">Notes (facultatif)<textarea className="input" rows={2} disabled={!editable} value={form.notes} onChange={set('notes')} /></label>

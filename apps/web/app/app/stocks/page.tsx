@@ -22,7 +22,7 @@ const FILTERS: Record<string, [string, (i: any) => boolean]> = {
  */
 export default function StockPage() {
   const router = useRouter();
-  const { can, ctx } = useSession();
+  const { can, ctx, has } = useSession();
   const writable = !ctx?.readOnly;
   const admin = can('stock.admin') && writable;
   const canOrder = can('purchases.create') && !!ctx?.entitlements.modules.includes('purchases') && writable;
@@ -64,12 +64,12 @@ export default function StockPage() {
       router.push(`/app/achats/${po.id}`);
       return;
     }
-    if (m.type === 'opening') await api(`/company/stock/${m.item.id}/opening`, { body: { quantity: Number(m.quantity), unitCost: Number(m.unitCost), date: m.date, warehouseId: m.warehouseId || null, counterpart: m.counterpart } });
+    if (m.type === 'opening') await api(`/company/stock/${m.item.id}/opening`, { body: { quantity: Number(m.quantity), unitCost: Number(m.unitCost), date: m.date, warehouseId: m.warehouseId || null, counterpart: m.counterpart, ...(m.item.trackLots && has('stock_lots') ? { lotNumber: m.lotNumber || null, expiryDate: m.expiryDate || null } : {}) } });
     if (m.type === 'count') {
       const r = await api(`/company/stock/${m.item.id}/count`, { body: { counted: Number(m.counted), reason: m.reason, warehouseId: warehouseId || null } });
       setNotice(r.difference ? `« ${m.item.name} » : écart de ${qty(r.difference)} ${m.item.unit} enregistré.` : `« ${m.item.name} » : aucun écart.`);
     }
-    if (m.type === 'threshold') await api(`/company/stock/${m.item.id}`, { method: 'PATCH', body: { minStock: m.minStock === '' ? null : Number(m.minStock) } });
+    if (m.type === 'threshold') await api(`/company/stock/${m.item.id}`, { method: 'PATCH', body: { minStock: m.minStock === '' ? null : Number(m.minStock), ...(has('stock_lots') ? { trackLots: !!m.trackLots } : {}) } });
     setModal(null); await load();
   });
 
@@ -125,7 +125,7 @@ export default function StockPage() {
           {items.map((i: any) => (
             <tr key={i.id}>
               {canOrder && <td><input type="checkbox" checked={selected.includes(i.id)} onChange={() => toggle(i.id)} aria-label={`Sélectionner ${i.name}`} /></td>}
-              <td><b>{i.name}</b> {i.alert === 'out' && <Pill tone="crit">Rupture</Pill>}{i.alert === 'low' && <Pill tone="warn">Stock bas</Pill>}{i.toOrder && <Pill tone="warn">À commander : {qty(i.suggested)}</Pill>}
+              <td><b>{i.name}</b> {i.alert === 'out' && <Pill tone="crit">Rupture</Pill>}{i.alert === 'low' && <Pill tone="warn">Stock bas</Pill>}{i.toOrder && <Pill tone="warn">À commander : {qty(i.suggested)}</Pill>}{has('stock_lots') && i.trackLots && <> <Pill>Lots</Pill></>}
                 <div className="small muted">{i.code}{!warehouseId && multi && i.byWarehouse.length > 0 && <> · {[...i.byWarehouse].sort((x: any, y: any) => data.warehouses.findIndex((w: any) => w.id === x.warehouseId) - data.warehouses.findIndex((w: any) => w.id === y.warehouseId)).map((b: any) => `${wName(b.warehouseId)} ${qty(b.quantity)}`).join(' · ')}</>}</div></td>
               <td className="n" style={{ whiteSpace: 'nowrap' }}><b>{qty(i.quantity)}</b> {i.unit}</td>
               <td className="n">{i.reserved ? qty(i.reserved) : '—'}</td>
@@ -138,7 +138,7 @@ export default function StockPage() {
                 <button className="btn sm" onClick={() => api(`/company/stock/${i.id}/movements`).then((r) => open({ type: 'card', item: i, ...r }))}>Fiche</button>
                 {admin && !i.lastMovement && !warehouseId && <button className="btn sm primary" onClick={() => open({ type: 'opening', item: i, quantity: '', unitCost: i.purchasePrice ?? '', date: today(), warehouseId: '', counterpart: DEFAULT_OPENING_COUNTERPART })}>Stock initial</button>}
                 {can('stock.validate') && writable && i.lastMovement && <button className="btn sm" onClick={() => open({ type: 'count', item: i, counted: expectedFor(i), reason: '' })}>Ajuster</button>}
-                {admin && <button className="btn sm" onClick={() => open({ type: 'threshold', item: i, minStock: i.minStock ?? '' })}>Seuil</button>}
+                {admin && <button className="btn sm" onClick={() => open({ type: 'threshold', item: i, minStock: i.minStock ?? '', trackLots: !!i.trackLots })}>{has('stock_lots') ? 'Réglages' : 'Seuil'}</button>}
               </div></td>
             </tr>
           ))}
@@ -196,6 +196,10 @@ export default function StockPage() {
                   {data.warehouses.map((w: any) => <option key={w.id} value={w.isDefault ? '' : w.id}>{w.code} · {w.name}</option>)}</select></label>}
                 <div className="field small" style={{ alignSelf: 'end' }}>Valeur : <b>{money(Number(modal.quantity || 0) * Number(modal.unitCost || 0))}</b></div>
               </div>
+              {has('stock_lots') && modal.item.trackLots && <div className="grid2">
+                <Field label="Numéro de lot" required value={modal.lotNumber ?? ''} onChange={set('lotNumber')} />
+                <Field label="Date limite (péremption)" type="date" value={modal.expiryDate ?? ''} onChange={set('expiryDate')} />
+              </div>}
               <CounterpartSelect label="Origine du stock (contrepartie comptable)" value={modal.counterpart} onChange={(v) => setModal({ ...modal, counterpart: v })} />
             </>}
             {modal.type === 'count' && <>
@@ -206,9 +210,11 @@ export default function StockPage() {
               <Field label="Raison de l'écart" required minLength={3} placeholder="Ex. casse, sacs percés, erreur de livraison" value={modal.reason} onChange={set('reason')} />
             </>}
             {modal.type === 'threshold' && <>
-              <h2>Seuil d'alerte — {modal.item.name}</h2>
+              <h2>{has('stock_lots') ? 'Réglages du stock' : "Seuil d'alerte"} — {modal.item.name}</h2>
               <Alert>{error}</Alert>
               <Field label={`Alerter quand le stock descend à (${modal.item.unit})`} type="number" min={0} step="any" placeholder="Vide : pas d'alerte" value={modal.minStock} onChange={set('minStock')} />
+              {has('stock_lots') && <label className="row small" style={{ alignItems: 'flex-start', gap: 8 }}><input type="checkbox" checked={!!modal.trackLots} onChange={(e) => setModal({ ...modal, trackLots: e.target.checked })} />
+                <span><b>Suivre par lots et dates de péremption</b><br />Chaque entrée demandera un numéro de lot ; les ventes prendront d'abord le lot qui périme le plus tôt.</span></label>}
             </>}
             {modal.type !== 'card' && <div className="row"><button className="btn primary" disabled={busy}>{modal.type === 'order' ? 'Préparer le bon de commande' : 'Enregistrer'}</button><button type="button" className="btn" onClick={() => setModal(null)}>Annuler</button></div>}
           </form>

@@ -13,8 +13,10 @@ import { TreasuryService } from '../treasury/treasury.service';
 import { addDays, computeTotals, LineInput, today } from '../sales/sales.service';
 
 export interface PurchaseInput {
-  contactId: string; supplierRef?: string | null; issueDate?: string; dueDate?: string | null; expectedDate?: string | null; notes?: string | null; warehouseId?: string | null; lines: LineInput[];
+  contactId: string; supplierRef?: string | null; issueDate?: string; dueDate?: string | null; expectedDate?: string | null; notes?: string | null; warehouseId?: string | null; lines: PurchaseLineInput[];
 }
+/** Ligne d'achat : lot et date limite des articles suivis par lots (fonctionnalité stock_lots). */
+export type PurchaseLineInput = LineInput & { lotNumber?: string | null; expiryDate?: string | null };
 
 const PREFIX: Record<PurchaseDocType, string> = { order: 'BC', invoice: 'ACH' };
 const LABEL: Record<PurchaseDocType, string> = { order: 'Le bon de commande', invoice: 'La facture fournisseur' };
@@ -41,7 +43,7 @@ export class PurchasesService {
     return c;
   }
 
-  private async writeLines(trx: TenantTrx, t: TenantInfo, documentId: string, lines: LineInput[]) {
+  private async writeLines(trx: TenantTrx, t: TenantInfo, documentId: string, lines: PurchaseLineInput[]) {
     const productIds = [...new Set(lines.map((l) => l.productId).filter((x): x is string => !!x))];
     if (productIds.length) {
       if (!productIds.every(isUuid)) throw badRequest('Article introuvable.', undefined, 'unknown_product');
@@ -53,7 +55,7 @@ export class PurchasesService {
     await trx.insertInto('purchase_document_line').values(lines.map((l, i) => ({
       company_id: t.companyId, document_id: documentId, position: i + 1, product_id: l.productId ?? null, description: l.description,
       quantity: l.quantity, unit: l.unit ?? null, unit_price: l.unitPrice, discount_pct: l.discountPct ?? 0, discount_amount: l.discountAmount ?? 0, vat_rate: l.vatRate,
-      total_ht: totals.lines[i].ht, total_vat: totals.lines[i].vat,
+      total_ht: totals.lines[i].ht, total_vat: totals.lines[i].vat, lot_number: l.lotNumber?.trim() || null, expiry_date: l.expiryDate ?? null,
     }))).execute();
     return totals;
   }
@@ -114,7 +116,7 @@ export class PurchasesService {
         totalHt: Number(d.total_ht), totalVat: Number(d.total_vat), totalTtc: Number(d.total_ttc), paidAmount: Number(d.paid_amount),
         remaining: d.type === 'invoice' && d.status !== 'draft' ? remainingOf(d) : 0, vatBreakdown, related,
         lines: lines.map((l) => ({ id: l.id, productId: l.product_id, description: l.description, quantity: Number(l.quantity), unit: l.unit,
-          unitPrice: Number(l.unit_price), discountPct: Number(l.discount_pct), discountAmount: Number(l.discount_amount), vatRate: Number(l.vat_rate), totalHt: Number(l.total_ht), totalVat: Number(l.total_vat),
+          unitPrice: Number(l.unit_price), discountPct: Number(l.discount_pct), discountAmount: Number(l.discount_amount), vatRate: Number(l.vat_rate), totalHt: Number(l.total_ht), totalVat: Number(l.total_vat), lotNumber: l.lot_number, expiryDate: l.expiry_date,
           discount: Math.max(0, Math.round(Number(l.quantity) * Number(l.unit_price)) - Number(l.total_ht)) })),
         payments: payments.map((p) => ({ ...p, amount: Number(p.amount) })),
       };

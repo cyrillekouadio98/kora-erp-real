@@ -22,7 +22,7 @@ export const PaymentSchema = z.object({
   accountId: z.string().uuid({ message: 'Compte de trésorerie invalide' }).nullable().optional(),
 }).strict();
 
-export const LineSchema = z.object({
+export const LineObject = z.object({
   productId: z.string().uuid({ message: 'Article invalide' }).nullable().optional(),
   description: z.string().trim().min(1, { message: 'Chaque ligne doit avoir une désignation' }).max(500),
   quantity: z.coerce.number().positive({ message: 'La quantité doit être positive' }).max(1e9).transform((v) => Math.round(v * 1000) / 1000),
@@ -32,8 +32,11 @@ export const LineSchema = z.object({
   /** Remise en montant (FCFA) sur le total HT de la ligne. */
   discountAmount: z.coerce.number().min(0, { message: 'La remise ne peut pas être négative' }).max(1e13).transform((v) => Math.round(v * 100) / 100).optional(),
   vatRate: z.coerce.number().refine((v) => VAT_RATES.includes(v), { message: 'Taux de TVA : 18 %, 9 % ou 0 %' }),
-}).strict().refine((l) => !l.discountAmount || l.discountAmount <= l.quantity * l.unitPrice * (1 - (l.discountPct ?? 0) / 100) + 0.5,
-  { message: 'La remise dépasse le montant de la ligne', path: ['discountAmount'] });
+}).strict();
+/** La remise ne dépasse pas le montant de la ligne. */
+export const discountFits = (l: { discountAmount?: number; quantity: number; unitPrice: number; discountPct?: number }) => !l.discountAmount || l.discountAmount <= l.quantity * l.unitPrice * (1 - (l.discountPct ?? 0) / 100) + 0.5;
+export const discountError = { message: 'La remise dépasse le montant de la ligne', path: ['discountAmount'] };
+export const LineSchema = LineObject.refine(discountFits, discountError);
 
 const DocSchema = z.object({
   contactId: z.string().min(1, { message: 'Choisissez un client' }),

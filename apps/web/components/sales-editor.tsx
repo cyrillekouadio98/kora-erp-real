@@ -4,11 +4,12 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { DOC_LABEL, money, PURCHASE_LABEL, VAT_RATES } from '@/lib/format';
 import { Alert, Field, useAction } from '@/components/ui';
+import { useSession } from '@/components/session';
 
-interface Line { productId: string | null; description: string; quantity: number | string; unit: string | null; unitPrice: number | string; discountPct: number | string; discountAmount: number | string; vatRate: number }
-const EMPTY_LINE: Line = { productId: null, description: '', quantity: 1, unit: null, unitPrice: 0, discountPct: 0, discountAmount: 0, vatRate: 18 };
+interface Line { productId: string | null; description: string; quantity: number | string; unit: string | null; unitPrice: number | string; discountPct: number | string; discountAmount: number | string; vatRate: number; lotNumber: string; expiryDate: string }
+const EMPTY_LINE: Line = { productId: null, description: '', quantity: 1, unit: null, unitPrice: 0, discountPct: 0, discountAmount: 0, vatRate: 18, lotNumber: '', expiryDate: '' };
 /** Ne garde que les champs saisissables d'une ligne (l'API refuse les champs calculés comme totalHt). */
-const toLine = (l: any): Line => ({ productId: l.productId ?? null, description: l.description ?? '', quantity: l.quantity ?? 1, unit: l.unit ?? null, unitPrice: l.unitPrice ?? 0, discountPct: l.discountPct ?? 0, discountAmount: l.discountAmount ?? 0, vatRate: l.vatRate ?? 18 });
+const toLine = (l: any): Line => ({ productId: l.productId ?? null, description: l.description ?? '', quantity: l.quantity ?? 1, unit: l.unit ?? null, unitPrice: l.unitPrice ?? 0, discountPct: l.discountPct ?? 0, discountAmount: l.discountAmount ?? 0, vatRate: l.vatRate ?? 18, lotNumber: l.lotNumber ?? '', expiryDate: l.expiryDate ?? '' });
 /** Remise saisie en FCFA plutôt qu'en % (ligne déjà enregistrée avec un montant, ou choix de l'utilisateur). */
 const inAmount = (l: Line) => Number(l.discountAmount || 0) > 0 || (l as any).mode === 'amount';
 
@@ -34,6 +35,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 /** Saisie d'un brouillon (devis, facture, avoir, bon de commande, facture fournisseur), en création ou modification. */
 export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales' }: { type: string; doc?: any; onSaved: (doc: any) => void; onDirtyChange?: (dirty: boolean) => void; scope?: keyof typeof SCOPES }) {
   const cfg = SCOPES[scope];
+  const { has } = useSession();
   const isCredit = type === 'credit_note';
   const isPurchaseInvoice = scope === 'purchases' && type === 'invoice';
   // Date limite propre au document : échéance (facture), validité (devis), livraison prévue (commande)
@@ -77,7 +79,7 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
   const save = () => run(async () => {
     const body: any = {
       contactId, notes: notes || null,
-      lines: lines.map(toLine).map((l) => ({ ...l, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), discountPct: Number(l.discountPct || 0), discountAmount: Number(l.discountAmount || 0), unit: l.unit || null })),
+      lines: lines.map(toLine).map(({ lotNumber, expiryDate, ...l }) => ({ ...l, ...(scope === 'purchases' ? { lotNumber: lotNumber.trim() || null, expiryDate: expiryDate || null } : {}), quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), discountPct: Number(l.discountPct || 0), discountAmount: Number(l.discountAmount || 0), unit: l.unit || null })),
       ...(limitKey ? { [limitKey]: limitDate || null } : {}),
       ...(isPurchaseInvoice ? { supplierRef: supplierRef || null, issueDate } : {}),
       ...(isCredit ? { restock } : {}),
@@ -128,7 +130,11 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
             <tr key={i}>
               <td><select className="input" value={l.productId ?? ''} onChange={(e) => pickProduct(i, e.target.value)} aria-label={`Article ligne ${i + 1}`}>
                 <option value="">Saisie libre</option>{products.map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}{p.trackStock ? ` (stock : ${p.stockQty.toLocaleString('fr-FR')})` : ''}</option>)}
-              </select></td>
+              </select>
+              {isPurchaseInvoice && has('stock_lots') && products.find((p) => p.id === l.productId)?.trackLots && <div className="row" style={{ gap: 6, marginTop: 6, flexWrap: 'nowrap' }}>
+                <input className="input" required placeholder="N° de lot" value={l.lotNumber} onChange={(e) => setLine(i, { lotNumber: e.target.value })} aria-label={`Numéro de lot ligne ${i + 1}`} style={{ width: 110 }} />
+                <input className="input" type="date" value={l.expiryDate} onChange={(e) => setLine(i, { expiryDate: e.target.value })} aria-label={`Date limite ligne ${i + 1}`} title="Date limite (péremption)" style={{ width: 150 }} />
+              </div>}</td>
               <td><input className="input" required value={l.description} onChange={(e) => setLine(i, { description: e.target.value })} aria-label={`Désignation ligne ${i + 1}`} /></td>
               <td><input className="input n" type="number" min="0.001" step="any" required value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} aria-label={`Quantité ligne ${i + 1}`} style={{ width: 80 }} /></td>
               <td><input className="input n" type="number" min="0" step="any" required value={l.unitPrice} onChange={(e) => setLine(i, { unitPrice: e.target.value })} aria-label={`Prix ligne ${i + 1}`} style={{ width: 120 }} /></td>

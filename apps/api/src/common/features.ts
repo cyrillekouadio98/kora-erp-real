@@ -16,6 +16,7 @@ export const FEATURES: FeatureDef[] = [
   {
     key: 'stock_lots', version: '1.2', label: 'Lots et dates de péremption',
     description: "Numéro de lot et date limite à chaque entrée en stock, alerte avant péremption, sortie du lot le plus ancien en premier.",
+    inUse: async (trx, companyId) => !!(await trx.selectFrom('stock_lot').select('id').where('company_id', '=', companyId).limit(1).executeTakeFirst()),
   },
 ];
 

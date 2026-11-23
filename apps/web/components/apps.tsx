@@ -148,7 +148,7 @@ export const APPS: App[] = [
   { key: 'stock', label: 'Stocks', href: '/app/stocks', perm: 'stock.read', pages: [
     { href: '/app/stocks', label: "Vue d'ensemble" }, { href: '/app/stocks/operations', label: 'Entrées et sorties' },
     { href: '/app/stocks/inventaires', label: 'Inventaires' }, { href: '/app/stocks/mouvements', label: 'Mouvements' },
-    { href: '/app/stocks/valorisation', label: 'Valorisation' }, { href: '/app/stocks/entrepots', label: 'Entrepôts' },
+    { href: '/app/stocks/valorisation', label: 'Valorisation' }, { href: '/app/stocks/peremptions', label: 'Péremptions', feature: 'stock_lots' }, { href: '/app/stocks/entrepots', label: 'Entrepôts' },
   ] },
   { key: 'calendar', label: 'Calendrier', href: '/app/calendrier', perm: 'calendar.read' },
   { key: 'products', label: 'Articles', href: '/app/articles', perm: 'products.read' },

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { sql } from 'kysely';
 import { assertSiteAccess, inScope, NONE, siteScope, workingSite } from '../../common/sites';
 import { badRequest, conflict, forbidden, notFound } from '../../common/errors';
 import { isUuid } from '../../common/ids';
@@ -15,6 +16,7 @@ const franc = (n: number) => Math.round(n);
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 const today = () => new Date().toISOString().slice(0, 10);
+const addDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 const fmt = (n: number) => n.toLocaleString('fr-FR');
 const num = (v: string | null | undefined) => (v === null || v === undefined ? null : Number(v));
 
@@ -23,11 +25,16 @@ export const ISSUE_REASONS = { consumption: 'Consommation interne', loss: 'Casse
 const PREFIX: Record<StockDocType, string> = { receipt: 'BE', issue: 'BS', transfer: 'BT', inventory: 'INV' };
 const TITLE: Record<StockDocType, string> = { receipt: "Bon d'entrée", issue: 'Bon de sortie', transfer: 'Bon de transfert', inventory: 'Inventaire' };
 
+/** Part d'un mouvement dans un lot : lot existant (retour, sortie ciblée) ou lot saisi à l'entrée. */
+export interface LotPart { lotId?: string; lotNumber?: string; expiryDate?: string | null; quantity: number }
 interface Move {
   productId: string; warehouseId?: string | null; direction: 'in' | 'out'; quantity: number; value?: number; date: string;
   reason: StockReason; sourceId?: string | null; documentId?: string | null; label: string;
+  /** Lots (fonctionnalité stock_lots) : à l'entrée, les lots reçus ; à la sortie, les lots à prendre en premier. */
+  lots?: LotPart[];
 }
-export interface StockLineInput { productId: string; quantity?: number | null; unitCost?: number | null; note?: string | null }
+const STOCK_LOTS = 'stock_lots';
+export interface StockLineInput { productId: string; quantity?: number | null; unitCost?: number | null; note?: string | null; lotNumber?: string | null; expiryDate?: string | null }
 export interface StockDocInput {
   type: StockDocType; warehouseId?: string | null; destWarehouseId?: string | null; reason?: string; date?: string; contactId?: string | null;
   treasuryAccountId?: string | null; reference?: string | null; notes?: string | null; lines?: StockLineInput[];
@@ -39,7 +46,7 @@ export interface StockDocInput {
  * Les quantités sont tenues par entrepôt ; aucune ne peut devenir négative (vérifié ici et par la base).
  */
 /** Stock initial : quantité, coût, date, entrepôt et contrepartie comptable du D 311. */
-export interface OpeningInput { quantity: number; unitCost: number; date?: string; warehouseId?: string | null; counterpart?: OpeningCounterpart }
+export interface OpeningInput { quantity: number; unitCost: number; date?: string; warehouseId?: string | null; counterpart?: OpeningCounterpart; lotNumber?: string | null; expiryDate?: string | null }
 
 @Injectable()
 export class StockService {
@@ -118,11 +125,82 @@ export class StockService {
     const whAfter = round3(whQty + sign * m.quantity);
     await trx.updateTable('product').set({ stock_qty: qtyAfter, stock_value: valueAfter, avg_cost: qtyAfter ? valueAfter / qtyAfter : avg }).where('id', '=', p.id).execute();
     await this.setLevel(trx, t, p.id, w.id, whAfter);
-    return trx.insertInto('stock_movement').values({
+    const mv = await trx.insertInto('stock_movement').values({
       company_id: t.companyId, product_id: p.id, warehouse_id: w.id, date: m.date, direction: m.direction, quantity: m.quantity, value: moveValue,
       qty_after: qtyAfter, value_after: valueAfter, wh_qty_after: whAfter, reason: m.reason, source_id: m.sourceId ?? null, document_id: m.documentId ?? null,
       label: m.label, created_by: t.ctx.userId,
     }).returning(['id', 'value']).executeTakeFirstOrThrow();
+    if (this.lotsOn(t, p)) await this.allocateLots(trx, t, mv.id, p.id, w.id, m.direction, m.quantity, m.lots, m.reason);
+    return mv;
+  }
+
+  // ------------------------------------------------------------------ lots et péremption (fonctionnalité stock_lots)
+  /** Suivi par lots actif : fonctionnalité activée pour l'entreprise et article suivi par lots. */
+  lotsOn(t: TenantInfo, p: { track_lots?: boolean }) { return !!p.track_lots && t.features.has(STOCK_LOTS); }
+
+  /** Exige un numéro de lot à l'entrée d'un article suivi par lots. */
+  requireLot(t: TenantInfo, p: { track_lots?: boolean; name: string }, lotNumber: string | null | undefined) {
+    if (this.lotsOn(t, p) && !lotNumber?.trim()) throw badRequest(`Indiquez le numéro de lot de « ${p.name} ».`, undefined, 'lot_required');
+  }
+
+  /**
+   * Répartit un mouvement entre les lots. Entrée : dans les lots indiqués (créés au besoin).
+   * Sortie : d'abord les lots indiqués, puis le lot qui périme le plus tôt (FEFO). Une vente ou un
+   * transfert ne prend un lot périmé qu'en dernier ; un bon de sortie ou un inventaire le prend en premier
+   * (destruction, perte). Ce qui reste est du stock sans lot (stock antérieur au suivi, retours clients).
+   */
+  private async allocateLots(trx: TenantTrx, t: TenantInfo, movementId: string, productId: string, warehouseId: string, direction: 'in' | 'out', quantity: number, parts: LotPart[] = [], reason?: StockReason) {
+    let left = quantity;
+    const record = (lotId: string, q: number) => trx.insertInto('stock_movement_lot').values({ company_id: t.companyId, movement_id: movementId, lot_id: lotId, quantity: q }).execute();
+    if (direction === 'in') {
+      for (const part of parts) {
+        const q = round3(Math.min(part.quantity, left));
+        if (q <= 0) continue;
+        let { lotNumber, expiryDate } = part;
+        if (part.lotId) {
+          const src = await trx.selectFrom('stock_lot').select(['lot_number', 'expiry_date']).where('id', '=', part.lotId).executeTakeFirst();
+          if (!src) continue;
+          lotNumber = src.lot_number; expiryDate = src.expiry_date;
+        }
+        if (!lotNumber?.trim()) continue;
+        const lot = await trx.insertInto('stock_lot').values({ company_id: t.companyId, product_id: productId, warehouse_id: warehouseId, lot_number: lotNumber.trim(), expiry_date: expiryDate ?? null, quantity: q })
+          .onConflict((oc) => oc.columns(['company_id', 'product_id', 'warehouse_id', 'lot_number', 'expiry_date']).doUpdateSet((eb) => ({ quantity: eb('stock_lot.quantity', '+', eb.ref('excluded.quantity')) })))
+          .returning('id').executeTakeFirstOrThrow();
+        await record(lot.id, q);
+        left = round3(left - q);
+      }
+      return;
+    }
+    const lots0 = await trx.selectFrom('stock_lot').select(['id', 'quantity', 'expiry_date']).where('product_id', '=', productId).where('warehouse_id', '=', warehouseId).where(sql<boolean>`quantity > 0`)
+      .orderBy(sql`expiry_date asc nulls last`).orderBy('created_at').forUpdate().execute();
+    const now = today();
+    const expiredFirst = reason === 'issue' || reason === 'adjustment';
+    const lots = expiredFirst ? lots0 : [...lots0.filter((l) => !l.expiry_date || l.expiry_date >= now), ...lots0.filter((l) => l.expiry_date && l.expiry_date < now)];
+    const wanted = new Map(parts.filter((p) => p.lotId).map((p) => [p.lotId!, p.quantity]));
+    const ordered = [...lots.filter((l) => wanted.has(l.id)), ...lots.filter((l) => !wanted.has(l.id))];
+    for (const l of ordered) {
+      if (left <= 0) break;
+      const cap = wanted.has(l.id) ? Math.min(Number(l.quantity), wanted.get(l.id)!) : Number(l.quantity);
+      const q = round3(Math.min(cap, left));
+      if (q <= 0) continue;
+      await trx.updateTable('stock_lot').set({ quantity: sql`quantity - ${q}` }).where('id', '=', l.id).execute();
+      await record(l.id, q);
+      left = round3(left - q);
+    }
+  }
+
+  /** Lots touchés par des mouvements, en quantité nette (entrées − sorties), par article et entrepôt. */
+  private async netLots(trx: TenantTrx, movementIds: string[]) {
+    if (!movementIds.length) return [];
+    const rows = await trx.selectFrom('stock_movement_lot as ml').innerJoin('stock_movement as m', (j) => j.onRef('m.id', '=', 'ml.movement_id').onRef('m.company_id', '=', 'ml.company_id'))
+      .select(['ml.lot_id', 'ml.quantity', 'm.direction', 'm.product_id', 'm.warehouse_id']).where('ml.movement_id', 'in', movementIds).execute();
+    const net = new Map<string, { lotId: string; productId: string; warehouseId: string; qty: number }>();
+    for (const r of rows) {
+      const cur = net.get(r.lot_id) ?? { lotId: r.lot_id, productId: r.product_id, warehouseId: r.warehouse_id, qty: 0 };
+      cur.qty = round3(cur.qty + (r.direction === 'in' ? 1 : -1) * Number(r.quantity));
+      net.set(r.lot_id, cur);
+    }
+    return [...net.values()].filter((x) => x.qty !== 0);
   }
 
   /** Transfert : sortie d'un entrepôt, entrée dans l'autre, au coût moyen ; quantité et valeur totales inchangées. */
@@ -137,12 +215,17 @@ export class StockService {
       { warehouseId: m.fromId, direction: 'out' as const, after: round3(from - m.quantity) },
       { warehouseId: m.toId, direction: 'in' as const, after: round3(to + m.quantity) },
     ];
+    // Les lots suivent la marchandise : sortis au plus tôt périmé du départ, recréés à l'arrivée.
+    let moved: LotPart[] = [];
     for (const leg of legs) {
       await this.setLevel(trx, t, p.id, leg.warehouseId, leg.after);
-      await trx.insertInto('stock_movement').values({
+      const mv = await trx.insertInto('stock_movement').values({
         company_id: t.companyId, product_id: p.id, warehouse_id: leg.warehouseId, date: m.date, direction: leg.direction, quantity: m.quantity, value: moveValue,
         qty_after: qty, value_after: value, wh_qty_after: leg.after, reason: 'transfer', source_id: null, document_id: m.documentId, label: m.label, created_by: t.ctx.userId,
-      }).execute();
+      }).returning('id').executeTakeFirstOrThrow();
+      if (!this.lotsOn(t, p)) continue;
+      await this.allocateLots(trx, t, mv.id, p.id, leg.warehouseId, leg.direction, m.quantity, moved, 'transfer');
+      if (leg.direction === 'out') moved = (await this.netLots(trx, [mv.id])).map((x) => ({ lotId: x.lotId, quantity: -x.qty }));
     }
     return moveValue;
   }
@@ -188,10 +271,12 @@ export class StockService {
     if (d.type !== 'invoice') return;
     const w = await this.warehouseFor(trx, t, d.warehouse_id, d.site_id);
     const lines = await trx.selectFrom('purchase_document_line as l').innerJoin('product as p', (j) => j.onRef('p.id', '=', 'l.product_id').onRef('p.company_id', '=', 'l.company_id'))
-      .select(['l.product_id', 'l.quantity', 'l.total_ht']).where('l.document_id', '=', documentId).where('p.track_stock', '=', true).execute();
+      .select(['l.product_id', 'l.quantity', 'l.total_ht', 'l.lot_number', 'l.expiry_date', 'p.name', 'p.track_lots']).where('l.document_id', '=', documentId).where('p.track_stock', '=', true).execute();
+    for (const l of lines) this.requireLot(t, l, l.lot_number);
     for (const l of lines) {
       await this.move(trx, t, { productId: l.product_id!, warehouseId: w.id, direction: 'in', quantity: Number(l.quantity), value: Number(l.total_ht), date: d.issue_date, reason: 'purchase',
-        sourceId: d.id, label: `Achat ${d.number}${d.supplier_ref ? ` (réf. ${d.supplier_ref})` : ''}` });
+        sourceId: d.id, label: `Achat ${d.number}${d.supplier_ref ? ` (réf. ${d.supplier_ref})` : ''}`,
+        lots: l.lot_number ? [{ lotNumber: l.lot_number, expiryDate: l.expiry_date, quantity: Number(l.quantity) }] : undefined });
     }
   }
 
@@ -201,7 +286,9 @@ export class StockService {
    */
   async revertSource(trx: TenantTrx, t: TenantInfo, sourceId: string, label: string, opts: { byDocument?: boolean; blocked?: string } = {}) {
     const moves = await trx.selectFrom('stock_movement as m').innerJoin('product as p', (j) => j.onRef('p.id', '=', 'm.product_id').onRef('p.company_id', '=', 'm.company_id'))
-      .select(['m.product_id', 'm.warehouse_id', 'm.direction', 'm.quantity', 'm.value', 'p.name']).where(opts.byDocument ? 'm.document_id' : 'm.source_id', '=', sourceId).execute();
+      .select(['m.id', 'm.product_id', 'm.warehouse_id', 'm.direction', 'm.quantity', 'm.value', 'p.name']).where(opts.byDocument ? 'm.document_id' : 'm.source_id', '=', sourceId).execute();
+    // Lots touchés : la marchandise revient dans les mêmes lots, ou en ressort.
+    const lotNet = await this.netLots(trx, moves.map((m) => m.id));
     const net = new Map<string, { productId: string; warehouseId: string; name: string; qty: number; value: number }>();
     for (const m of moves) {
       const key = `${m.product_id}|${m.warehouse_id}`;
@@ -217,9 +304,50 @@ export class StockService {
       await this.assertAvailable(trx, w, wanted, opts.blocked ?? ' La marchandise de cette facture est déjà sortie du stock : elle ne peut plus être remise en brouillon.');
     }
     for (const x of back) {
+      const lots = lotNet.filter((l) => l.productId === x.productId && l.warehouseId === x.warehouseId && Math.sign(l.qty) === Math.sign(x.qty)).map((l) => ({ lotId: l.lotId, quantity: Math.abs(l.qty) }));
       await this.move(trx, t, { productId: x.productId, warehouseId: x.warehouseId, direction: x.qty > 0 ? 'out' : 'in', quantity: Math.abs(x.qty), value: Math.abs(x.value), date: today(), reason: 'cancellation',
-        ...(opts.byDocument ? { documentId: sourceId } : { sourceId }), label });
+        ...(opts.byDocument ? { documentId: sourceId } : { sourceId }), label, lots });
     }
+  }
+
+  /**
+   * Lots en stock (fonctionnalité stock_lots) : périmés, bientôt périmés ou tous, avec le stock sans lot
+   * de chaque article suivi par lots. Valeur estimée au coût moyen de l'article.
+   */
+  async lots(t: TenantInfo, f: { status: 'all' | 'expiring' | 'expired'; days: number; productId?: string; warehouseId?: string }) {
+    return this.db.tenant(t.ctx, async (trx) => {
+      const now = today();
+      const limit = addDays(now, f.days);
+      let q = trx.selectFrom('stock_lot as l').innerJoin('product as p', (j) => j.onRef('p.id', '=', 'l.product_id').onRef('p.company_id', '=', 'l.company_id'))
+        .innerJoin('warehouse as w', (j) => j.onRef('w.id', '=', 'l.warehouse_id').onRef('w.company_id', '=', 'l.company_id'))
+        .select(['l.id', 'l.lot_number', 'l.expiry_date', 'l.quantity', 'l.created_at', 'p.id as product_id', 'p.code', 'p.name', 'p.unit', 'p.avg_cost', 'w.id as warehouse_id', 'w.name as warehouse'])
+        .where(sql<boolean>`l.quantity > 0`);
+      q = inScope(q, t, 'w.site_id');
+      if (f.productId && isUuid(f.productId)) q = q.where('l.product_id', '=', f.productId);
+      if (f.warehouseId && isUuid(f.warehouseId)) q = q.where('l.warehouse_id', '=', f.warehouseId);
+      if (f.status === 'expired') q = q.where('l.expiry_date', '<', now);
+      if (f.status === 'expiring') q = q.where('l.expiry_date', '>=', now).where('l.expiry_date', '<=', limit);
+      const rows = await q.orderBy(sql`l.expiry_date asc nulls last`).orderBy('p.name').execute();
+      const daysLeft = (d: string | null) => d ? Math.round((Date.parse(d) - Date.parse(now)) / 86_400_000) : null;
+      const lots = rows.map((r) => ({
+        id: r.id, lotNumber: r.lot_number, expiryDate: r.expiry_date, daysLeft: daysLeft(r.expiry_date), quantity: Number(r.quantity),
+        productId: r.product_id, code: r.code, name: r.name, unit: r.unit, warehouseId: r.warehouse_id, warehouse: r.warehouse,
+        value: franc(Number(r.quantity) * Number(r.avg_cost)),
+        status: !r.expiry_date ? 'none' : r.expiry_date < now ? 'expired' : r.expiry_date <= limit ? 'expiring' : 'ok',
+      }));
+      // Totaux sur tous les lots (indépendants du filtre) pour les indicateurs.
+      const all = await inScope(trx.selectFrom('stock_lot as l').innerJoin('product as p', (j) => j.onRef('p.id', '=', 'l.product_id').onRef('p.company_id', '=', 'l.company_id'))
+        .innerJoin('warehouse as w', (j) => j.onRef('w.id', '=', 'l.warehouse_id').onRef('w.company_id', '=', 'l.company_id'))
+        .select(['l.expiry_date', 'l.quantity', 'p.avg_cost']).where(sql<boolean>`l.quantity > 0`), t, 'w.site_id').execute();
+      const sum = (pred: (d: string | null) => boolean) => {
+        const xs = all.filter((x) => pred(x.expiry_date));
+        return { lots: xs.length, value: franc(xs.reduce((s, x) => s + Number(x.quantity) * Number(x.avg_cost), 0)) };
+      };
+      return {
+        today: now, days: f.days, lots,
+        expired: sum((d) => !!d && d < now), expiring: sum((d) => !!d && d >= now && d <= limit), total: sum(() => true),
+      };
+    });
   }
 
   // ------------------------------------------------------------------ consultation
@@ -268,7 +396,7 @@ export class StockService {
       const inSet = (id: string) => !whSet || whSet.includes(id);
       // Articles du site des entrepôts affichés et articles communs ; sans filtre, toute l'entreprise.
       const sitesShown = whSet ? [...new Set(warehouses.filter((w) => whSet.includes(w.id)).map((w) => w.siteId))] : null;
-      const rows = await trx.selectFrom('product').select(['id', 'code', 'name', 'unit', 'stock_qty', 'stock_value', 'avg_cost', 'min_stock', 'sale_price', 'purchase_price', 'vat_rate', 'site_id'])
+      const rows = await trx.selectFrom('product').select(['id', 'code', 'name', 'unit', 'stock_qty', 'stock_value', 'avg_cost', 'min_stock', 'sale_price', 'purchase_price', 'vat_rate', 'site_id', 'track_lots'])
         .where('track_stock', '=', true).where('archived_at', 'is', null)
         .$if(!!sitesShown, (q) => q.where((eb) => eb.or([eb('site_id', 'is', null), ...(sitesShown!.length ? [eb('site_id', 'in', sitesShown!)] : [])])))
         .orderBy('name').execute();
@@ -289,7 +417,7 @@ export class StockService {
         const toOrder = min !== null && forecast <= min;
         return {
           id: p.id, code: p.code, name: p.name, unit: p.unit, quantity, reserved: res, available, incoming: inc, forecast, value, avgCost: round2(avg), minStock: min,
-          salePrice: Number(p.sale_price), purchasePrice: num(p.purchase_price), vatRate: Number(p.vat_rate), byWarehouse,
+          salePrice: Number(p.sale_price), purchasePrice: num(p.purchase_price), vatRate: Number(p.vat_rate), byWarehouse, trackLots: p.track_lots,
           lastMovement: last.find((m) => m.product_id === p.id)?.date ?? null,
           alert: quantity === 0 ? 'out' : min !== null && quantity <= min ? 'low' : null,
           toOrder, suggested: toOrder ? Math.max(1, Math.ceil(min! * 2 - forecast)) : 0,
@@ -438,7 +566,9 @@ export class StockService {
       const date = input.date ?? today();
       const value = franc(input.quantity * input.unitCost);
       const counterpart = input.counterpart ?? DEFAULT_OPENING_COUNTERPART;
-      const m = await this.move(trx, t, { productId, warehouseId: input.warehouseId, direction: 'in', quantity: input.quantity, value, date, reason: 'opening', label: 'Stock initial' });
+      this.requireLot(t, p, input.lotNumber);
+      const m = await this.move(trx, t, { productId, warehouseId: input.warehouseId, direction: 'in', quantity: input.quantity, value, date, reason: 'opening', label: 'Stock initial',
+        lots: input.lotNumber ? [{ lotNumber: input.lotNumber, expiryDate: input.expiryDate ?? null, quantity: input.quantity }] : undefined });
       if (value > 0) {
         const label = `Stock initial — ${p.name}`;
         await this.accounting.postEntry(trx, t, { journal: 'AN', date, label, sourceType: 'stock_opening', sourceId: m!.id, lines: [
@@ -466,10 +596,19 @@ export class StockService {
     });
   }
 
-  async setSettings(t: TenantInfo, productId: string, input: { minStock?: number | null; trackStock?: boolean }) {
+  async setSettings(t: TenantInfo, productId: string, input: { minStock?: number | null; trackStock?: boolean; trackLots?: boolean }) {
     return this.db.tenant(t.ctx, async (trx) => {
       const p = await this.product(trx, productId);
       const patch: Record<string, unknown> = {};
+      if (input.trackLots !== undefined && input.trackLots !== p.track_lots) {
+        if (!t.features.has(STOCK_LOTS)) throw forbidden("Le suivi par lots n'est pas activé pour votre entreprise.", 'feature_not_enabled');
+        if (input.trackLots && (!p.track_stock || p.kind !== 'good')) throw badRequest('Seule une marchandise suivie en stock peut être suivie par lots.', undefined, 'not_tracked');
+        if (!input.trackLots) {
+          const left = await trx.selectFrom('stock_lot').select('id').where('product_id', '=', p.id).where(sql<boolean>`quantity > 0`).executeTakeFirst();
+          if (left) throw conflict(`« ${p.name} » a encore des lots en stock : écoulez-les avant d'arrêter le suivi par lots.`, 'lots_not_empty');
+        }
+        patch.track_lots = input.trackLots;
+      }
       if (input.minStock !== undefined) patch.min_stock = input.minStock;
       if (input.trackStock !== undefined && input.trackStock !== p.track_stock) {
         if (input.trackStock && p.kind !== 'good') throw badRequest('Un service ne se stocke pas.', undefined, 'service_not_stockable');
@@ -602,7 +741,7 @@ export class StockService {
     return this.db.tenant(t.ctx, async (trx) => {
       const d = await this.doc(trx, id);
       const lines = await trx.selectFrom('stock_document_line as l').innerJoin('product as p', (j) => j.onRef('p.id', '=', 'l.product_id').onRef('p.company_id', '=', 'l.company_id'))
-        .select(['l.id', 'l.product_id as productId', 'p.code', 'p.name', 'p.unit', 'p.avg_cost', 'l.quantity', 'l.expected', 'l.unit_cost as unitCost', 'l.value', 'l.note'])
+        .select(['l.id', 'l.product_id as productId', 'p.code', 'p.name', 'p.unit', 'p.avg_cost', 'l.quantity', 'l.expected', 'l.unit_cost as unitCost', 'l.value', 'l.note', 'l.lot_number as lotNumber', 'l.expiry_date as expiryDate', 'p.track_lots as trackLots'])
         .where('l.document_id', '=', id).orderBy('l.position').execute();
       // Brouillon : stock théorique du moment ; bon validé : valeurs figées à la validation.
       const live = d.status === 'draft' && lines.length
@@ -617,7 +756,7 @@ export class StockService {
         contact: contact ?? null, treasuryAccount: account ?? null, treasuryMovementId: d.treasury_movement_id,
         totalValue: Number(d.total_value), validatedAt: d.validated_at, validatedBy: by?.full_name ?? null,
         lines: lines.map((l) => ({
-          id: l.id, productId: l.productId, code: l.code, name: l.name, unit: l.unit, quantity: num(l.quantity), unitCost: num(l.unitCost), value: num(l.value), note: l.note,
+          id: l.id, productId: l.productId, code: l.code, name: l.name, unit: l.unit, quantity: num(l.quantity), unitCost: num(l.unitCost), value: num(l.value), note: l.note, lotNumber: l.lotNumber, expiryDate: l.expiryDate, trackLots: l.trackLots,
           expected: d.status === 'draft' ? Number(live.find((x) => x.product_id === l.productId)?.quantity ?? 0) : num(l.expected),
           avgCost: round2(Number(l.avg_cost)),
         })),
@@ -672,6 +811,7 @@ export class StockService {
     await trx.insertInto('stock_document_line').values(lines.map((l, i) => ({
       company_id: t.companyId, document_id: documentId, position: i + 1, product_id: l.productId,
       quantity: l.quantity ?? null, unit_cost: type === 'receipt' ? l.unitCost ?? null : null, note: l.note ?? null,
+      lot_number: type === 'receipt' ? l.lotNumber?.trim() || null : null, expiry_date: type === 'receipt' ? l.expiryDate ?? null : null,
     }))).execute();
   }
 
@@ -757,7 +897,7 @@ export class StockService {
       const w = await this.warehouseFor(trx, t, d.warehouse_id);
       const dest = d.dest_warehouse_id ? await this.warehouseFor(trx, t, d.dest_warehouse_id) : null;
       const lines = await trx.selectFrom('stock_document_line as l').innerJoin('product as p', (j) => j.onRef('p.id', '=', 'l.product_id').onRef('p.company_id', '=', 'l.company_id'))
-        .select(['l.id', 'l.product_id', 'l.quantity', 'l.unit_cost', 'p.name', 'p.track_stock']).where('l.document_id', '=', id).orderBy('l.position').execute();
+        .select(['l.id', 'l.product_id', 'l.quantity', 'l.unit_cost', 'l.lot_number', 'l.expiry_date', 'p.name', 'p.track_stock', 'p.track_lots']).where('l.document_id', '=', id).orderBy('l.position').execute();
       const active = lines.filter((l) => l.quantity !== null && (d.type === 'inventory' || Number(l.quantity) > 0));
       if (!active.length) throw badRequest(d.type === 'inventory' ? 'Saisissez au moins une quantité comptée avant de valider.' : 'Ajoutez au moins une ligne avec une quantité.', undefined, 'no_lines');
       const notTracked = active.find((l) => !l.track_stock);
@@ -769,6 +909,7 @@ export class StockService {
       if (d.reason === 'cash_purchase' && active.some((l) => l.unit_cost === null)) {
         throw badRequest("Indiquez le prix payé de chaque article de l'achat comptant.", undefined, 'unit_cost_required');
       }
+      if (d.type === 'receipt') for (const l of active) this.requireLot(t, l, l.lot_number);
       if (d.type === 'issue' || d.type === 'transfer') {
         await this.assertAvailable(trx, w.id, new Map(active.map((l) => [l.product_id, { name: l.name, qty: Number(l.quantity) }])), '');
       }
@@ -783,7 +924,7 @@ export class StockService {
         let value = 0, unitCost: number | null = null, expected: number | null = null;
         if (d.type === 'receipt') {
           const m = await this.move(trx, t, { productId: l.product_id, warehouseId: w.id, direction: 'in', quantity: qty, value: l.unit_cost === null ? undefined : franc(qty * Number(l.unit_cost)),
-            date: d.date, reason: 'receipt', documentId: d.id, label });
+            date: d.date, reason: 'receipt', documentId: d.id, label, lots: l.lot_number ? [{ lotNumber: l.lot_number, expiryDate: l.expiry_date, quantity: qty }] : undefined });
           value = Number(m!.value); unitCost = round2(value / qty);
         } else if (d.type === 'issue') {
           const m = await this.move(trx, t, { productId: l.product_id, warehouseId: w.id, direction: 'out', quantity: qty, date: d.date, reason: 'issue', documentId: d.id, label });

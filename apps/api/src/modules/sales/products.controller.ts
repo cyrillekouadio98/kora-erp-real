@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } fr
 import { ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { OPENING_COUNTERPARTS } from '../accounting/accounting.service';
+import { isoDate } from './sales.controller';
 import { AllowWhenReadOnly, Permission, Tenant } from '../../common/decorators';
 import { badRequest, conflict, forbidden, notFound } from '../../common/errors';
 import { isUuid } from '../../common/ids';
@@ -36,11 +37,12 @@ const OpeningStockSchema = z.object({
   unitCost: money.optional(),
   warehouseId: z.string().uuid({ message: 'Entrepôt inconnu' }).nullable().optional(),
   counterpart: z.enum(OPENING_COUNTERPARTS, { message: 'Compte de contrepartie non proposé' }).optional(),
+  lotNumber: z.string().trim().max(60).transform((v) => v || null).nullable().optional(), expiryDate: isoDate.nullable().optional(),
 }).strict();
 
 const COLUMNS = { kind: 'kind', name: 'name', description: 'description', unit: 'unit', salePrice: 'sale_price', purchasePrice: 'purchase_price', vatRate: 'vat_rate', barcode: 'barcode', siteId: 'site_id' } as const;
 const SELECT = ['id', 'code', 'kind', 'name', 'description', 'unit', 'sale_price as salePrice', 'purchase_price as purchasePrice', 'vat_rate as vatRate', 'archived_at as archivedAt',
-  'track_stock as trackStock', 'stock_qty as stockQty', 'barcode', 'site_id as siteId'] as const;
+  'track_stock as trackStock', 'track_lots as trackLots', 'stock_qty as stockQty', 'barcode', 'site_id as siteId'] as const;
 
 const toNumbers = <T extends { salePrice: string; purchasePrice: string | null; vatRate: string; stockQty: string }>(p: T) =>
   ({ ...p, salePrice: Number(p.salePrice), purchasePrice: p.purchasePrice === null ? null : Number(p.purchasePrice), vatRate: Number(p.vatRate), stockQty: Number(p.stockQty) });

@@ -92,7 +92,7 @@ export default function PurchaseDocumentPage() {
             <div className="table-wrap"><table>
               <thead><tr><th>Désignation</th><th className="n">Qté</th><th className="n">Prix unit. HT</th><th className="n">Remise</th><th className="n">TVA</th><th className="n">Total HT</th></tr></thead>
               <tbody>{doc.lines.map((l: any) => (
-                <tr key={l.id}><td>{l.description}</td><td className="n">{l.quantity.toLocaleString('fr-FR')}{l.unit ? ` ${l.unit}` : ''}</td><td className="n">{money(l.unitPrice)}</td>
+                <tr key={l.id}><td>{l.description}{l.lotNumber && <div className="small muted">Lot {l.lotNumber}{l.expiryDate && ` · péremption ${date(l.expiryDate)}`}</div>}</td><td className="n">{l.quantity.toLocaleString('fr-FR')}{l.unit ? ` ${l.unit}` : ''}</td><td className="n">{money(l.unitPrice)}</td>
                   <td className="n">{l.discount > 0 ? <>{money(l.discount)}{l.discountPct ? <div className="small muted">{l.discountPct} %</div> : null}</> : '—'}</td><td className="n">{l.vatRate} %</td><td className="n">{money(l.totalHt)}</td></tr>))}</tbody>
             </table></div>
             <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>

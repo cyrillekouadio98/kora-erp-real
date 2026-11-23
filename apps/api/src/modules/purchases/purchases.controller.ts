@@ -6,7 +6,12 @@ import { AllowWhenReadOnly, Permission, Tenant } from '../../common/decorators';
 import type { TenantInfo } from '../../common/request-context';
 import { parse } from '../../common/validation';
 import { toCsv } from '../exports/export.controller';
-import { isoDate, LineSchema, PaymentSchema } from '../sales/sales.controller';
+import { discountError, discountFits, isoDate, LineObject, PaymentSchema } from '../sales/sales.controller';
+
+/** Ligne d'achat : lot et date limite pour les articles suivis par lots. */
+const PurchaseLineSchema = LineObject.extend({
+  lotNumber: z.string().trim().max(60).transform((v) => v || null).nullable().optional(), expiryDate: isoDate.nullable().optional(),
+}).refine(discountFits, discountError);
 import { PurchasesService } from './purchases.service';
 
 const type = z.enum(['order', 'invoice'], { message: 'Type de document : bon de commande ou facture fournisseur' });
@@ -19,7 +24,7 @@ const DocSchema = z.object({
   expectedDate: isoDate.nullable().optional(),
   notes: z.string().trim().max(2000).transform((v) => v || null).nullable().optional(),
   warehouseId: z.string().uuid({ message: 'Entrepôt introuvable' }).nullable().optional(),
-  lines: z.array(LineSchema).min(1, { message: 'Ajoutez au moins une ligne' }).max(200),
+  lines: z.array(PurchaseLineSchema).min(1, { message: 'Ajoutez au moins une ligne' }).max(200),
 }).strict();
 
 @ApiTags('Achats')
