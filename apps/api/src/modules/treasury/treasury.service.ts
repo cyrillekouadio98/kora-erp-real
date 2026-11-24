@@ -30,7 +30,7 @@ export type EditInput =
   | { accountId: string; date?: string; amount: number; category: string; label: string; contactId?: string | null; reference?: string | null }
   | { fromAccountId: string; toAccountId: string; amount: number; date?: string; label?: string | null; reference?: string | null };
 
-type ManualInput = { kind: 'expense' | 'income'; accountId: string; date?: string; amount: number; category: string; label: string; contactId?: string | null; reference?: string | null };
+export type ManualInput = { kind: 'expense' | 'income'; accountId: string; date?: string; amount: number; category: string; label: string; contactId?: string | null; reference?: string | null };
 
 @Injectable()
 export class TreasuryService {
@@ -270,7 +270,7 @@ export class TreasuryService {
     return this.db.tenant(t.ctx, (trx) => this.addManualIn(trx, t, input));
   }
 
-  private async addManualIn(trx: TenantTrx, t: TenantInfo, input: ManualInput) {
+  async addManualIn(trx: TenantTrx, t: TenantInfo, input: ManualInput) {
     const allowed = input.kind === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
     if (!allowed.includes(input.category)) throw badRequest('Catégorie inconnue.', undefined, 'unknown_category');
     if (input.contactId) {

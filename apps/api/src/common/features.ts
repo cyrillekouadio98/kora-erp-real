@@ -28,6 +28,11 @@ export const FEATURES: FeatureDef[] = [
     description: "Prix grossiste, demi-gros ou détail par client : prix par article, paliers de quantité et remise générale, proposés automatiquement sur les devis et factures.",
     inUse: async (trx, companyId) => !!(await trx.selectFrom('price_list').select('id').where('company_id', '=', companyId).limit(1).executeTakeFirst()),
   },
+  {
+    key: 'bank_reconciliation', version: '1.2', label: 'Rapprochement bancaire',
+    description: "Import du relevé de la banque ou du mobile money (Excel, CSV ou PDF) et pointage de chaque ligne avec les mouvements de Kora, automatiquement quand le montant et la date concordent.",
+    inUse: async (trx, companyId) => !!(await trx.selectFrom('bank_statement_line').select('id').where('company_id', '=', companyId).limit(1).executeTakeFirst()),
+  },
 ];
 
 export const featureKeys = () => FEATURES.map((f) => f.key);

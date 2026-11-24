@@ -296,6 +296,12 @@ export interface ProductUnitTable {
 export interface PriceListTable { company_id: string; id: Generated<string>; name: string; discount_pct: NumDefault; notes: string | null; archived_at: TsNullable; created_at: Generated<Date>; }
 export interface PriceListItemTable { company_id: string; id: Generated<string>; list_id: string; product_id: string; unit_id: string | null; min_quantity: NumDefault; price: Num; }
 
+/** Ligne de relevé bancaire importée, pointée avec un mouvement de trésorerie (fonctionnalité bank_reconciliation). */
+export interface BankStatementLineTable {
+  company_id: string; id: Generated<string>; account_id: string; date: DateCol; label: string; amount: Num; reference: string | null;
+  movement_id: string | null; ignored_at: TsNullable; matched_by: string | null; matched_at: TsNullable; imported_by: string | null; imported_at: Generated<Date>;
+}
+
 export interface DB {
   user_account: UserAccountTable; platform_role_assignment: PlatformRoleAssignmentTable; user_session: UserSessionTable;
   company: CompanyTable; company_membership: CompanyMembershipTable; role: RoleTable; membership_role: MembershipRoleTable;
@@ -310,5 +316,5 @@ export interface DB {
   ledger_account: LedgerAccountTable; journal: JournalTable; journal_entry: JournalEntryTable; journal_line: JournalLineTable;
   stock_movement: StockMovementTable; warehouse: WarehouseTable; stock_level: StockLevelTable; stock_document: StockDocumentTable; stock_document_line: StockDocumentLineTable;
   employee: EmployeeTable; employee_photo: EmployeePhotoTable; contact_logo: ContactLogoTable; company_logo: CompanyLogoTable; site: SiteTable; appointment: AppointmentTable; appointment_attendee: AppointmentAttendeeTable; evaluation_campaign: EvaluationCampaignTable; evaluation: EvaluationTable; payroll_settings: PayrollSettingsTable; payroll_run: PayrollRunTable; payslip: PayslipTable;
-  email_message: EmailMessageTable; platform_mail_settings: PlatformMailSettingsTable; company_feature: CompanyFeatureTable; stock_lot: StockLotTable; product_unit: ProductUnitTable; price_list: PriceListTable; price_list_item: PriceListItemTable; stock_movement_lot: StockMovementLotTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable; leave_request: LeaveRequestTable;
+  email_message: EmailMessageTable; platform_mail_settings: PlatformMailSettingsTable; company_feature: CompanyFeatureTable; stock_lot: StockLotTable; product_unit: ProductUnitTable; price_list: PriceListTable; price_list_item: PriceListItemTable; bank_statement_line: BankStatementLineTable; stock_movement_lot: StockMovementLotTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable; leave_request: LeaveRequestTable;
 }

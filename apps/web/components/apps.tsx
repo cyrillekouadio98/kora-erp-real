@@ -137,7 +137,7 @@ export const APPS: App[] = [
   ] },
   { key: 'treasury', label: 'Trésorerie', href: '/app/tresorerie', perm: 'cash.read', module: 'cash', pages: [
     { href: '/app/tresorerie', label: "Vue d'ensemble" }, { href: '/app/tresorerie/caisse', label: 'Caisse' },
-    { href: '/app/tresorerie/banque', label: 'Banque', module: 'bank' }, { href: '/app/tresorerie/mobile-money', label: 'Mobile money' },
+    { href: '/app/tresorerie/banque', label: 'Banque', module: 'bank' }, { href: '/app/tresorerie/mobile-money', label: 'Mobile money' }, { href: '/app/tresorerie/rapprochement', label: 'Rapprochement', feature: 'bank_reconciliation' },
   ] },
   { key: 'pos', label: 'Point de vente', href: '/app/pos', perm: 'pos.read', module: 'sales', pages: [
     { href: '/app/pos', label: 'Caisses' }, { href: '/app/pos/sessions', label: 'Sessions' }, { href: '/app/pos/tickets', label: 'Tickets' },
