@@ -158,7 +158,7 @@ export const APPS: App[] = [
   { key: 'evaluations', label: 'Évaluations', href: '/app/evaluations', perm: 'evaluations.read', module: 'hr' },
   { key: 'payroll', label: 'Paie', href: '/app/paie', perm: 'payroll.read', module: 'payroll', pages: [
     { href: '/app/paie', label: "Vue d'ensemble" }, { href: '/app/paie/fiches', label: 'Bulletins' }, { href: '/app/paie/prestations', label: 'Temps et absences' },
-    { href: '/app/paie/contrats', label: 'Contrats' }, { href: '/app/paie/solde', label: 'Départs' }, { href: '/app/paie/analyse', label: 'Masse salariale' },
+    { href: '/app/paie/contrats', label: 'Contrats' }, { href: '/app/paie/solde', label: 'Départs' }, { href: '/app/paie/analyse', label: 'Masse salariale' }, { href: '/app/paie/declarations', label: 'Déclarations', feature: 'social_declarations' },
     { href: '/app/paie/configuration', label: 'Paramètres' },
   ] },
   { key: 'me', label: 'Mon espace', href: '/app/moi', perm: 'employees.self', module: 'hr' },

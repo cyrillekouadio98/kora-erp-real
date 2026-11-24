@@ -38,6 +38,10 @@ export const FEATURES: FeatureDef[] = [
     description: "Registre des biens durables (véhicules, matériel, mobilier, logiciels), plan d'amortissement linéaire, dotations annuelles passées en comptabilité et sortie de l'actif.",
     inUse: async (trx, companyId) => !!(await trx.selectFrom('fixed_asset').select('id').where('company_id', '=', companyId).limit(1).executeTakeFirst()),
   },
+  {
+    key: 'social_declarations', version: '1.3', label: 'Déclarations CNPS, ITS et DISA',
+    description: "États préparatoires des déclarations à partir des bulletins validés : cotisations CNPS par salarié (mensuelles ou trimestrielles), ITS et taxes patronales, DISA annuelle ; impression et export CSV.",
+  },
 ];
 
 export const featureKeys = () => FEATURES.map((f) => f.key);
