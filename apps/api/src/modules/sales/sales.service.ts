@@ -25,7 +25,7 @@ export interface DocInput {
 
 const PREFIX: Record<SalesDocType, string> = { quote: 'DEV', order: 'CMD', invoice: 'FAC', credit_note: 'AV' };
 const LABEL: Record<SalesDocType, string> = { quote: 'Devis', order: 'Bon de commande', invoice: 'Facture', credit_note: 'Avoir' };
-const OPEN_INVOICE: SalesDocStatus[] = ['issued', 'partially_paid'];
+export const OPEN_INVOICE: SalesDocStatus[] = ['issued', 'partially_paid'];
 const QUOTE_VALIDITY_DAYS = 30;
 
 export const today = () => new Date().toISOString().slice(0, 10);

@@ -7,6 +7,7 @@ import { config } from '../../config';
 import { BillingService } from '../billing/billing.service';
 import { CalendarService } from '../calendar/calendar.service';
 import { MailService } from '../mail/mail.service';
+import { DunningService } from '../sales/dunning.service';
 
 /**
  * Tâches de fond déclenchées de l'extérieur, pour un hébergement qui éteint le serveur entre deux requêtes (Vercel) :
@@ -18,7 +19,7 @@ import { MailService } from '../mail/mail.service';
 @Controller('jobs')
 export class JobsController {
   private readonly logger = new Logger('Tâches');
-  constructor(private readonly mail: MailService, private readonly calendar: CalendarService, private readonly billing: BillingService) {}
+  constructor(private readonly mail: MailService, private readonly calendar: CalendarService, private readonly billing: BillingService, private readonly dunning: DunningService) {}
 
   @Public() @HttpCode(200)
   @Post('tick')
@@ -32,6 +33,7 @@ export class JobsController {
     await step('emails', () => this.mail.processQueue());
     await step('reminders', () => this.calendar.sendReminders());
     if (new Date().getUTCMinutes() % 10 === 0) await step('billing', () => this.billing.runCycle());
+    if (new Date().getUTCMinutes() % 15 === 0) await step('dunning', () => this.dunning.runAll());
     return done;
   }
 }

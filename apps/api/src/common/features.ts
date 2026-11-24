@@ -47,6 +47,14 @@ export const FEATURES: FeatureDef[] = [
     description: "Opportunités du prospect au devis gagné, sur un tableau par étapes : montant espéré, commercial responsable, actions (appels, rendez-vous, relances) et prochaine action à faire.",
     inUse: async (trx, companyId) => !!(await trx.selectFrom('opportunity').select('id').where('company_id', '=', companyId).limit(1).executeTakeFirst()),
   },
+  {
+    key: 'auto_reminders', version: '1.3', label: 'Relances automatiques',
+    description: "Les factures en retard sont relancées par e-mail chaque matin selon les étapes choisies (par exemple 3, 15 et 30 jours après l'échéance), sauf promesse de paiement en cours.",
+  },
+  {
+    key: 'restock', version: '1.3', label: 'Réapprovisionnement',
+    description: "Les articles sous leur seuil sont regroupés par fournisseur habituel, avec la quantité conseillée et le dernier prix d'achat : un bon de commande en brouillon par fournisseur, en un clic.",
+  },
 ];
 
 export const featureKeys = () => FEATURES.map((f) => f.key);
