@@ -5,6 +5,7 @@ import { DatabaseService, TenantTrx } from '../../db/database.service';
 import { AuditService } from '../audit/audit.service';
 import { StockService } from '../stock/stock.service';
 import { AccountingService } from './accounting.service';
+import { cumulative } from '../assets/depreciation';
 
 const round = (n: number) => Math.round(n * 100) / 100;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -174,6 +175,14 @@ export class FinancialService {
     if (round(totalDebitCredit) !== 0) blocking.push('La balance n’est pas équilibrée.');
     const sumPrefix = (p: string) => round([...bal.entries()].filter(([c]) => c.startsWith(p)).reduce((s, [, v]) => s + v, 0));
     if (sumPrefix('471')) warnings.push(`Le compte d'attente 471000 n'est pas soldé (${sumPrefix('471').toLocaleString('fr-FR')} FCFA) : régularisez-le avec votre expert-comptable.`);
+    // Immobilisations (fonctionnalité activée ou non : seule la présence de biens compte) : dotations de l'exercice à passer.
+    const assets = await trx.selectFrom('fixed_asset').select(['id', 'cost', 'in_service_date', 'duration_months', 'prior_depreciation']).where('disposed_on', 'is', null).where('in_service_date', '<=', end).execute();
+    if (assets.length) {
+      const deps = await trx.selectFrom('fixed_asset_depreciation').select(['asset_id', 'amount']).execute();
+      const missing = assets.reduce((sum, a) => sum + Math.max(0, cumulative({ cost: Number(a.cost), inServiceDate: a.in_service_date, durationMonths: a.duration_months }, end)
+        - Number(a.prior_depreciation) - deps.filter((d) => d.asset_id === a.id).reduce((x, d) => x + Number(d.amount), 0)), 0);
+      if (missing > 0) warnings.push(`Les dotations aux amortissements ${year} ne sont pas passées (${missing.toLocaleString('fr-FR')} FCFA) : passez-les depuis Comptabilité > Immobilisations.`);
+    }
     if (sumPrefix('585')) warnings.push(`Le compte de virements internes 585000 n'est pas soldé (${sumPrefix('585').toLocaleString('fr-FR')} FCFA) : un virement n'a qu'une de ses deux jambes.`);
     const stockValue = await this.stock.valueAt(trx, end);
     if (round(stockValue - sumPrefix('31')) !== 0) {

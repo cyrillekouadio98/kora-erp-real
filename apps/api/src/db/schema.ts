@@ -171,7 +171,7 @@ export interface CompanyFormationStepTable {
 
 export interface LedgerAccountTable { company_id: string; code: string; name: string; is_system: Generated<boolean>; archived_at: TsNullable; created_at: Generated<Date>; }
 export interface JournalTable { company_id: string; code: string; name: string; }
-export type EntrySource = 'manual' | 'sales_document' | 'purchase_document' | 'treasury_movement' | 'treasury_opening' | 'stock_opening' | 'stock_variation' | 'payroll_run' | 'year_closing' | 'formation' | 'reversal';
+export type EntrySource = 'manual' | 'sales_document' | 'purchase_document' | 'treasury_movement' | 'treasury_opening' | 'stock_opening' | 'stock_variation' | 'payroll_run' | 'year_closing' | 'formation' | 'fixed_asset' | 'reversal';
 export interface JournalEntryTable {
   company_id: string; site_id: string | null; id: Generated<string>; journal_code: string; number: string | null; date: string; label: string; reference: string | null;
   status: Generated<'draft' | 'posted'>; source_type: EntrySource; source_id: string | null; reversal_of: string | null; reversed_by: string | null;
@@ -302,6 +302,14 @@ export interface BankStatementLineTable {
   movement_id: string | null; ignored_at: TsNullable; matched_by: string | null; matched_at: TsNullable; imported_by: string | null; imported_at: Generated<Date>;
 }
 
+/** Immobilisation et ses dotations aux amortissements (fonctionnalité fixed_assets). */
+export interface FixedAssetTable {
+  company_id: string; id: Generated<string>; code: string; name: string; category: string; asset_account: string; depreciation_account: string; expense_account: string;
+  acquisition_date: DateCol; in_service_date: DateCol; cost: Num; duration_months: number; prior_depreciation: NumDefault; posting: 'none' | 'supplier' | 'opening';
+  acquisition_entry_id: string | null; disposed_on: string | null; disposal_entry_id: string | null; notes: string | null; created_by: string | null; created_at: Generated<Date>;
+}
+export interface FixedAssetDepreciationTable { company_id: string; id: Generated<string>; asset_id: string; year: number; amount: Num; entry_id: string; created_at: Generated<Date>; }
+
 export interface DB {
   user_account: UserAccountTable; platform_role_assignment: PlatformRoleAssignmentTable; user_session: UserSessionTable;
   company: CompanyTable; company_membership: CompanyMembershipTable; role: RoleTable; membership_role: MembershipRoleTable;
@@ -316,5 +324,5 @@ export interface DB {
   ledger_account: LedgerAccountTable; journal: JournalTable; journal_entry: JournalEntryTable; journal_line: JournalLineTable;
   stock_movement: StockMovementTable; warehouse: WarehouseTable; stock_level: StockLevelTable; stock_document: StockDocumentTable; stock_document_line: StockDocumentLineTable;
   employee: EmployeeTable; employee_photo: EmployeePhotoTable; contact_logo: ContactLogoTable; company_logo: CompanyLogoTable; site: SiteTable; appointment: AppointmentTable; appointment_attendee: AppointmentAttendeeTable; evaluation_campaign: EvaluationCampaignTable; evaluation: EvaluationTable; payroll_settings: PayrollSettingsTable; payroll_run: PayrollRunTable; payslip: PayslipTable;
-  email_message: EmailMessageTable; platform_mail_settings: PlatformMailSettingsTable; company_feature: CompanyFeatureTable; stock_lot: StockLotTable; product_unit: ProductUnitTable; price_list: PriceListTable; price_list_item: PriceListItemTable; bank_statement_line: BankStatementLineTable; stock_movement_lot: StockMovementLotTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable; leave_request: LeaveRequestTable;
+  email_message: EmailMessageTable; platform_mail_settings: PlatformMailSettingsTable; company_feature: CompanyFeatureTable; stock_lot: StockLotTable; product_unit: ProductUnitTable; price_list: PriceListTable; price_list_item: PriceListItemTable; bank_statement_line: BankStatementLineTable; fixed_asset: FixedAssetTable; fixed_asset_depreciation: FixedAssetDepreciationTable; stock_movement_lot: StockMovementLotTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable; leave_request: LeaveRequestTable;
 }

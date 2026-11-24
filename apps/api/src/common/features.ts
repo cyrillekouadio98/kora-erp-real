@@ -33,6 +33,11 @@ export const FEATURES: FeatureDef[] = [
     description: "Import du relevé de la banque ou du mobile money (Excel, CSV ou PDF) et pointage de chaque ligne avec les mouvements de Kora, automatiquement quand le montant et la date concordent.",
     inUse: async (trx, companyId) => !!(await trx.selectFrom('bank_statement_line').select('id').where('company_id', '=', companyId).limit(1).executeTakeFirst()),
   },
+  {
+    key: 'fixed_assets', version: '1.2', label: 'Immobilisations et amortissements',
+    description: "Registre des biens durables (véhicules, matériel, mobilier, logiciels), plan d'amortissement linéaire, dotations annuelles passées en comptabilité et sortie de l'actif.",
+    inUse: async (trx, companyId) => !!(await trx.selectFrom('fixed_asset').select('id').where('company_id', '=', companyId).limit(1).executeTakeFirst()),
+  },
 ];
 
 export const featureKeys = () => FEATURES.map((f) => f.key);
