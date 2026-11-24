@@ -53,6 +53,11 @@ const ICONS: Record<string, React.ReactNode> = {
     <rect x="14" y="12" width="20" height="3" rx="1.5" fill={W} /><rect x="14" y="19" width="14" height="3" rx="1.5" fill={W} opacity=".8" />
     <circle cx="31" cy="30" r="7" fill={Y} /><text x="31" y="33.5" textAnchor="middle" fontSize="9" fontWeight="700" fill={N}>F</text>
   </>,
+  odoo: <>
+    <rect x="4" y="10" width="18" height="28" rx="3" fill={B} /><rect x="26" y="10" width="18" height="28" rx="3" fill={T} />
+    <path d="M17 24h12m-4-5 5 5-5 5" stroke={Y} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    <rect x="30" y="16" width="10" height="3" rx="1.5" fill={W} /><rect x="30" y="30" width="10" height="3" rx="1.5" fill={W} opacity=".8" />
+  </>,
   leave: <>
     <circle cx="30" cy="16" r="10" fill={Y} />
     <path d="M4 31c6-5 10-5 16 0s10 5 16 0 8-4 8-4v17H4z" fill={B} /><path d="M4 38c6-5 10-5 16 0s10 5 16 0 8-4 8-4v10H4z" fill={T} />
@@ -177,6 +182,7 @@ export const APPS: App[] = [
   { key: 'billing', label: 'Abonnement', href: '/app/abonnement', perm: 'billing.read' },
   { key: 'emails', label: 'E-mails', href: '/app/emails', perm: 'settings.read' },
   { key: 'audit', label: "Journal d'audit", href: '/app/journal', perm: 'audit.read' },
+  { key: 'odoo', label: 'Reprise Odoo', href: '/app/reprise-odoo', perm: 'settings.admin', feature: 'odoo_import' },
   { key: 'support', label: 'Support', href: '/app/support', perm: 'settings.admin' },
   { key: 'security', label: 'Ma sécurité', href: '/app/securite' },
   { key: 'manual', label: 'Manuel', href: '/app/manuel' },
@@ -189,7 +195,7 @@ export const appLabel = (a: { key: string; label: string }, activity?: string) =
 export const APP_HUE: Record<string, number> = {
   dashboard: 262, daily: 32, sales: 22, pos: 340, purchases: 172, treasury: 40, reports: 222, accounting: 206, stock: 318, calendar: 214, products: 2,
   contacts: 296, employees: 212, leave: 192, evaluations: 44, payroll: 152, me: 172, expenses: 168, sites: 22, company: 206, users: 280,
-  roles: 44, billing: 172, emails: 2, audit: 214, support: 2, security: 152, manual: 196,
+  roles: 44, billing: 172, odoo: 280, emails: 2, audit: 214, support: 2, security: 152, manual: 196,
 };
 
 /** Variables CSS d'un module : teinte, et saturation / luminosité adaptées pour que le texte blanc reste lisible sur l'accent

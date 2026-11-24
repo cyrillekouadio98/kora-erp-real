@@ -40,6 +40,8 @@ const OpeningStockSchema = z.object({
   warehouseId: z.string().uuid({ message: 'Entrepôt inconnu' }).nullable().optional(),
   counterpart: z.enum(OPENING_COUNTERPARTS, { message: 'Compte de contrepartie non proposé' }).optional(),
   lotNumber: z.string().trim().max(60).transform((v) => v || null).nullable().optional(), expiryDate: isoDate.nullable().optional(),
+  /** Date du stock initial (reprise d'un autre logiciel) ; aujourd'hui par défaut. */
+  date: isoDate.optional(),
 }).strict();
 
 const COLUMNS = { kind: 'kind', name: 'name', description: 'description', unit: 'unit', salePrice: 'sale_price', purchasePrice: 'purchase_price', vatRate: 'vat_rate', barcode: 'barcode', siteId: 'site_id' } as const;

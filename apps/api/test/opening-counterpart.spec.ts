@@ -33,6 +33,14 @@ describe("Soldes d'ouverture : contrepartie choisie et reclassement du compte d'
     const c = await owner.agent.post('/company/products').send({ name: 'Article dû', kind: 'good', salePrice: 1000, vatRate: 18, openingStock: { quantity: 2, unitCost: 10_000, counterpart: '401000' } });
     expect(c.status).toBe(201);
     expect(await solde('401000')).toBe(-20_000);
+    // Reprise d'un autre logiciel : le stock initial prend la date de reprise donnée.
+    const first = new Date(); first.setDate(1);
+    const day = first.toISOString().slice(0, 10);
+    const e = await owner.agent.post('/company/products').send({ name: 'Article repris', kind: 'good', salePrice: 1000, vatRate: 18, openingStock: { quantity: 3, unitCost: 1000, counterpart: '162000', date: day } });
+    expect(e.status).toBe(201);
+    const entries = (await owner.agent.get('/company/accounting/entries?journal=AN&q=Article repris')).body;
+    const list = Array.isArray(entries) ? entries : entries.items;
+    expect(list.find((x: any) => String(x.label).includes('Article repris')).date).toBe(day);
   });
 
   it("garde la contrepartie du compte de trésorerie, 121000 par défaut", async () => {
@@ -42,7 +50,7 @@ describe("Soldes d'ouverture : contrepartie choisie et reclassement du compte d'
     expect((await list()).openingCounterpart).toBe('471000');
     const bank = await owner.agent.post('/company/treasury/accounts').send({ kind: 'bank', name: 'Banque prêt', openingBalance: 1_000_000, openingCounterpart: '162000' });
     expect(bank.status).toBe(201);
-    expect(await solde('162000')).toBe(-1_000_000);
+    expect(await solde('162000')).toBe(-1_003_000);
   });
 
   it("reclasse le compte d'attente, en une ou plusieurs fois", async () => {

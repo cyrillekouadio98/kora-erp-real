@@ -60,6 +60,10 @@ export const FEATURES: FeatureDef[] = [
     description: "Chaque utilisateur déclare ses dépenses avancées avec la photo du justificatif ; un responsable les valide ou les refuse, puis les rembourse depuis la caisse, la banque ou le mobile money.",
     inUse: async (trx, companyId) => !!(await trx.selectFrom('expense_claim').select('id').where('company_id', '=', companyId).limit(1).executeTakeFirst()),
   },
+  {
+    key: 'odoo_import', version: '1.3', label: 'Reprise depuis Odoo',
+    description: "Assistant de reprise des exports Excel d'Odoo, dans l'ordre : contacts, articles avec leur stock, factures non soldées, soldes des comptes ; contrôle final par le compte d'attente 471000.",
+  },
 ];
 
 export const featureKeys = () => FEATURES.map((f) => f.key);
