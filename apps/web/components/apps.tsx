@@ -53,6 +53,10 @@ const ICONS: Record<string, React.ReactNode> = {
     <rect x="14" y="12" width="20" height="3" rx="1.5" fill={W} /><rect x="14" y="19" width="14" height="3" rx="1.5" fill={W} opacity=".8" />
     <circle cx="31" cy="30" r="7" fill={Y} /><text x="31" y="33.5" textAnchor="middle" fontSize="9" fontWeight="700" fill={N}>F</text>
   </>,
+  crm: <>
+    <path d="M6 8h36l-12 15v13l-12 6V23z" fill={B} /><path d="M12 12h24l-6 8H18z" fill={T} opacity=".9" />
+    <circle cx="36" cy="36" r="8" fill={Y} /><path d="M32.5 36l2.5 2.5 4.5-5" stroke={N} strokeWidth="2.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+  </>,
   odoo: <>
     <rect x="4" y="10" width="18" height="28" rx="3" fill={B} /><rect x="26" y="10" width="18" height="28" rx="3" fill={T} />
     <path d="M17 24h12m-4-5 5 5-5 5" stroke={Y} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
@@ -139,7 +143,10 @@ export const APPS: App[] = [
   { key: 'dashboard', label: 'Tableau de bord', href: '/app/tableau-de-bord' },
   { key: 'sales', label: 'Ventes', href: '/app/ventes/factures', perm: 'sales.read', base: '/app/ventes', pages: [
     { href: '/app/ventes/devis', label: 'Devis' }, { href: '/app/ventes/commandes', label: 'Bons de commande' }, { href: '/app/ventes/factures', label: 'Factures' },
-    { href: '/app/ventes/avoirs', label: 'Avoirs' }, { href: '/app/ventes/relances', label: 'Relances clients' }, { href: '/app/ventes/relances-auto', label: 'Relances automatiques', feature: 'auto_reminders' }, { href: '/app/ventes/suivi', label: 'Suivi commercial', feature: 'crm' }, { href: '/app/ventes/listes-prix', label: 'Listes de prix', feature: 'price_lists' },
+    { href: '/app/ventes/avoirs', label: 'Avoirs' }, { href: '/app/ventes/relances', label: 'Relances clients' }, { href: '/app/ventes/relances-auto', label: 'Relances automatiques', feature: 'auto_reminders' }, { href: '/app/ventes/listes-prix', label: 'Listes de prix', feature: 'price_lists' },
+  ] },
+  { key: 'crm', label: 'CRM', href: '/app/crm', perm: 'sales.read', feature: 'crm', base: '/app/crm', pages: [
+    { href: '/app/crm', label: 'Opportunités' }, { href: '/app/crm/actions', label: 'Actions à faire' }, { href: '/app/crm/analyse', label: 'Analyse' },
   ] },
   { key: 'purchases', label: 'Achats', href: '/app/achats/factures', perm: 'purchases.read', module: 'purchases', base: '/app/achats', pages: [
     { href: '/app/achats/commandes', label: 'Bons de commande' }, { href: '/app/achats/factures', label: 'Factures fournisseurs' },
@@ -193,7 +200,7 @@ export const appLabel = (a: { key: string; label: string }, activity?: string) =
 
 /** Teinte (degrés HSL) de chaque application, reprise de la couleur dominante de son icône : elle colore l'intérieur du module. */
 export const APP_HUE: Record<string, number> = {
-  dashboard: 262, daily: 32, sales: 22, pos: 340, purchases: 172, treasury: 40, reports: 222, accounting: 206, stock: 318, calendar: 214, products: 2,
+  dashboard: 262, daily: 32, sales: 22, crm: 330, pos: 340, purchases: 172, treasury: 40, reports: 222, accounting: 206, stock: 318, calendar: 214, products: 2,
   contacts: 296, employees: 212, leave: 192, evaluations: 44, payroll: 152, me: 172, expenses: 168, sites: 22, company: 206, users: 280,
   roles: 44, billing: 172, odoo: 280, emails: 2, audit: 214, support: 2, security: 152, manual: 196,
 };

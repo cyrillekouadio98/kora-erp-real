@@ -4,7 +4,7 @@ import { createApp, platformUser, resetDb, signup, TIERS } from './helpers';
 const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
 
 /** Suivi commercial : opportunités, étapes, actions et devis lié (fonctionnalité activée à la demande). */
-describe('Suivi commercial', () => {
+describe('CRM', () => {
   let app: INestApplication;
   let owner: Awaited<ReturnType<typeof signup>>;
   let sales: Awaited<ReturnType<typeof platformUser>>;
@@ -64,6 +64,27 @@ describe('Suivi commercial', () => {
     expect((await owner.agent.patch(`/company/opportunities/${prospect}`).send({ stage: 'lost' })).body.error.code).toBe('lost_reason_required');
     expect((await owner.agent.patch(`/company/opportunities/${prospect}`).send({ stage: 'lost', lostReason: 'Prix trop élevé' })).body).toEqual({ ok: true });
     expect((await list()).summary).toMatchObject({ open: 0, lostThisMonth: 1 });
+  });
+
+  it('liste les actions à faire de tous les commerciaux, ou les miennes', async () => {
+    const third = (await owner.agent.post('/company/opportunities').send({ title: 'Contrat cantine', prospectName: 'École Les Lauriers', prospectPhone: '+225 05 00 11 22 33', source: 'Salon', amount: 500_000 })).body.id;
+    await owner.agent.post(`/company/opportunities/${third}/activities`).send({ kind: 'meeting', note: 'Visite de la cantine', dueDate: day(2) });
+    await owner.agent.post(`/company/opportunities/${third}/activities`).send({ kind: 'call', note: 'Appel fait' });
+    const all = (await owner.agent.get('/company/opportunities/activities')).body;
+    expect(all).toHaveLength(1);
+    expect(all[0]).toMatchObject({ note: 'Visite de la cantine', customer: 'École Les Lauriers', phone: '+225 05 00 11 22 33', code: 'OPP-00003' });
+    expect((await owner.agent.get('/company/opportunities/activities?mine=true')).body).toHaveLength(1);
+  });
+
+  it("analyse les affaires gagnées et perdues de la période", async () => {
+    const s = (await owner.agent.get('/company/opportunities/stats')).body;
+    expect(s).toMatchObject({ created: 3, won: { count: 1, amount: 2_000_000 }, lost: { count: 1, amount: 800_000 }, rate: 50, averageWon: 2_000_000, cycleDays: 0 });
+    expect(s.months).toHaveLength(12);
+    expect(s.months[11]).toMatchObject({ won: 1, wonAmount: 2_000_000, lost: 1 });
+    expect(s.lostReasons).toEqual([{ reason: 'Prix trop élevé', count: 1 }]);
+    expect(s.bySource.map((x: any) => x.name).sort()).toEqual(['Non précisée', 'Salon']);
+    expect(s.byOwner[0]).toMatchObject({ won: 1, lost: 1, rate: 50 });
+    expect((await owner.agent.get('/company/opportunities/stats?from=2020-01-01&to=2020-03-31')).body).toMatchObject({ won: { count: 0 }, rate: null, months: [{ month: '2020-01' }, { month: '2020-02' }, { month: '2020-03' }] });
   });
 
   it('ne se désactive plus une fois utilisée', async () => {

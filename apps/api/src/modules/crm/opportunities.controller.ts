@@ -34,7 +34,7 @@ const Fields = z.object({
 });
 
 /** Suivi commercial : opportunités par étape, actions et prochaine action, devis lié. */
-@ApiTags('Suivi commercial')
+@ApiTags('CRM')
 @Controller('company/opportunities')
 export class OpportunitiesController {
   constructor(private readonly db: DatabaseService, private readonly audit: AuditService) {}
@@ -99,6 +99,73 @@ export class OpportunitiesController {
           overdue: open.filter((o) => o.overdue).length,
           wonThisMonth: { count: closedThisMonth('won').length, amount: closedThisMonth('won').reduce((s, o) => s + o.amount, 0) }, lostThisMonth: closedThisMonth('lost').length,
         },
+      };
+    });
+  }
+
+  /** Actions à faire (relances datées non faites) de toutes les opportunités : en retard, aujourd'hui, à venir. */
+  @Permission('sales.read') @RequireFeature(FEATURE) @AllowWhenReadOnly()
+  @Get('activities')
+  activities(@Tenant() t: TenantInfo, @Query() query: unknown) {
+    const f = parse(z.object({ ownerId: z.string().optional(), mine: z.enum(['true', 'false']).optional() }), query);
+    return this.db.tenant(t.ctx, async (trx) => {
+      let q = trx.selectFrom('opportunity_activity as a')
+        .innerJoin('opportunity as o', (j) => j.onRef('o.id', '=', 'a.opportunity_id').onRef('o.company_id', '=', 'a.company_id'))
+        .leftJoin('contact as c', (j) => j.onRef('c.id', '=', 'o.contact_id').onRef('c.company_id', '=', 'o.company_id'))
+        .leftJoin('user_account as u', 'u.id', 'o.owner_id')
+        .select(['a.id', 'a.kind', 'a.note', 'a.due_date as dueDate', 'o.id as opportunityId', 'o.code', 'o.title', 'o.stage', 'o.amount', 'o.owner_id as ownerId', 'u.full_name as owner',
+          (eb) => eb.fn.coalesce('c.name', 'o.prospect_name').as('customer'), 'o.prospect_phone as prospectPhone', 'c.phone as contactPhone'])
+        .where('a.done_at', 'is', null).where('a.due_date', 'is not', null).where('o.closed_at', 'is', null);
+      if (f.mine === 'true') q = q.where('o.owner_id', '=', t.ctx.userId);
+      else if (f.ownerId && isUuid(f.ownerId)) q = q.where('o.owner_id', '=', f.ownerId);
+      const rows = await q.orderBy('a.due_date').limit(500).execute();
+      return rows.map((r) => ({ ...r, amount: Number(r.amount), phone: r.contactPhone ?? r.prospectPhone ?? null, contactPhone: undefined, prospectPhone: undefined }));
+    });
+  }
+
+  /**
+   * Analyse commerciale sur une période (12 derniers mois par défaut) : affaires gagnées et perdues par mois,
+   * taux de réussite, durée moyenne d'une affaire, motifs de perte, résultats par commercial et par origine.
+   */
+  @Permission('sales.read') @RequireFeature(FEATURE) @AllowWhenReadOnly()
+  @Get('stats')
+  stats(@Tenant() t: TenantInfo, @Query() query: unknown) {
+    const f = parse(z.object({ from: isoDate.optional(), to: isoDate.optional() }), query);
+    const to = f.to ?? new Date().toISOString().slice(0, 10);
+    const from = f.from ?? (() => { const d = new Date(`${to}T00:00:00Z`); d.setUTCMonth(d.getUTCMonth() - 11, 1); return d.toISOString().slice(0, 10); })();
+    return this.db.tenant(t.ctx, async (trx) => {
+      const closed = await trx.selectFrom('opportunity as o').leftJoin('user_account as u', 'u.id', 'o.owner_id')
+        .select(['o.stage', 'o.amount', 'o.source', 'o.lost_reason', 'o.created_at', 'o.closed_at', 'o.owner_id', 'u.full_name as owner'])
+        .where('o.stage', 'in', ['won', 'lost']).where('o.closed_at', '>=', new Date(`${from}T00:00:00Z`)).where('o.closed_at', '<', new Date(new Date(`${to}T00:00:00Z`).getTime() + 86_400_000))
+        .execute();
+      const created = await trx.selectFrom('opportunity').select((eb) => eb.fn.countAll<string>().as('n'))
+        .where('created_at', '>=', new Date(`${from}T00:00:00Z`)).where('created_at', '<', new Date(new Date(`${to}T00:00:00Z`).getTime() + 86_400_000)).executeTakeFirst();
+      const won = closed.filter((o) => o.stage === 'won'), lost = closed.filter((o) => o.stage === 'lost');
+      const sum = (l: typeof closed) => l.reduce((s, o) => s + Number(o.amount), 0);
+      const rate = (w: number, l: number) => (w + l ? Math.round((w / (w + l)) * 100) : null);
+      const months: { month: string; won: number; wonAmount: number; lost: number }[] = [];
+      for (let d = new Date(`${from.slice(0, 7)}-01T00:00:00Z`); d.toISOString().slice(0, 7) <= to.slice(0, 7); d.setUTCMonth(d.getUTCMonth() + 1)) {
+        const m = d.toISOString().slice(0, 7);
+        const inMonth = closed.filter((o) => new Date(o.closed_at!).toISOString().slice(0, 7) === m);
+        months.push({ month: m, won: inMonth.filter((o) => o.stage === 'won').length, wonAmount: sum(inMonth.filter((o) => o.stage === 'won')), lost: inMonth.filter((o) => o.stage === 'lost').length });
+      }
+      const groupBy = (key: (o: (typeof closed)[number]) => string) => {
+        const by = new Map<string, typeof closed>();
+        for (const o of closed) by.set(key(o), [...(by.get(key(o)) ?? []), o]);
+        return [...by.entries()].map(([name, l]) => {
+          const w = l.filter((o) => o.stage === 'won'), x = l.length - w.length;
+          return { name, won: w.length, lost: x, wonAmount: sum(w), rate: rate(w.length, x) };
+        }).sort((a, b) => b.wonAmount - a.wonAmount || b.won - a.won);
+      };
+      const reasons = new Map<string, number>();
+      for (const o of lost) { const r = (o.lost_reason ?? 'Non précisé').trim(); reasons.set(r, (reasons.get(r) ?? 0) + 1); }
+      const cycle = won.length ? Math.round(won.reduce((s, o) => s + (new Date(o.closed_at!).getTime() - new Date(o.created_at).getTime()) / 86_400_000, 0) / won.length) : null;
+      return {
+        from, to, created: Number(created?.n ?? 0),
+        won: { count: won.length, amount: sum(won) }, lost: { count: lost.length, amount: sum(lost) },
+        rate: rate(won.length, lost.length), averageWon: won.length ? Math.round(sum(won) / won.length) : null, cycleDays: cycle,
+        months, byOwner: groupBy((o) => o.owner ?? 'Sans commercial'), bySource: groupBy((o) => o.source?.trim() || 'Non précisée'),
+        lostReasons: [...reasons.entries()].map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count),
       };
     });
   }
