@@ -1,5 +1,6 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Tariff, tariffPrice } from '@/lib/pricing';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { DOC_LABEL, money, PURCHASE_LABEL, VAT_RATES } from '@/lib/format';
@@ -74,19 +75,49 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
   }, [cfg.excludeKind, movesStock]);
   const showWarehouse = warehouses.length > 1;
 
+  // Listes de prix (fonctionnalité activée, ventes) : prix du client selon l'article, l'unité et la quantité.
+  const [tariff, setTariff] = useState<Tariff | null>(null);
+  const tariffReady = useRef(false);
+  const catalogueOf = (p: any, unitId: string) => {
+    const u = unitId ? p.units?.find((x: any) => x.id === unitId) : null;
+    return u ? (scope === 'purchases' ? u.purchasePrice : u.salePrice) ?? Math.round(cfg.price(p) * u.factor) : cfg.price(p);
+  };
+  const autoPrice = (p: any, unitId: string, quantity: number, tr: Tariff | null = tariff) =>
+    scope === 'sales' ? tariffPrice(tr, p.id, unitId || null, quantity || 1, catalogueOf(p, unitId)) : catalogueOf(p, unitId);
+  useEffect(() => {
+    if (scope !== 'sales' || !has('price_lists')) return;
+    const load = contactId ? api<any>(`/company/price-lists/for-contact/${contactId}`).then((r) => r.tariff as Tariff | null, () => null) : Promise.resolve(null);
+    load.then((next) => {
+      const prev = tariff;
+      setTariff(next);
+      // Client changé : les lignes encore au prix automatique prennent les prix du nouveau client (pas à l'ouverture d'un brouillon).
+      if (tariffReady.current) {
+        setLines((ls) => ls.map((l) => {
+          const p = products.find((x) => x.id === l.productId);
+          return p && Number(l.unitPrice) === autoPrice(p, l.unitId, Number(l.quantity), prev) ? { ...l, unitPrice: autoPrice(p, l.unitId, Number(l.quantity), next) } : l;
+        }));
+      }
+      tariffReady.current = true;
+    });
+  }, [contactId]); // eslint-disable-line
   const editLines = (next: Line[]) => { setDirty(true); setLines(next); };
   const setLine = (i: number, patch: Partial<Line>) => editLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const pickProduct = (i: number, id: string) => {
     const p = products.find((x) => x.id === id);
-    setLine(i, p ? { productId: p.id, description: p.name, unit: p.unit, unitPrice: cfg.price(p), vatRate: p.vatRate, unitId: '' } : { productId: null, unitId: '' });
+    setLine(i, p ? { productId: p.id, description: p.name, unit: p.unit, unitPrice: autoPrice(p, '', Number(lines[i].quantity)), vatRate: p.vatRate, unitId: '' } : { productId: null, unitId: '' });
   };
   // Unités de mesure : vendre ou acheter dans une autre unité de l'article (prix de l'unité, sinon prix × coefficient).
   const pickUnit = (i: number, unitId: string) => {
     const p = products.find((x) => x.id === lines[i].productId);
     if (!p) return;
     const u = p.units?.find((x: any) => x.id === unitId);
-    const own = u ? (scope === 'purchases' ? u.purchasePrice : u.salePrice) : null;
-    setLine(i, { unitId: u ? u.id : '', unit: u ? u.name : p.unit, unitPrice: u ? own ?? Math.round(cfg.price(p) * u.factor) : cfg.price(p) });
+    setLine(i, { unitId: u ? u.id : '', unit: u ? u.name : p.unit, unitPrice: autoPrice(p, u ? u.id : '', Number(lines[i].quantity)) });
+  };
+  // Quantité changée : une ligne restée au prix automatique suit le palier de la liste de prix.
+  const setQuantity = (i: number, quantity: string) => {
+    const l = lines[i]; const p = products.find((x) => x.id === l.productId);
+    const keep = p && Number(l.unitPrice) === autoPrice(p, l.unitId, Number(l.quantity));
+    setLine(i, { quantity, ...(keep ? { unitPrice: autoPrice(p, l.unitId, Number(quantity)) } : {}) });
   };
   const totals = lines.map(lineTotals);
   const ht = totals.reduce((s, t) => s + t.ht, 0);
@@ -125,6 +156,7 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
             {contacts.map((c) => <option key={c.id} value={c.id}>{c.code} · {c.name}</option>)}
           </select>
           {!contacts.length && <span className="small muted" style={{ fontWeight: 400 }}>Aucun {cfg.party} : <Link href="/app/contacts">créez-en un d'abord</Link>.</span>}
+          {tariff && <span className="small muted" style={{ fontWeight: 400 }}>Liste de prix : <b>{tariff.name}</b>{tariff.discountPct ? ` (remise générale ${tariff.discountPct} %)` : ''}</span>}
         </label>
         {isSalesOrder && <Field label="Référence de commande du client (facultatif)" value={customerRef} onChange={(e) => setCustomerRef(e.target.value)} placeholder="Ex. son n° de bon de commande" />}
         {isPurchaseInvoice && <Field label="N° de la facture du fournisseur (obligatoire pour valider)" value={supplierRef} onChange={(e) => setSupplierRef(e.target.value)} placeholder="Ex. FV-2026/118" />}
@@ -152,7 +184,7 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
                 <input className="input" type="date" value={l.expiryDate} onChange={(e) => setLine(i, { expiryDate: e.target.value })} aria-label={`Date limite ligne ${i + 1}`} title="Date limite (péremption)" style={{ width: 150 }} />
               </div>}</td>
               <td><input className="input" required value={l.description} onChange={(e) => setLine(i, { description: e.target.value })} aria-label={`Désignation ligne ${i + 1}`} /></td>
-              <td><input className="input n" type="number" min="0.001" step="any" required value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} aria-label={`Quantité ligne ${i + 1}`} style={{ width: 80 }} />
+              <td><input className="input n" type="number" min="0.001" step="any" required value={l.quantity} onChange={(e) => setQuantity(i, e.target.value)} aria-label={`Quantité ligne ${i + 1}`} style={{ width: 80 }} />
                 {has('units') && (() => { const p = products.find((x) => x.id === l.productId); return p?.units?.length ? (
                   <select className="input" value={l.unitId} onChange={(e) => pickUnit(i, e.target.value)} aria-label={`Unité ligne ${i + 1}`} title="Unité de la ligne" style={{ width: 96, marginTop: 6 }}>
                     <option value="">{p.unit || 'unité'}</option>{p.units.map((u: any) => <option key={u.id} value={u.id}>{u.name} ×{u.factor.toLocaleString('fr-FR')}</option>)}

@@ -10,6 +10,7 @@ import { DatabaseService, setTenantContext, TenantTrx } from '../../db/database.
 import type { PaymentMethod, ReminderChannel, SalesDocStatus, SalesDocType } from '../../db/schema';
 import { AuditService } from '../audit/audit.service';
 import { resolveLineUnits } from './units';
+import { customerTariff, PRICE_LISTS, tariffPrice } from './price-lists';
 import { AccountingService } from '../accounting/accounting.service';
 import { logoDataUrl } from '../companies/company-logo';
 import { MailService } from '../mail/mail.service';
@@ -86,7 +87,7 @@ export class SalesService {
     return c;
   }
 
-  private async writeLines(trx: TenantTrx, t: TenantInfo, documentId: string, lines: LineInput[]) {
+  private async writeLines(trx: TenantTrx, t: TenantInfo, documentId: string, lines: LineInput[], contactId?: string | null) {
     const productIds = [...new Set(lines.map((l) => l.productId).filter((x): x is string => !!x))];
     const prices = new Map<string, string>();
     if (productIds.length) {
@@ -96,14 +97,23 @@ export class SalesService {
       for (const p of found) prices.set(p.id, p.sale_price);
     }
     const units = await resolveLineUnits(trx, t, lines);
+    // Liste de prix du client (fonctionnalité activée) : prix de référence de la ligne pour l'affichage des remises.
+    const tariff = t.features.has(PRICE_LISTS) ? await customerTariff(trx, contactId) : null;
     const totals = computeTotals(lines);
     await trx.deleteFrom('sales_document_line').where('document_id', '=', documentId).execute();
     await trx.insertInto('sales_document_line').values(lines.map((l, i) => ({
       company_id: t.companyId, document_id: documentId, position: i + 1, product_id: l.productId ?? null, description: l.description,
       quantity: l.quantity, unit: (l.unitId && units.get(l.unitId)?.name) || (l.unit ?? null), unit_price: l.unitPrice, discount_pct: l.discountPct ?? 0, discount_amount: l.discountAmount ?? 0, vat_rate: l.vatRate,
       unit_factor: l.unitId ? units.get(l.unitId)!.factor : 1,
-      // Prix catalogue de l'unité vendue : son prix propre, sinon celui de l'article × coefficient.
-      list_price: !l.productId ? null : l.unitId ? units.get(l.unitId)!.salePrice ?? (prices.has(l.productId) ? Math.round(Number(prices.get(l.productId)) * units.get(l.unitId)!.factor) : null) : prices.get(l.productId) ?? null,
+      // Prix de référence : catalogue de l'unité vendue (son prix propre, sinon article × coefficient),
+      // ramené au prix de la liste du client quand il en a une.
+      list_price: (() => {
+        if (!l.productId) return null;
+        const u = l.unitId ? units.get(l.unitId)! : null;
+        const base = prices.has(l.productId) ? Number(prices.get(l.productId)) : null;
+        const catalogue = u ? u.salePrice ?? (base === null ? null : Math.round(base * u.factor)) : base;
+        return catalogue === null ? null : tariffPrice(tariff, l.productId, l.unitId ?? null, l.quantity, catalogue);
+      })(),
       total_ht: totals.lines[i].ht, total_vat: totals.lines[i].vat,
     }))).execute();
     return totals;
@@ -214,7 +224,7 @@ export class SalesService {
         ...(type === 'order' ? { delivery_date: input.deliveryDate ?? null, customer_ref: input.customerRef ?? null } : {}),
         ...(await this.placement(trx, t, input.warehouseId)),
       }).returning('id').executeTakeFirstOrThrow();
-      const totals = await this.writeLines(trx, t, d.id, input.lines);
+      const totals = await this.writeLines(trx, t, d.id, input.lines, input.contactId);
       await trx.updateTable('sales_document').set({ total_ht: totals.ht, total_vat: totals.vat, total_ttc: totals.ttc }).where('id', '=', d.id).execute();
       await this.audit.tenant(trx, t.ctx, { action: `${type}.created`, entityType: 'sales_document', entityId: d.id, data: { totalTtc: totals.ttc } });
       return d.id;
@@ -243,7 +253,7 @@ export class SalesService {
         patch.warehouse_id = w?.id ?? null;
       }
       if (input.lines) {
-        const totals = await this.writeLines(trx, t, id, input.lines);
+        const totals = await this.writeLines(trx, t, id, input.lines, (patch.contact_id as string | undefined) ?? d.contact_id);
         Object.assign(patch, { total_ht: totals.ht, total_vat: totals.vat, total_ttc: totals.ttc });
       }
       if (Object.keys(patch).length) await trx.updateTable('sales_document').set(patch).where('id', '=', id).execute();

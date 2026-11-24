@@ -23,6 +23,11 @@ export const FEATURES: FeatureDef[] = [
     description: "Acheter et vendre un article dans plusieurs unités (sac, carton, kg…), avec conversion automatique vers l'unité de stock et un prix par unité.",
     inUse: async (trx, companyId) => !!(await trx.selectFrom('product_unit').select('id').where('company_id', '=', companyId).limit(1).executeTakeFirst()),
   },
+  {
+    key: 'price_lists', version: '1.2', label: 'Listes de prix',
+    description: "Prix grossiste, demi-gros ou détail par client : prix par article, paliers de quantité et remise générale, proposés automatiquement sur les devis et factures.",
+    inUse: async (trx, companyId) => !!(await trx.selectFrom('price_list').select('id').where('company_id', '=', companyId).limit(1).executeTakeFirst()),
+  },
 ];
 
 export const featureKeys = () => FEATURES.map((f) => f.key);

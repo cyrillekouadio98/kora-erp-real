@@ -4,7 +4,8 @@ import type { Response } from 'express';
 import { sql } from 'kysely';
 import { z } from 'zod';
 import { AllowWhenReadOnly, Permission, Tenant } from '../../common/decorators';
-import { badRequest, conflict, notFound } from '../../common/errors';
+import { badRequest, conflict, forbidden, notFound } from '../../common/errors';
+import { PRICE_LISTS } from '../sales/price-lists';
 import { isUuid } from '../../common/ids';
 import { assertSiteAccess, siteScope } from '../../common/sites';
 import { parseImage } from '../../common/images';
@@ -26,11 +27,13 @@ const ContactSchema = z.object({
   paymentTermsDays: z.coerce.number().int().min(0).max(365).optional(),
   /** Site du contact (null = tous les sites). */
   siteId: z.string().uuid({ message: 'Site inconnu' }).nullable().optional(),
+  /** Liste de prix du client (fonctionnalité « Listes de prix ») ; null : prix des articles. */
+  priceListId: z.string().uuid({ message: 'Liste de prix inconnue' }).nullable().optional(),
 }).strict();
 
 const COLUMNS = {
   kind: 'kind', legalType: 'legal_type', name: 'name', taxId: 'tax_id', rccm: 'rccm', email: 'email', phone: 'phone',
-  address: 'address', city: 'city', notes: 'notes', countryCode: 'country_code', paymentTermsDays: 'payment_terms_days', siteId: 'site_id',
+  address: 'address', city: 'city', notes: 'notes', countryCode: 'country_code', paymentTermsDays: 'payment_terms_days', siteId: 'site_id', priceListId: 'price_list_id',
 } as const;
 
 /** Préfixe de numérotation automatique selon le type de tiers. */
@@ -38,7 +41,7 @@ const PREFIX = { customer: 'CLI', supplier: 'FRS', both: 'TIE' } as const;
 
 const SELECT = [
   'id', 'code', 'kind', 'legal_type as legalType', 'name', 'tax_id as taxId', 'rccm', 'email', 'phone', 'address', 'city',
-  'country_code as countryCode', 'payment_terms_days as paymentTermsDays', 'notes', 'site_id as siteId', 'archived_at as archivedAt', 'created_at as createdAt', 'updated_at as updatedAt',
+  'country_code as countryCode', 'payment_terms_days as paymentTermsDays', 'notes', 'site_id as siteId', 'price_list_id as priceListId', 'archived_at as archivedAt', 'created_at as createdAt', 'updated_at as updatedAt',
 ] as const;
 
 const ListQuery = z.object({
@@ -214,6 +217,14 @@ export class ContactsController {
     });
   }
 
+  /** Liste de prix d'un client : seulement si la fonctionnalité est activée, et liste active. */
+  private async assertPriceList(trx: TenantTrx, t: TenantInfo, id: string | null | undefined) {
+    if (!id) return;
+    if (!t.features.has(PRICE_LISTS)) throw forbidden("Les listes de prix ne sont pas activées pour votre entreprise.", 'feature_not_enabled');
+    const l = await trx.selectFrom('price_list').select(['id', 'archived_at']).where('id', '=', id).executeTakeFirst();
+    if (!l || l.archived_at) throw badRequest('Liste de prix inconnue ou archivée.', undefined, 'unknown_price_list');
+  }
+
   @Permission('contacts.create')
   @Post()
   create(@Tenant() t: TenantInfo, @Body() body: unknown) {
@@ -226,6 +237,7 @@ export class ContactsController {
         input.siteId = sites > 1 ? t.siteId : null;
       }
       await this.assertSite(trx, t, input.siteId);
+      await this.assertPriceList(trx, t, input.priceListId);
       const code = await this.nextCode(trx, t, input.kind, input.siteId);
       const created = await trx.insertInto('contact').values({
         ...toColumns(input), code, company_id: t.companyId, created_by: t.ctx.userId,
@@ -246,8 +258,9 @@ export class ContactsController {
       if (before.archived_at) throw conflict('Ce contact est archivé : restaurez-le avant de le modifier.', 'contact_archived');
       const patch = toColumns(input);
       // Simple affectation à un site : pas d'exigence de fiche complète (anciens contacts incomplets).
-      if (Object.keys(input).some((k) => k !== 'siteId')) assertComplete({ ...before, ...patch });
+      if (Object.keys(input).some((k) => k !== 'siteId' && k !== 'priceListId')) assertComplete({ ...before, ...patch });
       if (input.siteId !== undefined) await this.assertSite(trx, t, input.siteId);
+      await this.assertPriceList(trx, t, input.priceListId);
       // Nouveau type de tiers : nouveau code avec le bon préfixe (les pièces déjà émises gardent l'ancien).
       if (input.kind && input.kind !== before.kind) patch.code = await this.nextCode(trx, t, input.kind, input.siteId !== undefined ? input.siteId : before.site_id);
       if (!Object.keys(patch).length) return trx.selectFrom('contact').select(SELECT).where('id', '=', id).executeTakeFirstOrThrow();

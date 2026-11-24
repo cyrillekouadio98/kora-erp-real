@@ -95,6 +95,7 @@ export interface ContactTable {
   name: string; tax_id: string | null; rccm: string | null; email: string | null; phone: string | null; address: string | null; city: string | null;
   country_code: Generated<string>; payment_terms_days: Generated<number>; notes: string | null; archived_at: TsNullable;
   site_id: ColumnType<string | null, string | null | undefined, string | null>; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
+  price_list_id?: string | null;
 }
 
 type DateCol = ColumnType<string, string | undefined, string>;
@@ -291,6 +292,10 @@ export interface ProductUnitTable {
   company_id: string; id: Generated<string>; product_id: string; name: string; factor: Num; sale_price: NumNullable; purchase_price: NumNullable; archived_at: TsNullable; created_at: Generated<Date>;
 }
 
+/** Liste de prix (grossiste, demi-gros…) et ses prix par article et palier (fonctionnalité price_lists). */
+export interface PriceListTable { company_id: string; id: Generated<string>; name: string; discount_pct: NumDefault; notes: string | null; archived_at: TsNullable; created_at: Generated<Date>; }
+export interface PriceListItemTable { company_id: string; id: Generated<string>; list_id: string; product_id: string; unit_id: string | null; min_quantity: NumDefault; price: Num; }
+
 export interface DB {
   user_account: UserAccountTable; platform_role_assignment: PlatformRoleAssignmentTable; user_session: UserSessionTable;
   company: CompanyTable; company_membership: CompanyMembershipTable; role: RoleTable; membership_role: MembershipRoleTable;
@@ -305,5 +310,5 @@ export interface DB {
   ledger_account: LedgerAccountTable; journal: JournalTable; journal_entry: JournalEntryTable; journal_line: JournalLineTable;
   stock_movement: StockMovementTable; warehouse: WarehouseTable; stock_level: StockLevelTable; stock_document: StockDocumentTable; stock_document_line: StockDocumentLineTable;
   employee: EmployeeTable; employee_photo: EmployeePhotoTable; contact_logo: ContactLogoTable; company_logo: CompanyLogoTable; site: SiteTable; appointment: AppointmentTable; appointment_attendee: AppointmentAttendeeTable; evaluation_campaign: EvaluationCampaignTable; evaluation: EvaluationTable; payroll_settings: PayrollSettingsTable; payroll_run: PayrollRunTable; payslip: PayslipTable;
-  email_message: EmailMessageTable; platform_mail_settings: PlatformMailSettingsTable; company_feature: CompanyFeatureTable; stock_lot: StockLotTable; product_unit: ProductUnitTable; stock_movement_lot: StockMovementLotTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable; leave_request: LeaveRequestTable;
+  email_message: EmailMessageTable; platform_mail_settings: PlatformMailSettingsTable; company_feature: CompanyFeatureTable; stock_lot: StockLotTable; product_unit: ProductUnitTable; price_list: PriceListTable; price_list_item: PriceListItemTable; stock_movement_lot: StockMovementLotTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable; leave_request: LeaveRequestTable;
 }

@@ -53,7 +53,10 @@ function ContactCard({ c, onOpen, action, site }: { c: any; onOpen?: () => void;
 }
 
 export default function ContactsPage() {
-  const { can, ctx } = useSession();
+  const { can, ctx, has } = useSession();
+  // Listes de prix (fonctionnalité activée) : proposées sur la fiche d'un client.
+  const [priceLists, setPriceLists] = useState<any[]>([]);
+  useEffect(() => { if (has('price_lists')) api('/company/price-lists').then((l: any[]) => setPriceLists(l.filter((x) => !x.archivedAt)), () => {}); }, []); // eslint-disable-line
   // Plusieurs sites : un contact peut être réservé à l'un d'eux (il n'est alors proposé que là).
   const sites = ctx?.sites ?? [];
   const multiSite = sites.length > 1;
@@ -87,12 +90,13 @@ export default function ContactsPage() {
     // Délai non renseigné (particulier) : comptant par défaut, côté serveur.
     const body = Object.fromEntries(FIELDS.filter((k) => !(k === 'paymentTermsDays' && edit[k] === '')).map((k) => [k, edit[k]]));
     if (!multiSite) delete (body as any).siteId; else (body as any).siteId = edit.siteId || null;
+    if (has('price_lists') && edit.kind !== 'supplier') (body as any).priceListId = edit.priceListId || null;
     const saved = edit.id ? await api(`/company/contacts/${edit.id}`, { method: 'PATCH', body }) : await api('/company/contacts', { body });
     if (logo !== undefined) await api(`/company/contacts/${saved.id}/logo`, { method: 'PUT', body: { logo } });
     setEdit(null); await load();
   });
   const toggleArchive = (c: any) => run(async () => { await api(`/company/contacts/${c.id}/${c.archivedAt ? 'restore' : 'archive'}`, { body: {} }); await load(); });
-  const open = (c: any) => { setLogo(undefined); setEdit(c.id ? Object.fromEntries(FIELDS.map((k) => [k, c[k] ?? EMPTY[k]]).concat([['id', c.id], ['logo', c.logo], ['code', c.code], ['initialKind', c.kind]])) : c); };
+  const open = (c: any) => { setLogo(undefined); setEdit(c.id ? Object.fromEntries(FIELDS.map((k) => [k, c[k] ?? EMPTY[k]]).concat([['id', c.id], ['logo', c.logo], ['code', c.code], ['initialKind', c.kind], ['priceListId', c.priceListId ?? '']])) : c); };
   // Code attribué automatiquement selon le type de tiers : aperçu du prochain numéro pour un nouveau contact ou un changement de type.
   const [nextCode, setNextCode] = useState('');
   const codeKind = edit && (!edit.id || edit.kind !== edit.initialKind) ? edit.kind : null;
@@ -212,6 +216,8 @@ export default function ContactsPage() {
               <Field label="Ville" value={edit.city} onChange={set('city')} />
               <Field label="Pays (code ISO)" maxLength={2} value={edit.countryCode} onChange={set('countryCode')} />
               <Field label={label('paymentTermsDays', 'Délai de paiement (jours, 0 = comptant)')} required={need('paymentTermsDays')} type="number" min={0} max={365} value={edit.paymentTermsDays} onChange={set('paymentTermsDays')} />
+              {has('price_lists') && edit.kind !== 'supplier' && <label className="field">Liste de prix
+                <select className="input" value={edit.priceListId ?? ''} onChange={set('priceListId')}><option value="">Prix des articles</option>{priceLists.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label>}
             </div>
             <p className="small muted" style={{ margin: 0 }}>* obligatoire {edit.legalType === 'company' ? 'pour une entreprise' : 'pour un particulier'}</p>
             <label className="field">Notes<textarea className="input" rows={3} value={edit.notes} onChange={set('notes')} /></label>
