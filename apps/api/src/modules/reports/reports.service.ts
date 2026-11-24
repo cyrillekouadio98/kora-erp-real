@@ -489,7 +489,7 @@ export class ReportsService {
       .innerJoin('sales_document as d', (j) => j.onRef('d.id', '=', 'l.document_id').onRef('d.company_id', '=', 'l.company_id'))
       .innerJoin('product as p', (j) => j.onRef('p.id', '=', 'l.product_id').onRef('p.company_id', '=', 'l.company_id'))
       .where('d.type', 'in', ['invoice', 'credit_note']).where('d.status', 'not in', ['draft', 'cancelled']).where('d.issue_date', '>=', from).where('d.issue_date', '<=', to)
-      .select(['p.id', 'p.name', 'p.unit', sql<string>`sum(${sign} * l.total_ht)`.as('ht'), sql<string>`sum(${sign} * l.quantity)`.as('qty')])
+      .select(['p.id', 'p.name', 'p.unit', sql<string>`sum(${sign} * l.total_ht)`.as('ht'), sql<string>`sum(${sign} * l.quantity * l.unit_factor)`.as('qty')])
       .groupBy(['p.id', 'p.name', 'p.unit']).orderBy('ht', 'desc').limit(8), t, 'd.site_id').execute();
     return rows.map((r) => ({ name: r.name, unit: r.unit, salesHt: round(Number(r.ht)), quantity: Number(r.qty) })).filter((r) => r.salesHt > 0);
   }

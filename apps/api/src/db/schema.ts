@@ -121,6 +121,8 @@ export interface SalesDocumentTable {
 export interface SalesDocumentLineTable {
   company_id: string; id: Generated<string>; document_id: string; position: number; product_id: string | null; description: string;
   quantity: Num; unit: string | null; unit_price: Num; discount_pct: NumDefault; discount_amount: NumDefault; list_price?: NumNullable; vat_rate: Num; total_ht: Num; total_vat: Num;
+  /** Coefficient vers l'unité de stock de l'article (1 : unité de l'article). */
+  unit_factor: NumDefault;
 }
 export type PaymentMethod = 'cash' | 'mobile_money' | 'bank_transfer' | 'cheque' | 'card';
 export interface SalesPaymentTable {
@@ -284,6 +286,11 @@ export interface StockLotTable {
 }
 export interface StockMovementLotTable { company_id: string; movement_id: string; lot_id: string; quantity: Num; }
 
+/** Autre unité d'un article (sac, carton…) et son coefficient vers l'unité de stock (fonctionnalité units). */
+export interface ProductUnitTable {
+  company_id: string; id: Generated<string>; product_id: string; name: string; factor: Num; sale_price: NumNullable; purchase_price: NumNullable; archived_at: TsNullable; created_at: Generated<Date>;
+}
+
 export interface DB {
   user_account: UserAccountTable; platform_role_assignment: PlatformRoleAssignmentTable; user_session: UserSessionTable;
   company: CompanyTable; company_membership: CompanyMembershipTable; role: RoleTable; membership_role: MembershipRoleTable;
@@ -298,5 +305,5 @@ export interface DB {
   ledger_account: LedgerAccountTable; journal: JournalTable; journal_entry: JournalEntryTable; journal_line: JournalLineTable;
   stock_movement: StockMovementTable; warehouse: WarehouseTable; stock_level: StockLevelTable; stock_document: StockDocumentTable; stock_document_line: StockDocumentLineTable;
   employee: EmployeeTable; employee_photo: EmployeePhotoTable; contact_logo: ContactLogoTable; company_logo: CompanyLogoTable; site: SiteTable; appointment: AppointmentTable; appointment_attendee: AppointmentAttendeeTable; evaluation_campaign: EvaluationCampaignTable; evaluation: EvaluationTable; payroll_settings: PayrollSettingsTable; payroll_run: PayrollRunTable; payslip: PayslipTable;
-  email_message: EmailMessageTable; platform_mail_settings: PlatformMailSettingsTable; company_feature: CompanyFeatureTable; stock_lot: StockLotTable; stock_movement_lot: StockMovementLotTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable; leave_request: LeaveRequestTable;
+  email_message: EmailMessageTable; platform_mail_settings: PlatformMailSettingsTable; company_feature: CompanyFeatureTable; stock_lot: StockLotTable; product_unit: ProductUnitTable; stock_movement_lot: StockMovementLotTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable; leave_request: LeaveRequestTable;
 }

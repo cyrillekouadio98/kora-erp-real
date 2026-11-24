@@ -6,10 +6,10 @@ import { DOC_LABEL, money, PURCHASE_LABEL, VAT_RATES } from '@/lib/format';
 import { Alert, Field, useAction } from '@/components/ui';
 import { useSession } from '@/components/session';
 
-interface Line { productId: string | null; description: string; quantity: number | string; unit: string | null; unitPrice: number | string; discountPct: number | string; discountAmount: number | string; vatRate: number; lotNumber: string; expiryDate: string }
-const EMPTY_LINE: Line = { productId: null, description: '', quantity: 1, unit: null, unitPrice: 0, discountPct: 0, discountAmount: 0, vatRate: 18, lotNumber: '', expiryDate: '' };
+interface Line { productId: string | null; description: string; quantity: number | string; unit: string | null; unitPrice: number | string; discountPct: number | string; discountAmount: number | string; vatRate: number; lotNumber: string; expiryDate: string; unitId: string }
+const EMPTY_LINE: Line = { productId: null, description: '', quantity: 1, unit: null, unitPrice: 0, discountPct: 0, discountAmount: 0, vatRate: 18, lotNumber: '', expiryDate: '', unitId: '' };
 /** Ne garde que les champs saisissables d'une ligne (l'API refuse les champs calculés comme totalHt). */
-const toLine = (l: any): Line => ({ productId: l.productId ?? null, description: l.description ?? '', quantity: l.quantity ?? 1, unit: l.unit ?? null, unitPrice: l.unitPrice ?? 0, discountPct: l.discountPct ?? 0, discountAmount: l.discountAmount ?? 0, vatRate: l.vatRate ?? 18, lotNumber: l.lotNumber ?? '', expiryDate: l.expiryDate ?? '' });
+const toLine = (l: any): Line => ({ productId: l.productId ?? null, description: l.description ?? '', quantity: l.quantity ?? 1, unit: l.unit ?? null, unitPrice: l.unitPrice ?? 0, discountPct: l.discountPct ?? 0, discountAmount: l.discountAmount ?? 0, vatRate: l.vatRate ?? 18, lotNumber: l.lotNumber ?? '', expiryDate: l.expiryDate ?? '', unitId: l.unitId ?? '' });
 /** Remise saisie en FCFA plutôt qu'en % (ligne déjà enregistrée avec un montant, ou choix de l'utilisateur). */
 const inAmount = (l: Line) => Number(l.discountAmount || 0) > 0 || (l as any).mode === 'amount';
 
@@ -61,7 +61,15 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
 
   useEffect(() => {
     api('/company/contacts').then((c) => setContacts(c.filter((x: any) => x.kind !== cfg.excludeKind)), () => {});
-    api('/company/products').then(setProducts, () => {});
+    api('/company/products').then((ps: any[]) => {
+      setProducts(ps);
+      // Brouillon rouvert : retrouve l'unité choisie (nom et coefficient enregistrés sur la ligne).
+      setLines((ls) => ls.map((l, i) => {
+        const saved = doc?.lines?.[i];
+        const u = saved && Number(saved.unitFactor ?? 1) !== 1 ? ps.find((p) => p.id === l.productId)?.units?.find((x: any) => x.name === saved.unit && x.factor === Number(saved.unitFactor)) : null;
+        return u ? { ...l, unitId: u.id } : l;
+      }));
+    }, () => {});
     if (movesStock) api('/company/stock/warehouses').then((w) => setWarehouses(w.filter((x: any) => !x.archived)), () => {});
   }, [cfg.excludeKind, movesStock]);
   const showWarehouse = warehouses.length > 1;
@@ -70,7 +78,15 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
   const setLine = (i: number, patch: Partial<Line>) => editLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const pickProduct = (i: number, id: string) => {
     const p = products.find((x) => x.id === id);
-    setLine(i, p ? { productId: p.id, description: p.name, unit: p.unit, unitPrice: cfg.price(p), vatRate: p.vatRate } : { productId: null });
+    setLine(i, p ? { productId: p.id, description: p.name, unit: p.unit, unitPrice: cfg.price(p), vatRate: p.vatRate, unitId: '' } : { productId: null, unitId: '' });
+  };
+  // Unités de mesure : vendre ou acheter dans une autre unité de l'article (prix de l'unité, sinon prix × coefficient).
+  const pickUnit = (i: number, unitId: string) => {
+    const p = products.find((x) => x.id === lines[i].productId);
+    if (!p) return;
+    const u = p.units?.find((x: any) => x.id === unitId);
+    const own = u ? (scope === 'purchases' ? u.purchasePrice : u.salePrice) : null;
+    setLine(i, { unitId: u ? u.id : '', unit: u ? u.name : p.unit, unitPrice: u ? own ?? Math.round(cfg.price(p) * u.factor) : cfg.price(p) });
   };
   const totals = lines.map(lineTotals);
   const ht = totals.reduce((s, t) => s + t.ht, 0);
@@ -79,7 +95,7 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
   const save = () => run(async () => {
     const body: any = {
       contactId, notes: notes || null,
-      lines: lines.map(toLine).map(({ lotNumber, expiryDate, ...l }) => ({ ...l, ...(scope === 'purchases' ? { lotNumber: lotNumber.trim() || null, expiryDate: expiryDate || null } : {}), quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), discountPct: Number(l.discountPct || 0), discountAmount: Number(l.discountAmount || 0), unit: l.unit || null })),
+      lines: lines.map(toLine).map(({ lotNumber, expiryDate, unitId, ...l }) => ({ ...l, ...(unitId ? { unitId } : {}), ...(scope === 'purchases' ? { lotNumber: lotNumber.trim() || null, expiryDate: expiryDate || null } : {}), quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), discountPct: Number(l.discountPct || 0), discountAmount: Number(l.discountAmount || 0), unit: l.unit || null })),
       ...(limitKey ? { [limitKey]: limitDate || null } : {}),
       ...(isPurchaseInvoice ? { supplierRef: supplierRef || null, issueDate } : {}),
       ...(isCredit ? { restock } : {}),
@@ -136,7 +152,11 @@ export function SalesEditor({ type, doc, onSaved, onDirtyChange, scope = 'sales'
                 <input className="input" type="date" value={l.expiryDate} onChange={(e) => setLine(i, { expiryDate: e.target.value })} aria-label={`Date limite ligne ${i + 1}`} title="Date limite (péremption)" style={{ width: 150 }} />
               </div>}</td>
               <td><input className="input" required value={l.description} onChange={(e) => setLine(i, { description: e.target.value })} aria-label={`Désignation ligne ${i + 1}`} /></td>
-              <td><input className="input n" type="number" min="0.001" step="any" required value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} aria-label={`Quantité ligne ${i + 1}`} style={{ width: 80 }} /></td>
+              <td><input className="input n" type="number" min="0.001" step="any" required value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} aria-label={`Quantité ligne ${i + 1}`} style={{ width: 80 }} />
+                {has('units') && (() => { const p = products.find((x) => x.id === l.productId); return p?.units?.length ? (
+                  <select className="input" value={l.unitId} onChange={(e) => pickUnit(i, e.target.value)} aria-label={`Unité ligne ${i + 1}`} title="Unité de la ligne" style={{ width: 96, marginTop: 6 }}>
+                    <option value="">{p.unit || 'unité'}</option>{p.units.map((u: any) => <option key={u.id} value={u.id}>{u.name} ×{u.factor.toLocaleString('fr-FR')}</option>)}
+                  </select>) : null; })()}</td>
               <td><input className="input n" type="number" min="0" step="any" required value={l.unitPrice} onChange={(e) => setLine(i, { unitPrice: e.target.value })} aria-label={`Prix ligne ${i + 1}`} style={{ width: 120 }} /></td>
               <td><div className="row" style={{ gap: 4, flexWrap: 'nowrap' }}>
                 {inAmount(l)

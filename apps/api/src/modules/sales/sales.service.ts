@@ -9,13 +9,14 @@ import type { TenantInfo } from '../../common/request-context';
 import { DatabaseService, setTenantContext, TenantTrx } from '../../db/database.service';
 import type { PaymentMethod, ReminderChannel, SalesDocStatus, SalesDocType } from '../../db/schema';
 import { AuditService } from '../audit/audit.service';
+import { resolveLineUnits } from './units';
 import { AccountingService } from '../accounting/accounting.service';
 import { logoDataUrl } from '../companies/company-logo';
 import { MailService } from '../mail/mail.service';
 import { StockService } from '../stock/stock.service';
 import { TreasuryService } from '../treasury/treasury.service';
 
-export interface LineInput { productId?: string | null; description: string; quantity: number; unit?: string | null; unitPrice: number; discountPct?: number; discountAmount?: number; vatRate: number }
+export interface LineInput { productId?: string | null; description: string; quantity: number; unit?: string | null; unitPrice: number; discountPct?: number; discountAmount?: number; vatRate: number; unitId?: string | null }
 export interface DocInput {
   contactId: string; issueDate?: string; dueDate?: string | null; validUntil?: string | null; deliveryDate?: string | null; customerRef?: string | null;
   notes?: string | null; restock?: boolean; warehouseId?: string | null; lines: LineInput[];
@@ -94,12 +95,16 @@ export class SalesService {
       if (found.length !== productIds.length) throw badRequest('Un ou plusieurs articles sont introuvables.', undefined, 'unknown_product');
       for (const p of found) prices.set(p.id, p.sale_price);
     }
+    const units = await resolveLineUnits(trx, t, lines);
     const totals = computeTotals(lines);
     await trx.deleteFrom('sales_document_line').where('document_id', '=', documentId).execute();
     await trx.insertInto('sales_document_line').values(lines.map((l, i) => ({
       company_id: t.companyId, document_id: documentId, position: i + 1, product_id: l.productId ?? null, description: l.description,
-      quantity: l.quantity, unit: l.unit ?? null, unit_price: l.unitPrice, discount_pct: l.discountPct ?? 0, discount_amount: l.discountAmount ?? 0, vat_rate: l.vatRate,
-      list_price: l.productId ? prices.get(l.productId) ?? null : null, total_ht: totals.lines[i].ht, total_vat: totals.lines[i].vat,
+      quantity: l.quantity, unit: (l.unitId && units.get(l.unitId)?.name) || (l.unit ?? null), unit_price: l.unitPrice, discount_pct: l.discountPct ?? 0, discount_amount: l.discountAmount ?? 0, vat_rate: l.vatRate,
+      unit_factor: l.unitId ? units.get(l.unitId)!.factor : 1,
+      // Prix catalogue de l'unité vendue : son prix propre, sinon celui de l'article × coefficient.
+      list_price: !l.productId ? null : l.unitId ? units.get(l.unitId)!.salePrice ?? (prices.has(l.productId) ? Math.round(Number(prices.get(l.productId)) * units.get(l.unitId)!.factor) : null) : prices.get(l.productId) ?? null,
+      total_ht: totals.lines[i].ht, total_vat: totals.lines[i].vat,
     }))).execute();
     return totals;
   }
@@ -180,7 +185,7 @@ export class SalesService {
       refunds: refunds.map((r) => ({ ...r, amount: Number(r.amount) })),
       ...(d.type === 'invoice' ? balance(d) : { remaining: 0, refundDue: 0 }), sourceInvoiceId: d.source_invoice_id, vatBreakdown, reminders,
       related: related.map((r) => ({ ...r, totalTtc: Number(r.totalTtc) })),
-      lines: lines.map((l) => ({ id: l.id, productId: l.product_id, description: l.description, quantity: Number(l.quantity), unit: l.unit,
+      lines: lines.map((l) => ({ id: l.id, productId: l.product_id, description: l.description, quantity: Number(l.quantity), unit: l.unit, unitFactor: Number(l.unit_factor),
         unitPrice: Number(l.unit_price), discountPct: Number(l.discount_pct), discountAmount: Number(l.discount_amount), vatRate: Number(l.vat_rate), totalHt: Number(l.total_ht), totalVat: Number(l.total_vat),
         // Remise totale de la ligne en FCFA (pourcentage et montant confondus).
         ...shownPrice(l) })),

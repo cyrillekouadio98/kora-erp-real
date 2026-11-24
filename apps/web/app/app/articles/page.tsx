@@ -28,7 +28,7 @@ const MODES = {
 const margin = (p: { salePrice: number; purchasePrice: number | null }) => (p.purchasePrice == null ? null : { value: p.salePrice - p.purchasePrice, rate: p.salePrice > 0 ? ((p.salePrice - p.purchasePrice) / p.salePrice) * 100 : null });
 
 export default function ProductsPage() {
-  const { can, ctx } = useSession();
+  const { can, ctx, has } = useSession();
   const writable = !ctx?.readOnly;
   const activity = ctx?.company.activity ?? 'mixed';
   const m = MODES[activity] ?? MODES.mixed;
@@ -84,6 +84,11 @@ export default function ProductsPage() {
         ...(edit.openingCost !== '' && edit.openingCost != null ? { unitCost: Number(edit.openingCost) } : {}) };
     }
     if (edit.id) await api(`/company/products/${edit.id}`, { method: 'PATCH', body }); else await api('/company/products', { body });
+    // Unités de mesure (fonctionnalité activée) : enregistrées avec l'article existant.
+    if (edit.id && edit.units && has('units')) {
+      await api(`/company/products/${edit.id}/units`, { method: 'PUT', body: { units: edit.units.filter((u: any) => u.name.trim()).map((u: any) => ({ ...(u.id ? { id: u.id } : {}), name: u.name.trim(), factor: Number(u.factor),
+        salePrice: u.salePrice === '' || u.salePrice == null ? null : Number(u.salePrice), purchasePrice: u.purchasePrice === '' || u.purchasePrice == null ? null : Number(u.purchasePrice) })) } });
+    }
     setEdit(null); await load();
   });
   // Suppression : seulement un article jamais utilisé ; sinon l'API répond qu'il faut l'archiver.
@@ -133,7 +138,7 @@ export default function ProductsPage() {
               <td className="n" style={{ whiteSpace: 'nowrap' }}>{money(p.salePrice * (1 + p.vatRate / 100))}</td>
               {showStock && <td className="n" style={{ whiteSpace: 'nowrap' }}>{p.trackStock ? <Link href="/app/stocks">{p.stockQty.toLocaleString('fr-FR')} {p.unit}</Link> : <span className="muted">—</span>}</td>}
               <td className="n"><div className="row" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
-                {writable && can('products.update') && !p.archivedAt && <button className="btn sm" onClick={() => setEdit({ ...Object.fromEntries(FIELDS.map((k) => [k, p[k] ?? EMPTY[k]])), siteId: p.siteId ?? '', id: p.id, code: p.code })}>Modifier</button>}
+                {writable && can('products.update') && !p.archivedAt && <button className="btn sm" onClick={() => setEdit({ ...Object.fromEntries(FIELDS.map((k) => [k, p[k] ?? EMPTY[k]])), siteId: p.siteId ?? '', id: p.id, code: p.code, ...(p.units ? { units: p.units.map((u: any) => ({ ...u, salePrice: u.salePrice ?? '', purchasePrice: u.purchasePrice ?? '' })) } : {}) })}>Modifier</button>}
                 {writable && can('products.cancel') && <button className={`btn sm${p.archivedAt ? '' : ' danger'}`} disabled={busy} onClick={() => toggleArchive(p)}>{p.archivedAt ? 'Restaurer' : 'Archiver'}</button>}
                 {writable && can('products.cancel') && <button className="btn sm danger" disabled={busy} onClick={() => remove(p)}>Supprimer</button>}
               </div></td>
@@ -172,6 +177,22 @@ export default function ProductsPage() {
                 <span className="small muted">{edit.siteId === 'auto' ? "Avec un stock initial, l'article n'est visible que sur le site de son entrepôt ; sans stock, sur tous les sites." : edit.siteId ? 'Visible seulement sur ce site.' : 'Visible sur tous les sites.'}</span></label>}
               {!(trade && edit.kind === 'good') && <Field label={trade ? "Coût d'achat HT (facultatif)" : m.cost} type="number" min={0} step="any" value={edit.purchasePrice ?? ''} onChange={set('purchasePrice')} />}
             </div>
+            {has('units') && edit.id && edit.kind === 'good' && edit.units && <fieldset style={{ border: 0, padding: 0, margin: 0, display: 'grid', gap: 6 }}>
+              <legend className="small" style={{ fontWeight: 600, marginBottom: 6 }}>Autres unités de vente et d&apos;achat</legend>
+              <p className="small muted" style={{ margin: 0 }}>Le stock reste compté en <b>{edit.unit || 'unités'}</b>. Exemple : un sac de 50 {edit.unit || 'unités'} se vend et s&apos;achète au sac, le stock bouge de 50. Le coefficient d&apos;une unité déjà enregistrée ne change plus.</p>
+              {edit.units.map((u: any, i: number) => {
+                const setU = (patch: any) => setEdit({ ...edit, units: edit.units.map((x: any, j: number) => (j === i ? { ...x, ...patch } : x)) });
+                return <div key={u.id ?? `n${i}`} className="row" style={{ gap: 6, alignItems: 'end' }}>
+                  <Field label="Unité" required value={u.name} onChange={(e) => setU({ name: e.target.value })} placeholder="sac" style={{ width: 110 }} />
+                  <Field label={`= combien de ${edit.unit || 'unités'}`} type="number" min="0.000001" step="any" required disabled={!!u.id} value={u.factor} onChange={(e) => setU({ factor: e.target.value })} style={{ width: 130 }} />
+                  <Field label="Prix de vente HT" type="number" min={0} step="any" value={u.salePrice} onChange={(e) => setU({ salePrice: e.target.value })} placeholder={edit.salePrice && u.factor ? String(Math.round(Number(edit.salePrice) * Number(u.factor))) : ''} style={{ width: 140 }} />
+                  {trade && <Field label="Prix d'achat HT" type="number" min={0} step="any" value={u.purchasePrice} onChange={(e) => setU({ purchasePrice: e.target.value })} placeholder={edit.purchasePrice && u.factor ? String(Math.round(Number(edit.purchasePrice) * Number(u.factor))) : ''} style={{ width: 140 }} />}
+                  <button type="button" className="btn sm danger" onClick={() => setEdit({ ...edit, units: edit.units.filter((_: any, j: number) => j !== i) })} aria-label={`Retirer l'unité ${u.name}`}>✕</button>
+                </div>;
+              })}
+              <div><button type="button" className="btn sm" onClick={() => setEdit({ ...edit, units: [...edit.units, { name: '', factor: '', salePrice: '', purchasePrice: '' }] })}>+ Ajouter une unité</button></div>
+              <p className="small muted" style={{ margin: 0 }}>Prix vides : prix de l&apos;article × coefficient.</p>
+            </fieldset>}
             {editMargin && <p className="small" style={{ margin: 0 }}>Marge unitaire : <b style={editMargin.value < 0 ? { color: 'var(--crit)' } : undefined}>{money(editMargin.value)}</b>{editMargin.rate != null && <> ({editMargin.rate.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} % du prix de vente)</>}</p>}
             {edit.kind === 'good' && edit.id && history && !openingEditable && <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
               <legend className="small" style={{ fontWeight: 600, marginBottom: 6 }}>Stock initial</legend>

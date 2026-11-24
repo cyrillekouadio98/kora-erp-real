@@ -18,6 +18,11 @@ export const FEATURES: FeatureDef[] = [
     description: "Numéro de lot et date limite à chaque entrée en stock, alerte avant péremption, sortie du lot le plus ancien en premier.",
     inUse: async (trx, companyId) => !!(await trx.selectFrom('stock_lot').select('id').where('company_id', '=', companyId).limit(1).executeTakeFirst()),
   },
+  {
+    key: 'units', version: '1.2', label: 'Unités de mesure',
+    description: "Acheter et vendre un article dans plusieurs unités (sac, carton, kg…), avec conversion automatique vers l'unité de stock et un prix par unité.",
+    inUse: async (trx, companyId) => !!(await trx.selectFrom('product_unit').select('id').where('company_id', '=', companyId).limit(1).executeTakeFirst()),
+  },
 ];
 
 export const featureKeys = () => FEATURES.map((f) => f.key);

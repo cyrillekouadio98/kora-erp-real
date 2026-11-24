@@ -24,6 +24,8 @@ export const PaymentSchema = z.object({
 
 export const LineObject = z.object({
   productId: z.string().uuid({ message: 'Article invalide' }).nullable().optional(),
+  /** Autre unité de l'article (fonctionnalité « Unités de mesure ») ; vide : unité de l'article. */
+  unitId: z.string().uuid({ message: 'Unité invalide' }).nullable().optional(),
   description: z.string().trim().min(1, { message: 'Chaque ligne doit avoir une désignation' }).max(500),
   quantity: z.coerce.number().positive({ message: 'La quantité doit être positive' }).max(1e9).transform((v) => Math.round(v * 1000) / 1000),
   unit: z.string().trim().max(20).nullable().optional(),

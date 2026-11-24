@@ -80,7 +80,7 @@ export class DashboardService {
         topProducts = (await trx.selectFrom('sales_document_line as l')
           .innerJoin('sales_document as d', (j) => j.onRef('d.id', '=', 'l.document_id').onRef('d.company_id', '=', 'l.company_id'))
           .innerJoin('product as p', (j) => j.onRef('p.id', '=', 'l.product_id').onRef('p.company_id', '=', 'l.company_id'))
-          .select(['p.name', 'p.unit', sql<string>`sum(${sign} * l.total_ht)`.as('amount'), sql<string>`sum(${sign} * l.quantity)`.as('quantity')])
+          .select(['p.name', 'p.unit', sql<string>`sum(${sign} * l.total_ht)`.as('amount'), sql<string>`sum(${sign} * l.quantity * l.unit_factor)`.as('quantity')])
           .where('d.type', 'in', ['invoice', 'credit_note']).where('d.status', '!=', 'draft').where('d.issue_date', '>=', from).$call((q) => inScope(q, t, 'd.site_id'))
           .groupBy(['p.name', 'p.unit']).orderBy('amount', 'desc').limit(5).execute())
           .map((r) => ({ name: r.name, unit: r.unit, amount: round(Number(r.amount)), quantity: Number(r.quantity) })).filter((r) => r.amount > 0);

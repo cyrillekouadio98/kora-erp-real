@@ -250,11 +250,12 @@ export class StockService {
     }
     const w = await this.warehouseFor(trx, t, warehouseId, d.site_id);
     const lines = await trx.selectFrom('sales_document_line as l').innerJoin('product as p', (j) => j.onRef('p.id', '=', 'l.product_id').onRef('p.company_id', '=', 'l.company_id'))
-      .select(['l.product_id', 'l.quantity', 'p.name']).where('l.document_id', '=', documentId).where('p.track_stock', '=', true).execute();
+      .select(['l.product_id', 'l.quantity', 'l.unit_factor', 'p.name']).where('l.document_id', '=', documentId).where('p.track_stock', '=', true).execute();
     const byProduct = new Map<string, { name: string; qty: number }>();
     for (const l of lines) {
       const cur = byProduct.get(l.product_id!) ?? { name: l.name, qty: 0 };
-      cur.qty = round3(cur.qty + Number(l.quantity));
+      // Quantité dans l'unité de stock de l'article (sac de 50 kg vendu : 50 kg sortent).
+      cur.qty = round3(cur.qty + Number(l.quantity) * Number(l.unit_factor));
       byProduct.set(l.product_id!, cur);
     }
     if (d.type === 'invoice') await this.assertAvailable(trx, w.id, byProduct, ` Enregistrez d'abord l'achat, le stock initial ou un transfert vers « ${w.name} ».`);
@@ -271,12 +272,13 @@ export class StockService {
     if (d.type !== 'invoice') return;
     const w = await this.warehouseFor(trx, t, d.warehouse_id, d.site_id);
     const lines = await trx.selectFrom('purchase_document_line as l').innerJoin('product as p', (j) => j.onRef('p.id', '=', 'l.product_id').onRef('p.company_id', '=', 'l.company_id'))
-      .select(['l.product_id', 'l.quantity', 'l.total_ht', 'l.lot_number', 'l.expiry_date', 'p.name', 'p.track_lots']).where('l.document_id', '=', documentId).where('p.track_stock', '=', true).execute();
+      .select(['l.product_id', 'l.quantity', 'l.unit_factor', 'l.total_ht', 'l.lot_number', 'l.expiry_date', 'p.name', 'p.track_lots']).where('l.document_id', '=', documentId).where('p.track_stock', '=', true).execute();
     for (const l of lines) this.requireLot(t, l, l.lot_number);
     for (const l of lines) {
-      await this.move(trx, t, { productId: l.product_id!, warehouseId: w.id, direction: 'in', quantity: Number(l.quantity), value: Number(l.total_ht), date: d.issue_date, reason: 'purchase',
+      const quantity = round3(Number(l.quantity) * Number(l.unit_factor));
+      await this.move(trx, t, { productId: l.product_id!, warehouseId: w.id, direction: 'in', quantity, value: Number(l.total_ht), date: d.issue_date, reason: 'purchase',
         sourceId: d.id, label: `Achat ${d.number}${d.supplier_ref ? ` (réf. ${d.supplier_ref})` : ''}`,
-        lots: l.lot_number ? [{ lotNumber: l.lot_number, expiryDate: l.expiry_date, quantity: Number(l.quantity) }] : undefined });
+        lots: l.lot_number ? [{ lotNumber: l.lot_number, expiryDate: l.expiry_date, quantity }] : undefined });
     }
   }
 
@@ -355,10 +357,10 @@ export class StockService {
   private async committed(trx: TenantTrx, side: 'sales' | 'purchase', defaultId: string) {
     const rows = side === 'sales'
       ? await trx.selectFrom('sales_document_line as l').innerJoin('sales_document as d', (j) => j.onRef('d.id', '=', 'l.document_id').onRef('d.company_id', '=', 'l.company_id'))
-        .select(['l.product_id', 'd.warehouse_id', 'd.site_id', (eb) => eb.fn.sum<string>('l.quantity').as('qty')])
+        .select(['l.product_id', 'd.warehouse_id', 'd.site_id', sql<string>`sum(l.quantity * l.unit_factor)`.as('qty')])
         .where('d.type', '=', 'order').where('d.status', '=', 'confirmed').where('l.product_id', 'is not', null).groupBy(['l.product_id', 'd.warehouse_id', 'd.site_id']).execute()
       : await trx.selectFrom('purchase_document_line as l').innerJoin('purchase_document as d', (j) => j.onRef('d.id', '=', 'l.document_id').onRef('d.company_id', '=', 'l.company_id'))
-        .select(['l.product_id', 'd.warehouse_id', 'd.site_id', (eb) => eb.fn.sum<string>('l.quantity').as('qty')])
+        .select(['l.product_id', 'd.warehouse_id', 'd.site_id', sql<string>`sum(l.quantity * l.unit_factor)`.as('qty')])
         .where('d.type', '=', 'order').where('d.status', '=', 'sent').where('l.product_id', 'is not', null).groupBy(['l.product_id', 'd.warehouse_id', 'd.site_id']).execute();
     // Commande sans entrepôt : l'entrepôt principal de son site.
     const main = new Map<string, string>();

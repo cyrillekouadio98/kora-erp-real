@@ -1,8 +1,10 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { OPENING_COUNTERPARTS } from '../accounting/accounting.service';
 import { isoDate } from './sales.controller';
+import { productUnits, UNITS } from './units';
+import { RequireFeature } from '../../common/features';
 import { AllowWhenReadOnly, Permission, Tenant } from '../../common/decorators';
 import { badRequest, conflict, forbidden, notFound } from '../../common/errors';
 import { isUuid } from '../../common/ids';
@@ -110,7 +112,57 @@ export class ProductsController {
       }
       return qb.execute();
     });
-    return rows.map(toNumbers);
+    // Unités de mesure (fonctionnalité activée) : autres unités de chaque article, pour les éditeurs.
+    const units = t.features.has(UNITS) ? await this.db.tenant(t.ctx, (trx) => productUnits(trx)) : null;
+    return rows.map((r) => ({ ...toNumbers(r), ...(units ? { units: units.get(r.id) ?? [] } : {}) }));
+  }
+
+  /** Autres unités d'un article (sac, carton…) avec leur coefficient vers l'unité de l'article. */
+  @Permission('products.read') @RequireFeature(UNITS) @AllowWhenReadOnly()
+  @Get(':id/units')
+  units(@Tenant() t: TenantInfo, @Param('id') id: string) {
+    if (!isUuid(id)) throw notFound('Article');
+    return this.db.tenant(t.ctx, async (trx) => (await productUnits(trx, [id])).get(id) ?? []);
+  }
+
+  /**
+   * Remplace les unités d'un article. Une unité retirée est archivée : les documents qui l'utilisent
+   * gardent son nom et son coefficient. Le coefficient d'une unité existante ne change pas
+   * (créez une nouvelle unité) : les lignes déjà saisies resteraient sinon fausses.
+   */
+  @Permission('products.update') @RequireFeature(UNITS) @HttpCode(200)
+  @Put(':id/units')
+  setUnits(@Tenant() t: TenantInfo, @Param('id') id: string, @Body() body: unknown) {
+    if (!isUuid(id)) throw notFound('Article');
+    const price = z.coerce.number().min(0, { message: 'Le prix ne peut pas être négatif' }).max(1e13).transform((v) => Math.round(v * 100) / 100).nullable().optional();
+    const { units } = parse(z.object({ units: z.array(z.object({
+      id: z.string().uuid().optional(),
+      name: z.string().trim().min(1, { message: "Indiquez le nom de l'unité" }).max(20),
+      factor: z.coerce.number().positive({ message: 'Le coefficient doit être positif' }).max(1e6),
+      salePrice: price, purchasePrice: price,
+    }).strict()).max(20) }).strict(), body);
+    return this.db.tenant(t.ctx, async (trx) => {
+      const p = await trx.selectFrom('product').select(['id', 'name', 'unit', 'kind']).where('id', '=', id).executeTakeFirst();
+      if (!p) throw notFound('Article');
+      const names = units.map((u) => u.name.toLowerCase());
+      if (new Set(names).size !== names.length) throw badRequest('Deux unités portent le même nom.', undefined, 'duplicate_unit');
+      if (p.unit && names.includes(p.unit.toLowerCase())) throw badRequest(`« ${p.unit} » est déjà l'unité de l'article.`, undefined, 'duplicate_unit');
+      const current = await trx.selectFrom('product_unit').selectAll().where('product_id', '=', id).execute();
+      for (const u of units) {
+        const prev = u.id ? current.find((c) => c.id === u.id) : current.find((c) => c.name.toLowerCase() === u.name.toLowerCase());
+        if (prev && Number(prev.factor) !== u.factor && !u.id) throw conflict(`L'unité « ${u.name} » a déjà existé avec un autre coefficient : donnez-lui un autre nom.`, 'unit_factor_locked');
+        if (prev && Number(prev.factor) !== u.factor) throw conflict(`Le coefficient de « ${prev.name} » ne peut pas changer : créez une nouvelle unité.`, 'unit_factor_locked');
+        if (prev) {
+          await trx.updateTable('product_unit').set({ name: u.name, sale_price: u.salePrice ?? null, purchase_price: u.purchasePrice ?? null, archived_at: null }).where('id', '=', prev.id).execute();
+        } else {
+          await trx.insertInto('product_unit').values({ company_id: t.companyId, product_id: id, name: u.name, factor: u.factor, sale_price: u.salePrice ?? null, purchase_price: u.purchasePrice ?? null }).execute();
+        }
+      }
+      const kept = new Set(units.map((u) => (u.id ?? current.find((c) => c.name.toLowerCase() === u.name.toLowerCase())?.id)).filter(Boolean));
+      for (const c of current) if (!kept.has(c.id) && !c.archived_at) await trx.updateTable('product_unit').set({ archived_at: new Date() }).where('id', '=', c.id).execute();
+      await this.audit.tenant(trx, t.ctx, { action: 'product.units_updated', entityType: 'product', entityId: id, data: { name: p.name, units: units.map((u) => `${u.name} = ${u.factor} ${p.unit ?? ''}`.trim()) } });
+      return (await productUnits(trx, [id])).get(id) ?? [];
+    });
   }
 
   @Permission('products.create')
