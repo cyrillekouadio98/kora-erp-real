@@ -129,7 +129,7 @@ export const APPS: App[] = [
   { key: 'dashboard', label: 'Tableau de bord', href: '/app/tableau-de-bord' },
   { key: 'sales', label: 'Ventes', href: '/app/ventes/factures', perm: 'sales.read', base: '/app/ventes', pages: [
     { href: '/app/ventes/devis', label: 'Devis' }, { href: '/app/ventes/commandes', label: 'Bons de commande' }, { href: '/app/ventes/factures', label: 'Factures' },
-    { href: '/app/ventes/avoirs', label: 'Avoirs' }, { href: '/app/ventes/relances', label: 'Relances clients' }, { href: '/app/ventes/listes-prix', label: 'Listes de prix', feature: 'price_lists' },
+    { href: '/app/ventes/avoirs', label: 'Avoirs' }, { href: '/app/ventes/relances', label: 'Relances clients' }, { href: '/app/ventes/suivi', label: 'Suivi commercial', feature: 'crm' }, { href: '/app/ventes/listes-prix', label: 'Listes de prix', feature: 'price_lists' },
   ] },
   { key: 'purchases', label: 'Achats', href: '/app/achats/factures', perm: 'purchases.read', module: 'purchases', base: '/app/achats', pages: [
     { href: '/app/achats/commandes', label: 'Bons de commande' }, { href: '/app/achats/factures', label: 'Factures fournisseurs' },

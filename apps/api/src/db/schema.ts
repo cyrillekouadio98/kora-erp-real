@@ -310,6 +310,16 @@ export interface FixedAssetTable {
 }
 export interface FixedAssetDepreciationTable { company_id: string; id: Generated<string>; asset_id: string; year: number; amount: Num; entry_id: string; created_at: Generated<Date>; }
 
+/** Opportunité commerciale et ses actions (fonctionnalité crm). */
+export interface OpportunityTable {
+  company_id: string; id: Generated<string>; code: string; title: string; contact_id: string | null; prospect_name: string | null; prospect_phone: string | null; prospect_email: string | null;
+  stage: Generated<'new' | 'qualified' | 'quote' | 'negotiation' | 'won' | 'lost'>; amount: NumDefault; expected_close: string | null; owner_id: string | null; source: string | null;
+  quote_id: string | null; lost_reason: string | null; notes: string | null; closed_at: TsNullable; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
+}
+export interface OpportunityActivityTable {
+  company_id: string; id: Generated<string>; opportunity_id: string; kind: 'call' | 'meeting' | 'email' | 'note' | 'task'; note: string; due_date: string | null; done_at: TsNullable; user_id: string | null; created_at: Generated<Date>;
+}
+
 export interface DB {
   user_account: UserAccountTable; platform_role_assignment: PlatformRoleAssignmentTable; user_session: UserSessionTable;
   company: CompanyTable; company_membership: CompanyMembershipTable; role: RoleTable; membership_role: MembershipRoleTable;
@@ -324,5 +334,5 @@ export interface DB {
   ledger_account: LedgerAccountTable; journal: JournalTable; journal_entry: JournalEntryTable; journal_line: JournalLineTable;
   stock_movement: StockMovementTable; warehouse: WarehouseTable; stock_level: StockLevelTable; stock_document: StockDocumentTable; stock_document_line: StockDocumentLineTable;
   employee: EmployeeTable; employee_photo: EmployeePhotoTable; contact_logo: ContactLogoTable; company_logo: CompanyLogoTable; site: SiteTable; appointment: AppointmentTable; appointment_attendee: AppointmentAttendeeTable; evaluation_campaign: EvaluationCampaignTable; evaluation: EvaluationTable; payroll_settings: PayrollSettingsTable; payroll_run: PayrollRunTable; payslip: PayslipTable;
-  email_message: EmailMessageTable; platform_mail_settings: PlatformMailSettingsTable; company_feature: CompanyFeatureTable; stock_lot: StockLotTable; product_unit: ProductUnitTable; price_list: PriceListTable; price_list_item: PriceListItemTable; bank_statement_line: BankStatementLineTable; fixed_asset: FixedAssetTable; fixed_asset_depreciation: FixedAssetDepreciationTable; stock_movement_lot: StockMovementLotTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable; leave_request: LeaveRequestTable;
+  email_message: EmailMessageTable; platform_mail_settings: PlatformMailSettingsTable; company_feature: CompanyFeatureTable; stock_lot: StockLotTable; product_unit: ProductUnitTable; price_list: PriceListTable; price_list_item: PriceListItemTable; bank_statement_line: BankStatementLineTable; fixed_asset: FixedAssetTable; fixed_asset_depreciation: FixedAssetDepreciationTable; opportunity: OpportunityTable; opportunity_activity: OpportunityActivityTable; stock_movement_lot: StockMovementLotTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable; leave_request: LeaveRequestTable;
 }

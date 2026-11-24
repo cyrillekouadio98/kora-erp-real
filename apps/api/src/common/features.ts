@@ -42,6 +42,11 @@ export const FEATURES: FeatureDef[] = [
     key: 'social_declarations', version: '1.3', label: 'Déclarations CNPS, ITS et DISA',
     description: "États préparatoires des déclarations à partir des bulletins validés : cotisations CNPS par salarié (mensuelles ou trimestrielles), ITS et taxes patronales, DISA annuelle ; impression et export CSV.",
   },
+  {
+    key: 'crm', version: '1.3', label: 'Suivi commercial',
+    description: "Opportunités du prospect au devis gagné, sur un tableau par étapes : montant espéré, commercial responsable, actions (appels, rendez-vous, relances) et prochaine action à faire.",
+    inUse: async (trx, companyId) => !!(await trx.selectFrom('opportunity').select('id').where('company_id', '=', companyId).limit(1).executeTakeFirst()),
+  },
 ];
 
 export const featureKeys = () => FEATURES.map((f) => f.key);

@@ -25,6 +25,7 @@ import { PurchasesService } from './modules/purchases/purchases.service';
 import { TreasuryController } from './modules/treasury/treasury.controller';
 import { ReconciliationController } from './modules/treasury/reconciliation.controller';
 import { AssetsController } from './modules/assets/assets.controller';
+import { OpportunitiesController } from './modules/crm/opportunities.controller';
 import { TreasuryService } from './modules/treasury/treasury.service';
 import { FormationService } from './modules/accounting/formation.service';
 import { AccountingController } from './modules/accounting/accounting.controller';
@@ -75,7 +76,7 @@ import { PlatformSupportController, SupportAccessController } from './modules/su
   controllers: [
     HealthController, AuthController, CompaniesController, MembersController, RolesController, BillingController, WebhooksController,
     DevController, AuditController, SupportAccessController, PlatformSupportController, PlatformController, MailSettingsController, FeaturesController, FeaturesOverviewController, SetupController, ExportController,
-    ContactsController, ProductsController, PriceListsController, SalesController, PurchasesController, TreasuryController, ReconciliationController, AssetsController, AccountingController, StockController, PayrollController, DeclarationsController, PublicDocumentsController, EmailsController, LeaveController, DashboardController, JobsController, ReportsController, SitesController, CalendarController, EvaluationsController, PosController,
+    ContactsController, ProductsController, PriceListsController, SalesController, PurchasesController, TreasuryController, ReconciliationController, AssetsController, OpportunitiesController, AccountingController, StockController, PayrollController, DeclarationsController, PublicDocumentsController, EmailsController, LeaveController, DashboardController, JobsController, ReportsController, SitesController, CalendarController, EvaluationsController, PosController,
   ],
   providers: [
     AuditService, SessionService, AuthService, ProvisioningService, EntitlementService, QuotaService, BillingService, BillingScheduler, SalesService, PurchasesService, TreasuryService, AccountingService, FinancialService, FormationService, BalancesService, StockService, PayrollService, PayrollInsightsService, MailService, LeaveService, DashboardService, ReportsService, CalendarService, EvaluationsService, SitesService, SetupService, PosService,
