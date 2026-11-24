@@ -48,6 +48,11 @@ const ICONS: Record<string, React.ReactNode> = {
     <rect x="8" y="8" width="32" height="36" rx="4" fill={B} /><rect x="19" y="4" width="10" height="8" rx="2" fill={N} />
     <circle cx="24" cy="22" r="6" fill={W} /><rect x="14" y="33" width="20" height="4" rx="2" fill={Y} />
   </>,
+  expenses: <>
+    <rect x="9" y="5" width="30" height="38" rx="3" fill={T} /><path d="M9 39l5 4 5-4 5 4 5-4 5 4 5-4v4H9z" fill={T} />
+    <rect x="14" y="12" width="20" height="3" rx="1.5" fill={W} /><rect x="14" y="19" width="14" height="3" rx="1.5" fill={W} opacity=".8" />
+    <circle cx="31" cy="30" r="7" fill={Y} /><text x="31" y="33.5" textAnchor="middle" fontSize="9" fontWeight="700" fill={N}>F</text>
+  </>,
   leave: <>
     <circle cx="30" cy="16" r="10" fill={Y} />
     <path d="M4 31c6-5 10-5 16 0s10 5 16 0 8-4 8-4v17H4z" fill={B} /><path d="M4 38c6-5 10-5 16 0s10 5 16 0 8-4 8-4v10H4z" fill={T} />
@@ -162,6 +167,7 @@ export const APPS: App[] = [
     { href: '/app/paie/configuration', label: 'Paramètres' },
   ] },
   { key: 'me', label: 'Mon espace', href: '/app/moi', perm: 'employees.self', module: 'hr' },
+  { key: 'expenses', label: 'Notes de frais', href: '/app/notes-de-frais', feature: 'expenses' },
   { key: 'sites', label: 'Sites et magasins', href: '/app/sites', perm: 'sales.read', pages: [
     { href: '/app/sites', label: 'Comparatif' }, { href: '/app/sites/parametres', label: 'Sites', perm: 'settings.read' },
   ] },
@@ -182,7 +188,7 @@ export const appLabel = (a: { key: string; label: string }, activity?: string) =
 /** Teinte (degrés HSL) de chaque application, reprise de la couleur dominante de son icône : elle colore l'intérieur du module. */
 export const APP_HUE: Record<string, number> = {
   dashboard: 262, daily: 32, sales: 22, pos: 340, purchases: 172, treasury: 40, reports: 222, accounting: 206, stock: 318, calendar: 214, products: 2,
-  contacts: 296, employees: 212, leave: 192, evaluations: 44, payroll: 152, me: 172, sites: 22, company: 206, users: 280,
+  contacts: 296, employees: 212, leave: 192, evaluations: 44, payroll: 152, me: 172, expenses: 168, sites: 22, company: 206, users: 280,
   roles: 44, billing: 172, emails: 2, audit: 214, support: 2, security: 152, manual: 196,
 };
 

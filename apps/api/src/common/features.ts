@@ -55,6 +55,11 @@ export const FEATURES: FeatureDef[] = [
     key: 'restock', version: '1.3', label: 'Réapprovisionnement',
     description: "Les articles sous leur seuil sont regroupés par fournisseur habituel, avec la quantité conseillée et le dernier prix d'achat : un bon de commande en brouillon par fournisseur, en un clic.",
   },
+  {
+    key: 'expenses', version: '1.3', label: 'Notes de frais',
+    description: "Chaque utilisateur déclare ses dépenses avancées avec la photo du justificatif ; un responsable les valide ou les refuse, puis les rembourse depuis la caisse, la banque ou le mobile money.",
+    inUse: async (trx, companyId) => !!(await trx.selectFrom('expense_claim').select('id').where('company_id', '=', companyId).limit(1).executeTakeFirst()),
+  },
 ];
 
 export const featureKeys = () => FEATURES.map((f) => f.key);

@@ -325,6 +325,14 @@ export interface OpportunityActivityTable {
 /** Règles de relance automatique des factures en retard (fonctionnalité auto_reminders). */
 export interface DunningSettingsTable { company_id: string; enabled: Generated<boolean>; steps: Json; copy_to: string | null; last_run_on: string | null; updated_by: string | null; updated_at: Generated<Date>; }
 
+/** Note de frais et son justificatif (fonctionnalité expenses). */
+export interface ExpenseClaimTable {
+  company_id: string; id: Generated<string>; code: string; user_id: string; date: DateCol; category: string; label: string; amount: Num;
+  status: Generated<'submitted' | 'approved' | 'rejected' | 'paid'>; decided_by: string | null; decided_at: TsNullable; reject_reason: string | null;
+  movement_id: string | null; paid_at: TsNullable; created_at: Generated<Date>;
+}
+export interface ExpenseReceiptTable { company_id: string; claim_id: string; mime: string; data: Buffer; updated_at: Generated<Date>; }
+
 export interface DB {
   user_account: UserAccountTable; platform_role_assignment: PlatformRoleAssignmentTable; user_session: UserSessionTable;
   company: CompanyTable; company_membership: CompanyMembershipTable; role: RoleTable; membership_role: MembershipRoleTable;
@@ -339,5 +347,5 @@ export interface DB {
   ledger_account: LedgerAccountTable; journal: JournalTable; journal_entry: JournalEntryTable; journal_line: JournalLineTable;
   stock_movement: StockMovementTable; warehouse: WarehouseTable; stock_level: StockLevelTable; stock_document: StockDocumentTable; stock_document_line: StockDocumentLineTable;
   employee: EmployeeTable; employee_photo: EmployeePhotoTable; contact_logo: ContactLogoTable; company_logo: CompanyLogoTable; site: SiteTable; appointment: AppointmentTable; appointment_attendee: AppointmentAttendeeTable; evaluation_campaign: EvaluationCampaignTable; evaluation: EvaluationTable; payroll_settings: PayrollSettingsTable; payroll_run: PayrollRunTable; payslip: PayslipTable;
-  email_message: EmailMessageTable; platform_mail_settings: PlatformMailSettingsTable; company_feature: CompanyFeatureTable; stock_lot: StockLotTable; product_unit: ProductUnitTable; price_list: PriceListTable; price_list_item: PriceListItemTable; bank_statement_line: BankStatementLineTable; fixed_asset: FixedAssetTable; fixed_asset_depreciation: FixedAssetDepreciationTable; opportunity: OpportunityTable; opportunity_activity: OpportunityActivityTable; dunning_settings: DunningSettingsTable; stock_movement_lot: StockMovementLotTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable; leave_request: LeaveRequestTable;
+  email_message: EmailMessageTable; platform_mail_settings: PlatformMailSettingsTable; company_feature: CompanyFeatureTable; stock_lot: StockLotTable; product_unit: ProductUnitTable; price_list: PriceListTable; price_list_item: PriceListItemTable; bank_statement_line: BankStatementLineTable; fixed_asset: FixedAssetTable; fixed_asset_depreciation: FixedAssetDepreciationTable; opportunity: OpportunityTable; opportunity_activity: OpportunityActivityTable; dunning_settings: DunningSettingsTable; expense_claim: ExpenseClaimTable; expense_receipt: ExpenseReceiptTable; stock_movement_lot: StockMovementLotTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable; leave_request: LeaveRequestTable;
 }
