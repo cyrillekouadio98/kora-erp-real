@@ -49,6 +49,9 @@ describe('Fonctionnalités activées à la demande', () => {
     expect((await other.agent.get('/company/essai-nouveaute')).status).toBe(403);
     const list = (await support.agent.get(`/platform/companies/${client.companyId}/features`)).body;
     expect(list.features.find((f: any) => f.key === 'stock_lots')).toMatchObject({ enabled: true, enabledBy: 'Plateforme sales_admin' });
+    const ov = (await support.agent.get('/platform/features')).body;
+    expect(ov.features.find((f: any) => f.key === 'stock_lots').companies).toBe(1);
+    expect(ov.companies.find((c: any) => c.id === client.companyId).enabled).toEqual(['stock_lots']);
     const companies = (await sales.agent.get('/platform/companies')).body;
     expect(Number(companies.find((c: any) => c.id === client.companyId).features)).toBe(1);
   });

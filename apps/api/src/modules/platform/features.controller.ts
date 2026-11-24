@@ -57,3 +57,24 @@ export class FeaturesController {
     });
   }
 }
+
+
+/** Vue d'ensemble : quelles nouveautés sont activées dans quelles entreprises. */
+@ApiTags('Console éditeur')
+@Controller('platform/features')
+export class FeaturesOverviewController {
+  constructor(private readonly db: DatabaseService) {}
+
+  @PlatformRoles('super_admin', 'sales_admin', 'support')
+  @Get()
+  overview() {
+    return this.db.platform(async (trx) => {
+      const companies = await trx.selectFrom('company').select(['id', 'name', 'status']).orderBy('name').execute();
+      const on = await trx.selectFrom('company_feature').select(['company_id', 'feature']).execute();
+      return {
+        features: FEATURES.map((f) => ({ key: f.key, label: f.label, description: f.description, version: f.version, companies: on.filter((o) => o.feature === f.key).length })),
+        companies: companies.map((c) => ({ ...c, enabled: on.filter((o) => o.company_id === c.id).map((o) => o.feature) })),
+      };
+    });
+  }
+}

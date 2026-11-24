@@ -21,7 +21,7 @@ export default function CompanyFeatures() {
   });
   return (
     <>
-      <div className="page-head"><h1>Fonctionnalités{data && <> · {data.company.name}</>}</h1><Link className="btn sm" href="/console">Retour aux clients</Link></div>
+      <div className="page-head"><h1>Fonctionnalités{data && <> · {data.company.name}</>}</h1><Link className="btn sm" href="/console/fonctionnalites">Toutes les entreprises</Link></div>
       <p className="muted" style={{ margin: 0 }}>Les nouveautés de Kora sont désactivées pour toutes les entreprises. Activez-les ici, une par une, quand le client le demande : ses utilisateurs voient la fonction dès leur prochaine page. Une fonctionnalité déjà utilisée ne peut plus être retirée.</p>
       <Alert>{error}</Alert>
       {notice && <Alert kind="ok">{notice}</Alert>}
