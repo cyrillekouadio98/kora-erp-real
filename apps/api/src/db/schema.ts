@@ -281,6 +281,7 @@ export interface PlatformMailSettingsTable {
   updated_by: string | null; updated_at: Generated<Date>;
 }
 
+export interface CompanyModuleTable { company_id: string; module: string; enabled: boolean; changed_by: string | null; changed_at: Generated<Date>; }
 export interface CompanyFeatureTable { company_id: string; feature: string; enabled_by: string | null; enabled_at: Generated<Date>; }
 
 /** Lot d'un article dans un entrepôt : quantité restante et date limite (fonctionnalité stock_lots). */
@@ -347,5 +348,5 @@ export interface DB {
   ledger_account: LedgerAccountTable; journal: JournalTable; journal_entry: JournalEntryTable; journal_line: JournalLineTable;
   stock_movement: StockMovementTable; warehouse: WarehouseTable; stock_level: StockLevelTable; stock_document: StockDocumentTable; stock_document_line: StockDocumentLineTable;
   employee: EmployeeTable; employee_photo: EmployeePhotoTable; contact_logo: ContactLogoTable; company_logo: CompanyLogoTable; site: SiteTable; appointment: AppointmentTable; appointment_attendee: AppointmentAttendeeTable; evaluation_campaign: EvaluationCampaignTable; evaluation: EvaluationTable; payroll_settings: PayrollSettingsTable; payroll_run: PayrollRunTable; payslip: PayslipTable;
-  email_message: EmailMessageTable; platform_mail_settings: PlatformMailSettingsTable; company_feature: CompanyFeatureTable; stock_lot: StockLotTable; product_unit: ProductUnitTable; price_list: PriceListTable; price_list_item: PriceListItemTable; bank_statement_line: BankStatementLineTable; fixed_asset: FixedAssetTable; fixed_asset_depreciation: FixedAssetDepreciationTable; opportunity: OpportunityTable; opportunity_activity: OpportunityActivityTable; dunning_settings: DunningSettingsTable; expense_claim: ExpenseClaimTable; expense_receipt: ExpenseReceiptTable; stock_movement_lot: StockMovementLotTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable; leave_request: LeaveRequestTable;
+  email_message: EmailMessageTable; platform_mail_settings: PlatformMailSettingsTable; company_feature: CompanyFeatureTable; company_module: CompanyModuleTable; stock_lot: StockLotTable; product_unit: ProductUnitTable; price_list: PriceListTable; price_list_item: PriceListItemTable; bank_statement_line: BankStatementLineTable; fixed_asset: FixedAssetTable; fixed_asset_depreciation: FixedAssetDepreciationTable; opportunity: OpportunityTable; opportunity_activity: OpportunityActivityTable; dunning_settings: DunningSettingsTable; expense_claim: ExpenseClaimTable; expense_receipt: ExpenseReceiptTable; stock_movement_lot: StockMovementLotTable; password_reset: PasswordResetTable; document_share: DocumentShareTable; fiscal_year_closing: FiscalYearClosingTable; leave_request: LeaveRequestTable;
 }

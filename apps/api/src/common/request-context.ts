@@ -23,6 +23,8 @@ export interface TenantInfo {
   entitlements: Entitlements;
   /** Nouveautés activées pour l'entreprise depuis la console éditeur. */
   features: Set<string>;
+  /** Modules retirés pour l'entreprise depuis la console éditeur (préfixes de permission). */
+  disabledModules: Set<string>;
   companyStatus: 'active' | 'suspended' | 'closed';
   subscriptionStatus: SubscriptionStatus | null;
   readOnly: boolean;

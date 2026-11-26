@@ -6,14 +6,28 @@ import { api } from '@/lib/api';
 import { date } from '@/lib/format';
 import { Alert, Pill, useAction } from '@/components/ui';
 
-/** Nouveautés d'une entreprise : désactivées par défaut, activées à la demande du client. */
+/** Modules d'une entreprise (selon sa formule, retirés ou ajoutés à la main) et nouveautés activées à la demande du client. */
 export default function CompanyFeatures() {
   const { id } = useParams<{ id: string }>();
   const [data, setData] = useState<any>(null);
+  const [mods, setMods] = useState<any>(null);
+  const [modConfirm, setModConfirm] = useState<{ m: any; enabled: boolean | null } | null>(null);
   const [confirm, setConfirm] = useState<any>(null);
   const [notice, setNotice] = useState('');
   const { busy, error, run } = useAction();
-  const load = useCallback(async () => setData(await api(`/platform/companies/${id}/features`)), [id]);
+  const load = useCallback(async () => {
+    const [f, m] = await Promise.all([api(`/platform/companies/${id}/features`), api(`/platform/companies/${id}/modules`)]);
+    setData(f); setMods(m);
+  }, [id]);
+  const label = (k: string) => mods?.modules.find((m: any) => m.key === k)?.label ?? k;
+  const applyModule = () => run(async () => {
+    const { m, enabled } = modConfirm!;
+    await api(`/platform/companies/${id}/modules/${m.key}`, { method: 'PUT', body: { enabled } });
+    setModConfirm(null);
+    setNotice(`Module « ${m.label} » ${enabled === null ? 'rendu à la formule' : enabled ? 'activé' : 'retiré'} pour ${mods.company.name}.`); await load();
+  });
+  /** Origine de l'état affiché : formule, ou choix fait dans la console. */
+  const source = (m: any) => m.choice === null ? (m.inPlan ? 'Inclus dans la formule' : 'Hors formule') : m.choice ? (m.inPlan ? 'Activé à la main' : 'Ajouté hors formule') : 'Retiré à la main';
   useEffect(() => { run(load); }, [load]); // eslint-disable-line
   const apply = (f: any) => run(async () => {
     await api(`/platform/companies/${id}/features/${f.key}`, { method: 'PUT', body: { enabled: !f.enabled } });
@@ -21,10 +35,36 @@ export default function CompanyFeatures() {
   });
   return (
     <>
-      <div className="page-head"><h1>Fonctionnalités{data && <> · {data.company.name}</>}</h1><Link className="btn sm" href="/console/fonctionnalites">Toutes les entreprises</Link></div>
-      <p className="muted" style={{ margin: 0 }}>Les nouveautés de Kora sont désactivées pour toutes les entreprises. Activez-les ici, une par une, quand le client le demande : ses utilisateurs voient la fonction dès leur prochaine page. Une fonctionnalité déjà utilisée ne peut plus être retirée.</p>
+      <div className="page-head"><h1>Modules et fonctionnalités{data && <> · {data.company.name}</>}</h1><Link className="btn sm" href="/console/fonctionnalites">Toutes les entreprises</Link></div>
       <Alert>{error}</Alert>
       {notice && <Alert kind="ok">{notice}</Alert>}
+      {mods && <section className="card" style={{ display: 'grid', gap: 10 }}>
+        <header><h2>Modules</h2>{mods.plan && <span className="small muted">Formule {mods.plan}</span>}</header>
+        <p className="small muted" style={{ margin: 0 }}>Un module retiré disparaît des menus de tous les utilisateurs et son accès est refusé ; ses données sont conservées et reviennent dès qu&apos;on le réactive. Un module peut aussi être ajouté hors formule.</p>
+        <div className="small">Socle, toujours actif : {mods.core.map((c: any) => <Pill key={c.key} tone="ok">{c.label}</Pill>)}</div>
+        <div className="table-wrap"><table>
+          <thead><tr><th>Module</th><th>État</th><th>Origine</th><th /></tr></thead>
+          <tbody>{mods.modules.map((m: any) => (
+            <tr key={m.key}>
+              <td><b>{m.label}</b><div className="small muted">{m.description}{m.requires.length > 0 && <> Nécessite : {m.requires.map(label).join(', ')}.</>}</div></td>
+              <td>{m.enabled ? <Pill tone="ok">Actif</Pill> : <Pill>Inactif</Pill>}</td>
+              <td className="small">{source(m)}{m.changedAt && <div className="muted">le {date(m.changedAt)}{m.changedBy && <> par {m.changedBy}</>}</div>}</td>
+              <td className="n" style={{ whiteSpace: 'nowrap' }}>
+                {modConfirm?.m.key === m.key ? <>
+                  <button className={`btn sm ${modConfirm?.enabled === false ? 'danger' : 'primary'}`} disabled={busy} onClick={applyModule}>Confirmer</button>{' '}
+                  <button className="btn sm" disabled={busy} onClick={() => setModConfirm(null)}>Annuler</button>
+                </> : <>
+                  {m.choice !== null && <><button className="btn sm" disabled={busy} title="Revenir à ce que prévoit la formule" onClick={() => { setNotice(''); setModConfirm({ m, enabled: null }); }}>Selon la formule</button>{' '}</>}
+                  {m.enabled
+                    ? <button className="btn sm" disabled={busy} onClick={() => { setNotice(''); setModConfirm({ m, enabled: false }); }}>Retirer</button>
+                    : <button className="btn sm primary" disabled={busy} onClick={() => { setNotice(''); setModConfirm({ m, enabled: true }); }}>{m.inPlan ? 'Réactiver' : 'Ajouter'}</button>}
+                </>}
+              </td>
+            </tr>))}</tbody>
+        </table></div>
+      </section>}
+      <h2 style={{ margin: '8px 0 0' }}>Nouveautés</h2>
+      <p className="muted" style={{ margin: 0 }}>Les nouveautés de Kora sont désactivées pour toutes les entreprises. Activez-les ici, une par une, quand le client le demande : ses utilisateurs voient la fonction dès leur prochaine page. Une fonctionnalité déjà utilisée ne peut plus être retirée.</p>
       {data && <div style={{ display: 'grid', gap: 12 }}>
         {data.features.map((f: any) => (
           <div key={f.key} className="card" style={{ display: 'grid', gap: 10 }}>

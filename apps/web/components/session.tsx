@@ -19,6 +19,8 @@ export interface CompanyContext {
   company: { id: string; name: string; currency: string; status: string; activity: 'trade' | 'services' | 'mixed' };
   isOwner: boolean; permissions: string[]; readOnly: boolean; subscriptionStatus: string | null;
   entitlements: { modules: string[]; quotas: Record<string, number | null> };
+  /** Modules retirés pour l'entreprise depuis la console éditeur. */
+  disabledModules?: string[];
   /** Nouveautés activées pour l'entreprise depuis la console éditeur. */
   features: string[];
   /** Sites proposés (ceux permis à l'utilisateur), site affiché (null : tous) et limite éventuelle. */
@@ -56,7 +58,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const status = ctx?.subscriptionStatus ? SUB_STATUS[ctx.subscriptionStatus] : null;
   const home = path === '/app';
   const app = currentApp(path);
-  const allowed = (x: { perm?: string; module?: string; feature?: string }) => (!x.perm || can(x.perm)) && (!x.module || !!ctx?.entitlements.modules.includes(x.module)) && (!x.feature || has(x.feature));
+  const allowed = (x: { perm?: string; module?: string; feature?: string }) => (!x.perm || can(x.perm)) && (!x.module || (!!ctx?.entitlements.modules.includes(x.module) && !ctx?.disabledModules?.includes(x.module))) && (!x.feature || has(x.feature));
   const pages = app?.pages?.filter(allowed) ?? [];
   const activePage = activeHref(path, pages.map((p) => p.href));
   // Site affiché : filtre toute l'application ; la page est rechargée pour que chaque écran relise ses données.

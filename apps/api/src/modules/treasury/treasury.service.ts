@@ -1,3 +1,4 @@
+import { assertModuleOn } from '../../common/modules';
 import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { assertSiteAccess, inScope, workingSite } from '../../common/sites';
@@ -48,6 +49,7 @@ export class TreasuryService {
     if (kind === 'bank' && !t.entitlements.modules.includes('bank')) {
       throw paymentRequired("La banque n'est pas incluse dans votre formule : réglez en espèces ou par mobile money, ou passez à une formule supérieure.", 'module_not_in_plan', { module: 'bank' });
     }
+    if (kind === 'bank') assertModuleOn(t, 'bank');
   }
 
   /** Solde courant (solde d'ouverture + entrées − sorties), éventuellement arrêté à une date. */

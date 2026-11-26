@@ -67,7 +67,9 @@ export class AccessGuard implements CanActivate {
       const ent = await this.entitlements.forCompany(trx, companyId);
       const sites = await trx.selectFrom('site').select('id').where('archived_at', 'is', null).execute();
       const features = await trx.selectFrom('company_feature').select('feature').execute();
-      return { m, permissions: new Set(roles.flatMap((r) => r.permissions)), sites: sites.map((s) => s.id), features: new Set(features.map((f) => f.feature)), ...ent };
+      // Module retiré dans la console : ses permissions disparaissent pour tous les rôles.
+      const off = (p: string) => ent.disabledModules.has(p.split('.')[0]);
+      return { m, permissions: new Set(roles.flatMap((r) => r.permissions).filter((p) => !off(p))), sites: sites.map((s) => s.id), features: new Set(features.map((f) => f.feature)), ...ent };
     });
     if (!info) throw forbidden("Vous n'avez pas ou plus accès à cette entreprise.", 'no_membership');
 
@@ -79,7 +81,7 @@ export class AccessGuard implements CanActivate {
     if (allowedSiteIds) tctx.siteIds = allowedSiteIds;
     req.tenant = {
       ctx: tctx, companyId, membershipId: info.m.id, isOwner: info.m.is_owner, permissions: info.permissions,
-      entitlements: info.entitlements, features: info.features, companyStatus: info.m.company_status, subscriptionStatus: subStatus, readOnly,
+      entitlements: info.entitlements, features: info.features, disabledModules: info.disabledModules, companyStatus: info.m.company_status, subscriptionStatus: subStatus, readOnly,
       siteId: pick ?? (allowedSiteIds?.length === 1 ? allowedSiteIds[0] : null), allowedSiteIds,
     };
 
@@ -91,6 +93,9 @@ export class AccessGuard implements CanActivate {
       const mod = entitlementFor(permission);
       if (mod && !info.entitlements.modules.includes(mod)) {
         throw paymentRequired("Ce module n'est pas inclus dans votre formule. Passez à une formule supérieure pour y accéder.", 'module_not_in_plan', { module: mod });
+      }
+      if (info.disabledModules.has(permission.split('.')[0])) {
+        throw forbidden("Ce module n'est pas activé pour votre entreprise. Contactez Kora ERP pour l'activer.", 'module_disabled');
       }
       if (!info.permissions.has(permission)) throw forbidden();
     }

@@ -9,7 +9,7 @@ export default function Home() {
   const { me, ctx, can, has } = useSession();
   const [q, setQ] = useState('');
   const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-  const apps = APPS.filter((a) => (!a.perm || can(a.perm)) && (!a.module || ctx?.entitlements.modules.includes(a.module)) && (!a.feature || has(a.feature)))
+  const apps = APPS.filter((a) => (!a.perm || can(a.perm)) && (!a.module || (ctx?.entitlements.modules.includes(a.module) && !ctx?.disabledModules?.includes(a.module))) && (!a.feature || has(a.feature)))
     .map((a) => ({ ...a, label: appLabel(a, ctx?.company.activity) })).filter((a) => norm(a.label).includes(norm(q.trim())));
   const company = me.companies.find((c) => c.companyId === me.activeCompanyId)?.name;
 

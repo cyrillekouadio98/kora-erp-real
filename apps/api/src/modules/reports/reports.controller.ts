@@ -3,6 +3,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { AllowWhenReadOnly, Permission, Tenant } from '../../common/decorators';
 import { badRequest, paymentRequired } from '../../common/errors';
+import { assertModuleOn } from '../../common/modules';
 import type { TenantInfo } from '../../common/request-context';
 import { parse } from '../../common/validation';
 import { ReportsService } from './reports.service';
@@ -63,6 +64,8 @@ export class ReportsController {
     const { kind } = parse(z.object({ kind: z.enum(['all', 'cash', 'bank', 'mobile_money']).default('all') }), query);
     if (!t.entitlements.modules.includes('cash')) throw paymentRequired("Le module Trésorerie n'est pas inclus dans votre formule.", 'module_not_in_plan', { module: 'cash' });
     if (kind === 'bank' && !t.entitlements.modules.includes('bank')) throw paymentRequired("Le module Banque n'est pas inclus dans votre formule.", 'module_not_in_plan', { module: 'bank' });
+    assertModuleOn(t, 'cash');
+    if (kind === 'bank') assertModuleOn(t, 'bank');
     return this.reports.treasury(t, f.from, f.to, kind === 'all' ? null : kind);
   }
 
@@ -71,6 +74,7 @@ export class ReportsController {
   @Get('suppliers')
   suppliers(@Tenant() t: TenantInfo, @Query() query: unknown) {
     if (!t.entitlements.modules.includes('purchases')) throw paymentRequired("Le module Achats n'est pas inclus dans votre formule.", 'module_not_in_plan', { module: 'purchases' });
+    assertModuleOn(t, 'purchases');
     const f = period(query);
     return this.reports.suppliers(t, f.from, f.to);
   }

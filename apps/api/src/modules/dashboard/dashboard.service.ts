@@ -30,7 +30,7 @@ export class DashboardService {
   constructor(private readonly db: DatabaseService, private readonly accounting: AccountingService, private readonly evaluations: EvaluationsService) {}
 
   async build(t: TenantInfo, months: number) {
-    const can = (perm: string, module?: string) => t.permissions.has(perm) && (!module || t.entitlements.modules.includes(module));
+    const can = (perm: string, module?: string) => t.permissions.has(perm) && (!module || (t.entitlements.modules.includes(module) && !t.disabledModules.has(module)));
     const periods = lastMonths(months);
     const from = `${periods[0]}-01`;
     return this.db.tenant(t.ctx, async (trx) => {
