@@ -773,7 +773,7 @@ table.import-map .req { color: var(--crit); }
 
 /* ---------- Restaurant : plan de salle ---------- */
 .floor-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
-.floor-grid { display: grid; grid-template-columns: repeat(var(--cols, 12), minmax(76px, 1fr)); grid-auto-rows: 84px; gap: 8px; padding: 10px;
+.floor-grid { display: grid; grid-template-columns: repeat(var(--cols, 12), minmax(76px, 1fr)); grid-auto-rows: 100px; gap: 8px; padding: 10px;
   background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; overflow-x: auto; min-width: 0; }
 .floor-cell { border: 1px dashed transparent; border-radius: 10px; }
 .floor-grid.editing .floor-cell { border-color: var(--line); }
@@ -796,3 +796,14 @@ table.import-map .req { color: var(--crit); }
 .order-qty b { min-width: 24px; text-align: center; }
 .order-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; max-height: 32vh; overflow: auto; }
 .order-picker .pos-tile { min-height: 64px; padding: 8px; }
+.kslip + .kslip { margin-top: 14px; page-break-before: always; }
+.kitchen-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; align-items: start; }
+.kitchen-card { display: grid; gap: 8px; background: var(--surface); border: 2px solid var(--line); border-radius: 12px; padding: 12px; }
+.kitchen-card.late { border-color: var(--warn); }
+.kitchen-card.very-late { border-color: var(--crit); }
+.kitchen-card.ready { background: var(--ok-bg); border-color: var(--ok); }
+.kitchen-card .kline { font-size: 17px; font-weight: 600; }
+.kitchen-card .knote { color: var(--crit); font-weight: 600; }
+.floor-badge { font-size: 11px; font-weight: 700; border-radius: 999px; padding: 1px 7px; }
+.floor-badge.ready { background: var(--ok); color: #fff; }
+.floor-badge.pending { background: var(--warn-bg); color: var(--warn); }

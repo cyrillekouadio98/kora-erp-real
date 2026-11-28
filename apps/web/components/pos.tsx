@@ -103,3 +103,19 @@ export function ZReport({ r }: { r: any }) {
     </div>
   );
 }
+
+export const STATIONS: Record<string, string> = { kitchen: 'Cuisine', bar: 'Bar', none: 'Sans préparation' };
+
+/** Bon de préparation (cuisine ou bar), imprimé sur l'imprimante du poste ou lu à l'écran. */
+export function KitchenSlip({ k }: { k: any }) {
+  return (
+    <div className="tk kslip">
+      <div className="tk-head"><b className="tk-title">{STATIONS[k.station] ?? k.station} · Bon {k.number}</b></div>
+      <div className="tk-meta"><b>Table {k.tableName}</b><span>{k.guests} couv.</span></div>
+      <div className="tk-meta"><span>{new Date(k.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span><span>{k.waiter ?? ''}</span></div>
+      <div className="tk-lines">{k.lines.map((l: any, i: number) => (
+        <div key={i}><div className="tk-row" style={{ fontSize: 16 }}><b>{qty(l.quantity)} × {l.description}</b></div>{l.note && <div>→ {l.note}</div>}</div>
+      ))}</div>
+    </div>
+  );
+}

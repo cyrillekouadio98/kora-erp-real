@@ -4,9 +4,9 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { money } from '@/lib/format';
 import { useSession } from '@/components/session';
-import { PosTicket, ttc } from '@/components/pos';
+import { KitchenSlip, PosTicket, STATIONS, ttc } from '@/components/pos';
 import { PayDialog, PosPayment } from '@/components/pos-pay';
-import { Alert, Field, useAction } from '@/components/ui';
+import { Alert, Field, Pill, useAction } from '@/components/ui';
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const since = (v: string) => { const m = Math.max(0, Math.round((Date.now() - new Date(v).getTime()) / 60000)); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`; };
@@ -29,8 +29,11 @@ export default function SallePage() {
   const [ticket, setTicket] = useState<any>(null);
   const [bill, setBill] = useState(false);
   const [cancel, setCancel] = useState<string | null>(null);
+  const [slips, setSlips] = useState<any[] | null>(null);
   const { busy, error, run, setError } = useAction();
   const panel = useRef<HTMLElement>(null);
+  const openId = useRef<string | null>(null);
+  openId.current = order?.id ?? null;
   // Sur téléphone, la commande s'affiche sous le plan : on y descend dès qu'une table est choisie.
   useEffect(() => { if (order?.id && window.innerWidth < 900) panel.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [order?.id]);
   const write = can('pos.create') && !ctx?.readOnly;
@@ -59,7 +62,11 @@ export default function SallePage() {
     run(loadFloor);
     api<any[]>(`/company/pos/registers/${registerId}/catalog`).then(setCatalog, () => setCatalog([]));
     // Les autres serveurs prennent aussi des commandes : le plan se rafraîchit seul.
-    const h = setInterval(() => { loadFloor().catch(() => {}); }, 15000);
+    const h = setInterval(() => {
+      loadFloor().catch(() => {});
+      // La commande ouverte suit aussi : un bon annoncé prêt en cuisine s'affiche sans rien toucher.
+      if (openId.current) api<any>(`/company/restaurant/orders/${openId.current}`).then((o) => { if (o.id === openId.current && o.status === 'open') setOrder(o); }, () => {});
+    }, 15000);
     return () => clearInterval(h);
   }, [registerId]); // eslint-disable-line
 
@@ -102,6 +109,18 @@ export default function SallePage() {
     setPaying(false); setOrder(null); setTicket(t); await Promise.all([loadFloor(), loadRegisters()]);
     api<any[]>(`/company/pos/registers/${registerId}/catalog`).then(setCatalog, () => {});
   });
+  const sendOrder = () => run(async () => {
+    const r = await api<any>(`/company/restaurant/orders/${order.id}/send`, { body: {} });
+    setOrder(r.order); if (r.tickets.length) setSlips(r.tickets); await loadFloor();
+  });
+  const served = (ticketId: string) => run(async () => {
+    await api(`/company/restaurant/kitchen/${ticketId}/served`, { body: {} });
+    setOrder(await api(`/company/restaurant/orders/${order.id}`)); await loadFloor();
+  });
+  /** État d'une ligne : à envoyer, en préparation, prête, servie. */
+  const lineState = (l: any): [string, 'warn' | 'ok' | undefined] => !l.sentAt ? ['À envoyer', 'warn']
+    : l.station === 'none' || !l.ticketStatus ? ['Envoyé', undefined]
+    : l.ticketStatus === 'pending' ? [l.station === 'bar' ? 'Au bar' : 'En cuisine', undefined] : l.ticketStatus === 'ready' ? ['Prêt', 'ok'] : ['Servi', undefined];
   const doCancel = () => run(async () => {
     await api(`/company/restaurant/orders/${order.id}/cancel`, { body: { reason: cancel || null } });
     setCancel(null); setOrder(null); await loadFloor();
@@ -124,13 +143,14 @@ export default function SallePage() {
         <div style={{ display: 'grid', gap: 10, minWidth: 0 }}>
           <div className="floor-tabs">{floor.areas.map((a: any) => <button key={a.id} className={`btn sm${a.id === areaId ? ' primary' : ''}`} onClick={() => setAreaId(a.id)}>
             {a.name} <span className="muted">({a.tables.filter((x: any) => x.order).length}/{a.tables.length})</span></button>)}</div>
-          {area && <div className="floor-grid" style={{ ['--cols' as any]: cols, gridTemplateRows: `repeat(${rows}, 84px)` }}>
+          {area && <div className="floor-grid" style={{ ['--cols' as any]: cols, gridTemplateRows: `repeat(${rows}, 100px)` }}>
             {area.tables.map((x: any) => (
               <button key={x.id} type="button" className={`floor-table${x.shape === 'round' ? ' round' : ''}${x.order ? ' busy' : ''}${order?.tableId === x.id ? ' selected' : ''}`}
                 style={{ gridColumn: `${x.x + 1} / span ${x.shape === 'long' ? 2 : 1}`, gridRow: x.y + 1 }} onClick={() => pick(x)}
                 aria-label={`Table ${x.name}, ${x.order ? `occupée, ${money(x.order.total)}` : 'libre'}`}>
                 <b>{x.name}</b>
-                {x.order ? <><span className="small">{money(x.order.total)}</span><span className="small muted">{x.order.guests} couv.</span><span className="small muted">{since(x.order.openedAt)}</span></>
+                {x.order ? <>{x.order.ready > 0 ? <span className="floor-badge ready">Prêt</span> : x.order.pending > 0 ? <span className="floor-badge pending">En cours</span> : null}
+                  <span className="small">{money(x.order.total)}</span><span className="small muted">{x.order.guests} couv.</span><span className="small muted">{since(x.order.openedAt)}</span></>
                   : <span className="small muted">{x.seats} places</span>}
               </button>
             ))}
@@ -155,16 +175,22 @@ export default function SallePage() {
               {order.lines.map((l: any) => (
                 <div key={l.id} className="order-line">
                   <div className="order-qty">
-                    {write && <button className="btn sm" disabled={busy} onClick={() => setQty(l, l.quantity - 1)} aria-label="Retirer une unité">−</button>}
+                    {write && (!l.sentAt || can('pos.validate')) && <button className="btn sm" disabled={busy} onClick={() => setQty(l, l.quantity - 1)} aria-label="Retirer une unité"
+                      title={l.sentAt ? 'Article déjà envoyé : retrait réservé au responsable' : undefined}>−</button>}
                     <b>{l.quantity.toLocaleString('fr-FR')}</b>
-                    {write && <button className="btn sm" disabled={busy} onClick={() => setQty(l, l.quantity + 1)} aria-label="Ajouter une unité">+</button>}
+                    {write && !l.sentAt && <button className="btn sm" disabled={busy} onClick={() => setQty(l, l.quantity + 1)} aria-label="Ajouter une unité">+</button>}
                   </div>
-                  <div className="small">{l.description}{l.note && <div className="muted">« {l.note} »</div>}</div>
+                  <div className="small">{l.description} {(() => { const [label, tone] = lineState(l); return <Pill tone={tone}>{label}</Pill>; })()}{l.note && <div className="muted">« {l.note} »</div>}</div>
                   <b className="small">{money(l.totalTtc)}</b>
                 </div>
               ))}
             </div>
+            {order.tickets.filter((k: any) => k.status === 'ready').map((k: any) => (
+              <Alert key={k.id} kind="ok"><div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                <span><b>{STATIONS[k.station]} : bon {k.number} prêt</b>, à servir.</span>
+                {write && <button className="btn sm primary" disabled={busy} onClick={() => served(k.id)}>Servi</button>}</div></Alert>))}
             <div className="pos-total"><span>Total</span><b>{money(order.totals.ttc)}</b></div>
+            {write && order.unsent > 0 && <button className="btn primary" disabled={busy} onClick={sendOrder}>Envoyer en cuisine ({order.unsent} article{order.unsent > 1 ? 's' : ''})</button>}
             {write && <>
               <div className="grid2">
                 <input className="input" type="search" placeholder="Rechercher un article" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Rechercher un article" />
@@ -177,7 +203,7 @@ export default function SallePage() {
                 {!matches.length && <p className="small muted">Aucun article.</p>}
               </div>
               <div className="row">
-                <button className="btn primary" disabled={busy || !order.lines.length || !register?.session} title={!register?.session ? `Ouvrez d'abord ${register?.name}` : undefined} onClick={() => { setError(''); setPaying(true); }}>Encaisser</button>
+                <button className={`btn${order.unsent ? '' : ' primary'}`} disabled={busy || !order.lines.length || !register?.session} title={!register?.session ? `Ouvrez d'abord ${register?.name}` : undefined} onClick={() => { setError(''); setPaying(true); }}>Encaisser</button>
                 <button className="btn" disabled={!order.lines.length} onClick={() => setBill(true)}>Addition</button>
                 <button className="btn" disabled={busy} onClick={() => setMoving(!moving)}>Transférer</button>
                 <button className="btn danger" disabled={busy} onClick={() => { setError(''); setCancel(''); }}>Annuler</button>
@@ -206,8 +232,10 @@ export default function SallePage() {
         <h2 style={{ margin: 0 }}>Annuler la commande de la table {order.tableName}</h2>
         <Alert>{error}</Alert>
         {order.lines.length > 0
-          ? <><p className="small" style={{ margin: 0 }}>La commande contient {order.lines.length} article(s) : rien ne sera encaissé ni sorti du stock. L&apos;annulation est réservée au responsable de caisse et reste inscrite au journal.</p>
-            <Field label="Motif" required value={cancel} onChange={(e) => setCancel(e.target.value)} placeholder="Client parti, erreur de table…" /></>
+          ? order.lines.some((l: any) => l.sentAt)
+            ? <><p className="small" style={{ margin: 0 }}>Des articles sont déjà envoyés en préparation : rien ne sera encaissé ni sorti du stock, les bons en attente seront annulés. L&apos;annulation est réservée au responsable de caisse et reste inscrite au journal.</p>
+              <Field label="Motif" required value={cancel} onChange={(e) => setCancel(e.target.value)} placeholder="Client parti, erreur de table…" /></>
+            : <p className="small" style={{ margin: 0 }}>Rien n&apos;est encore envoyé en cuisine : la commande sera supprimée et la table libérée.</p>
           : <p className="small" style={{ margin: 0 }}>La commande est vide : la table sera libérée.</p>}
         <div className="row"><button className="btn danger" disabled={busy}>Annuler la commande</button><button type="button" className="btn" onClick={() => setCancel(null)}>Retour</button></div>
       </form></div>}
@@ -222,6 +250,12 @@ export default function SallePage() {
           <p className="tk-foot">Ce document n&apos;est pas un ticket de caisse.</p>
         </div>
         <div className="row no-print"><button className="btn primary" onClick={() => window.print()}>Imprimer l&apos;addition</button><button className="btn" onClick={() => setBill(false)}>Fermer</button></div>
+      </div></div>}
+
+      {slips && <div className="modal-back" onClick={() => setSlips(null)}><div className="modal" style={{ width: 'min(420px, 100%)' }} onClick={(e) => e.stopPropagation()}>
+        <Alert kind="ok">{slips.length > 1 ? `${slips.length} bons envoyés` : 'Bon envoyé'} : {slips.map((k) => `${STATIONS[k.station]} n° ${k.number}`).join(', ')}. {slips.length > 1 ? 'Ils s’affichent' : 'Il s’affiche'} sur l&apos;écran Cuisine et bar.</Alert>
+        <div className="print-area">{slips.map((k) => <KitchenSlip key={k.id} k={k} />)}</div>
+        <div className="row no-print"><button className="btn primary" autoFocus onClick={() => setSlips(null)}>Retour à la salle</button><button className="btn" onClick={() => window.print()}>Imprimer {slips.length > 1 ? 'les bons' : 'le bon'}</button></div>
       </div></div>}
 
       {ticket && <div className="modal-back" onClick={() => setTicket(null)}><div className="modal" style={{ width: 'min(420px, 100%)' }} onClick={(e) => e.stopPropagation()}>

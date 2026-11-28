@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useSession } from '@/components/session';
 import { Alert, Field, useAction } from '@/components/ui';
+import { STATIONS } from '@/components/pos';
 
 const SHAPES: Record<string, string> = { square: 'Carrée', round: 'Ronde', long: 'Longue (2 cases)' };
 const COLS = 12;
@@ -20,6 +21,8 @@ export default function FloorPlanPage() {
   const [edit, setEdit] = useState<any>(null);
   const [over, setOver] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
+  const [products, setProducts] = useState<any[] | null>(null);
+  const [pq, setPq] = useState('');
   const { busy, error, run, setError } = useAction();
   const admin = can('pos.admin') && !ctx?.readOnly;
 
@@ -30,6 +33,7 @@ export default function FloorPlanPage() {
     setAreaId((a) => (f.areas.some((x: any) => x.id === a) ? a : f.areas[0]?.id ?? ''));
   }, [siteId]);
   useEffect(() => { if (has('restaurant_tables')) run(load); }, [load]); // eslint-disable-line
+  useEffect(() => { if (has('restaurant_tables') && can('pos.admin')) api<any[]>('/company/restaurant/stations').then(setProducts, () => {}); }, []); // eslint-disable-line
 
   if (!has('restaurant_tables')) return <Alert kind="warn">Le plan de salle n&apos;est pas activé pour votre entreprise. Contactez Kora ERP pour l&apos;activer.</Alert>;
   if (!can('pos.admin')) return <Alert kind="warn">Le plan de salle se modifie avec le droit d&apos;administrer les caisses.</Alert>;
@@ -61,6 +65,10 @@ export default function FloorPlanPage() {
     setEdit(null); await load();
   });
   const archiveTable = () => run(async () => { await api(`/company/restaurant/tables/${edit.id}`, { method: 'PATCH', body: { archived: true } }); setNotice(`Table ${edit.name} retirée du plan.`); setEdit(null); await load(); });
+  const setStation = (ids: string[], station: string) => run(async () => {
+    await api('/company/restaurant/stations', { method: 'PUT', body: { productIds: ids, station } });
+    setProducts((ps) => ps!.map((p) => (ids.includes(p.id) ? { ...p, station } : p)));
+  });
   const drop = (id: string, cx: number, cy: number) => {
     setOver(null);
     const x = tables.find((t: any) => t.id === id);
@@ -102,7 +110,7 @@ export default function FloorPlanPage() {
               <input className="input" style={{ width: 200 }} autoFocus required maxLength={40} value={rename} onChange={(e) => setRename(e.target.value)} aria-label="Nouveau nom de la salle" />
               <button className="btn sm primary" disabled={busy}>Enregistrer</button><button type="button" className="btn sm" onClick={() => setRename(null)}>Annuler</button></form>}
           </div>
-          <div className="floor-grid editing" style={{ ['--cols' as any]: COLS, gridTemplateRows: `repeat(${rows}, 84px)` }}>
+          <div className="floor-grid editing" style={{ ['--cols' as any]: COLS, gridTemplateRows: `repeat(${rows}, 100px)` }}>
             {[...Array(rows)].flatMap((_, cy) => [...Array(COLS)].map((__, cx) => (
               <div key={`${cx}-${cy}`} className={`floor-cell${over === `${cx}-${cy}` ? ' over' : ''}`} style={{ gridColumn: cx + 1, gridRow: cy + 1 }}
                 onDragOver={(e) => { e.preventDefault(); setOver(`${cx}-${cy}`); }} onDragLeave={() => setOver((o) => (o === `${cx}-${cy}` ? null : o))}
@@ -112,6 +120,7 @@ export default function FloorPlanPage() {
               <button key={x.id} type="button" draggable={admin} className={`floor-table${x.shape === 'round' ? ' round' : ''}${x.order ? ' busy' : ''}`}
                 style={{ gridColumn: `${x.x + 1} / span ${width(x)}`, gridRow: x.y + 1, zIndex: 1 }}
                 onDragStart={(e) => { e.dataTransfer.setData('text/plain', x.id); e.dataTransfer.effectAllowed = 'move'; }}
+                aria-label={`Table ${x.name}, ${x.seats} places : modifier ou faire glisser`}
                 onDragOver={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()}
                 onClick={() => { setError(''); setNotice(''); setEdit({ id: x.id, name: x.name, seats: String(x.seats), shape: x.shape, areaId, busy: !!x.order }); }}>
                 <b>{x.name}</b><span className="small muted">{x.seats} places</span>
@@ -120,6 +129,19 @@ export default function FloorPlanPage() {
           </div>
         </>}
       </>}
+
+      {products && <section className="card" style={{ display: 'grid', gap: 10 }}>
+        <header><h2>Postes de préparation</h2><span className="small muted">{products.filter((p) => p.station === 'kitchen').length} en cuisine · {products.filter((p) => p.station === 'bar').length} au bar</span></header>
+        <p className="small muted" style={{ margin: 0 }}>Quand le serveur envoie la commande, chaque article part sur l&apos;écran de son poste : <b>Cuisine</b> (plats), <b>Bar</b> (cocktails, boissons à préparer) ; <b>Sans préparation</b> pour ce qui est servi tel quel (canette, eau).</p>
+        <input className="input" style={{ maxWidth: 320 }} type="search" placeholder="Rechercher un article" value={pq} onChange={(e) => setPq(e.target.value)} aria-label="Rechercher un article" />
+        <div className="table-wrap" style={{ maxHeight: 420, overflow: 'auto' }}><table>
+          <thead><tr><th>Article</th><th>Poste</th></tr></thead>
+          <tbody>{products.filter((p) => !pq.trim() || `${p.code} ${p.name}`.toLowerCase().includes(pq.trim().toLowerCase())).slice(0, 300).map((p) => (
+            <tr key={p.id}><td>{p.name} <span className="small muted">{p.code}</span></td>
+              <td><select className="input" style={{ width: 200 }} disabled={!admin || busy} value={p.station} onChange={(e) => setStation([p.id], e.target.value)} aria-label={`Poste de ${p.name}`}>
+                {Object.entries(STATIONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></td></tr>))}</tbody>
+        </table></div>
+      </section>}
 
       {edit && <div className="modal-back" onClick={() => setEdit(null)}><form className="modal" style={{ width: 'min(420px, 100%)' }} onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); saveTable(); }}>
         <h2 style={{ margin: 0 }}>{edit.id ? `Table ${edit.name}` : 'Nouvelle table'}</h2>

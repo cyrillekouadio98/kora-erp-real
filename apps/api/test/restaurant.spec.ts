@@ -90,9 +90,54 @@ describe('Restaurant : plan de salle et commandes à table', () => {
     expect((await waiter.post(`/company/restaurant/orders/${empty}/cancel`).send({})).body).toEqual({ ok: true });
     const served = (await waiter.post(`/company/restaurant/tables/${t1}/orders`).send({ guests: 2 })).body.id;
     await waiter.post(`/company/restaurant/orders/${served}/lines`).send({ lines: [{ productId: beer, quantity: 2 }] });
+    await waiter.post(`/company/restaurant/orders/${served}/send`);
     expect((await waiter.post(`/company/restaurant/orders/${served}/cancel`).send({ reason: 'Client parti' })).body.error.code).toBe('cancel_needs_manager');
     expect((await owner.agent.post(`/company/restaurant/orders/${served}/cancel`).send({})).body.error.code).toBe('reason_required');
     expect((await owner.agent.post(`/company/restaurant/orders/${served}/cancel`).send({ reason: 'Client parti sans consommer' })).body).toEqual({ ok: true });
     expect((await owner.agent.get(`/company/stock/${beer}/movements`)).body.product.stock_qty).toBe(45); // rien n'est sorti du stock
+  });
+
+  it('envoie en cuisine et au bar : un bon par poste, prêt puis servi', async () => {
+    const coke = (await owner.agent.post('/company/products').send({ name: 'Coca 33 cl', salePrice: 500, vatRate: 18 })).body.id;
+    expect((await waiter.put('/company/restaurant/stations').send({ productIds: [beer], station: 'bar' })).status).toBe(403);
+    expect((await owner.agent.put('/company/restaurant/stations').send({ productIds: [beer], station: 'bar' })).body).toEqual({ updated: 1 });
+    await owner.agent.put('/company/restaurant/stations').send({ productIds: [coke], station: 'none' });
+    expect((await owner.agent.get('/company/restaurant/stations')).body.find((p: any) => p.id === garba).station).toBe('kitchen');
+
+    const o = (await waiter.post(`/company/restaurant/tables/${t2}/orders`).send({ guests: 2 })).body.id;
+    expect((await waiter.post(`/company/restaurant/orders/${o}/send`)).body.error.code).toBe('nothing_to_send');
+    await waiter.post(`/company/restaurant/orders/${o}/lines`).send({ lines: [{ productId: garba, quantity: 2, note: 'sans piment' }, { productId: beer, quantity: 2 }, { productId: coke, quantity: 1 }] });
+    const r = (await waiter.post(`/company/restaurant/orders/${o}/send`)).body;
+    expect(r.tickets.map((k: any) => [k.station, k.tableName, k.lines.map((l: any) => `${l.quantity} ${l.description}${l.note ? ` (${l.note})` : ''}`)])).toEqual([
+      ['kitchen', 'T2', ['2 Garba (sans piment)']], ['bar', 'T2', ['2 Bière 65 cl']]]);
+    expect(r.tickets[1].number).toBe(r.tickets[0].number + 1);
+    expect(r.order.unsent).toBe(0);
+    expect(r.order.lines.find((l: any) => l.description === 'Coca 33 cl').sentAt).not.toBeNull(); // sans préparation : pas de bon
+
+    // Ajouter après l'envoi : nouvelle ligne, pas de regroupement avec l'article déjà parti.
+    let ord = (await waiter.post(`/company/restaurant/orders/${o}/lines`).send({ lines: [{ productId: garba, quantity: 1 }] })).body;
+    expect(ord.lines.filter((l: any) => l.description === 'Garba')).toHaveLength(2);
+    const sent = ord.lines.find((l: any) => l.description === 'Garba' && l.sentAt);
+    expect((await waiter.patch(`/company/restaurant/orders/${o}/lines/${sent.id}`).send({ quantity: 3 })).body.error.code).toBe('line_sent');
+    expect((await waiter.delete(`/company/restaurant/orders/${o}/lines/${sent.id}`)).body.error.code).toBe('line_sent_needs_manager');
+    ord = (await owner.agent.patch(`/company/restaurant/orders/${o}/lines/${sent.id}`).send({ quantity: 1 })).body;
+    expect(ord.lines.find((l: any) => l.id === sent.id).quantity).toBe(1);
+
+    // Écran de la cuisine : le bon à préparer, puis prêt ; la table l'affiche ; le serveur le marque servi.
+    let board = (await owner.agent.get(`/company/restaurant/kitchen?station=kitchen&registerId=${register}`)).body;
+    expect(board.pending.map((k: any) => k.tableName)).toEqual(['T2']);
+    expect(board.counts).toEqual({ kitchen: 1, bar: 1 });
+    const kid = board.pending[0].id;
+    expect((await waiter.post(`/company/restaurant/kitchen/${kid}/ready`)).body).toEqual({ ok: true });
+    board = (await owner.agent.get(`/company/restaurant/kitchen?station=kitchen&registerId=${register}`)).body;
+    expect([board.pending.length, board.ready.length]).toEqual([0, 1]);
+    expect((await floor()).areas[0].tables.find((x: any) => x.name === 'T2').order).toMatchObject({ ready: 1, pending: 1 });
+    await waiter.post(`/company/restaurant/kitchen/${kid}/served`);
+    expect((await owner.agent.get(`/company/restaurant/kitchen?station=kitchen&registerId=${register}`)).body.ready).toHaveLength(0);
+    expect((await waiter.post(`/company/restaurant/kitchen/${kid}/eaten`)).status).toBe(404);
+
+    // Annuler la commande annule aussi ses bons en attente.
+    await owner.agent.post(`/company/restaurant/orders/${o}/cancel`).send({ reason: 'Erreur de table' });
+    expect((await owner.agent.get(`/company/restaurant/kitchen?station=bar&registerId=${register}`)).body.pending).toHaveLength(0);
   });
 });

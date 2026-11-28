@@ -96,6 +96,11 @@ export interface TableOrderTable {
 export interface TableOrderLineTable {
   company_id: string; id: Generated<string>; site_id: string; order_id: string; product_id: string | null; description: string; unit: string | null;
   quantity: ColumnType<string, number, number>; unit_price: ColumnType<string, number, number>; vat_rate: ColumnType<string, number, number>; note: string | null; created_by: string; created_at: Generated<Date>;
+  sent_at: TsNullable; kitchen_ticket_id: string | null;
+}
+export interface KitchenTicketTable {
+  company_id: string; id: Generated<string>; site_id: string; order_id: string; station: 'kitchen' | 'bar'; number: number; status: Generated<'pending' | 'ready' | 'served' | 'cancelled'>;
+  created_by: string; created_at: Generated<Date>; ready_at: TsNullable; ready_by: string | null; served_at: TsNullable;
 }
 export interface PosSessionTable {
   company_id: string; id: Generated<string>; site_id: string; register_id: string; number: string; status: Generated<'open' | 'closed'>;
@@ -120,6 +125,8 @@ export interface ProductTable {
   vat_rate: ColumnType<string, number | string | undefined, number | string>; archived_at: TsNullable; created_by: string | null; created_at: Generated<Date>; updated_at: Generated<Date>;
   track_lots: Generated<boolean>; track_stock: Generated<boolean>; barcode: ColumnType<string | null, string | null | undefined, string | null>; min_stock: ColumnType<string | null, number | string | null | undefined, number | string | null>;
   stock_qty: NumDefault; stock_value: NumDefault; avg_cost: NumDefault; site_id: ColumnType<string | null, string | null | undefined, string | null>;
+  /** Poste de préparation au restaurant : cuisine, bar ou aucun (servi tel quel). */
+  prep_station: Generated<'kitchen' | 'bar' | 'none'>;
 }
 export type SalesDocType = 'quote' | 'order' | 'invoice' | 'credit_note';
 export type SalesDocStatus = 'draft' | 'sent' | 'accepted' | 'refused' | 'ordered' | 'invoiced' | 'confirmed' | 'cancelled' | 'issued' | 'partially_paid' | 'paid' | 'credited';
@@ -354,7 +361,7 @@ export interface DB {
   subscription_event: SubscriptionEventTable; platform_invoice: PlatformInvoiceTable; platform_payment: PlatformPaymentTable;
   payment_webhook_event: PaymentWebhookEventTable; notification: NotificationTable; support_access_grant: SupportAccessGrantTable;
   audit_log: AuditLogTable; numbering_sequence: NumberingSequenceTable; outbox_event: OutboxEventTable; contact: ContactTable;
-  pos_register: PosRegisterTable; pos_session: PosSessionTable; dining_area: DiningAreaTable; dining_table: DiningTableTable; table_order: TableOrderTable; table_order_line: TableOrderLineTable; company_formation: CompanyFormationTable; company_formation_step: CompanyFormationStepTable;
+  pos_register: PosRegisterTable; pos_session: PosSessionTable; dining_area: DiningAreaTable; dining_table: DiningTableTable; table_order: TableOrderTable; table_order_line: TableOrderLineTable; kitchen_ticket: KitchenTicketTable; company_formation: CompanyFormationTable; company_formation_step: CompanyFormationStepTable;
   product: ProductTable; sales_document: SalesDocumentTable; sales_document_line: SalesDocumentLineTable; sales_payment: SalesPaymentTable; sales_reminder: SalesReminderTable;
   purchase_document: PurchaseDocumentTable; purchase_document_line: PurchaseDocumentLineTable; purchase_payment: PurchasePaymentTable;
   treasury_account: TreasuryAccountTable; treasury_movement: TreasuryMovementTable;
