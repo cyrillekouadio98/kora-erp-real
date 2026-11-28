@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, Put } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Put, Req } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { Auth, PlatformRoles } from '../../common/decorators';
@@ -7,8 +7,9 @@ import { FEATURES } from '../../common/features';
 import { applyModuleChoices, CORE_MODULES, moduleDef, MODULES } from '../../common/modules';
 import type { Trx } from '../../db/database.service';
 import { normalizeEntitlements } from '../billing/entitlements';
+import { SetupService } from './setup.service';
 import { isUuid } from '../../common/ids';
-import type { AuthInfo } from '../../common/request-context';
+import { AuthInfo, clientIp, KoraRequest } from '../../common/request-context';
 import { parse } from '../../common/validation';
 import { DatabaseService } from '../../db/database.service';
 import { AuditService } from '../audit/audit.service';
@@ -130,24 +131,81 @@ export class ModulesController {
     }
     const { enabled } = parse(z.object({ enabled: z.boolean().nullable() }).strict(), body);
     return this.db.platform(async (trx) => {
-      const c = await trx.selectFrom('company').select(['id', 'name']).where('id', '=', id).executeTakeFirst();
-      if (!c) throw notFound('Entreprise');
-      const before = await moduleState(trx, id);
-      const label = (k: string) => moduleDef(k)!.label;
-      const will = enabled ?? before.modules.find((m) => m.key === key)!.inPlan;
-      // Dépendances : on n'ouvre pas un module dont un prérequis est fermé, on ne ferme pas un prérequis encore utilisé.
-      if (will) {
-        const missing = def.requires.filter((r) => !before.modules.find((m) => m.key === r)!.enabled);
-        if (missing.length) throw conflict(`Activez d'abord : ${missing.map(label).join(', ')}.`, 'module_requires');
-      } else {
-        const users = before.modules.filter((m) => m.requires.includes(key) && m.enabled).map((m) => m.key);
-        if (users.length) throw conflict(`Retirez d'abord : ${users.map(label).join(', ')} (${users.length > 1 ? 'ils dépendent' : 'il dépend'} de ${def.label}).`, 'module_required_by');
-      }
-      if (enabled === null) await trx.deleteFrom('company_module').where('company_id', '=', id).where('module', '=', key).execute();
-      else await trx.insertInto('company_module').values({ company_id: id, module: key, enabled, changed_by: auth.userId })
-        .onConflict((oc) => oc.columns(['company_id', 'module']).doUpdateSet({ enabled, changed_by: auth.userId, changed_at: new Date() })).execute();
-      await this.audit.platform(trx, auth.userId, { companyId: id, action: enabled === null ? 'module.reset' : enabled ? 'module.enabled' : 'module.disabled', entityType: 'company', entityId: id, data: { module: key, label: def.label } });
+      if (!(await trx.selectFrom('company').select('id').where('id', '=', id).executeTakeFirst())) throw notFound('Entreprise');
+      await changeModule(trx, this.audit, auth.userId, id, key, enabled);
       return { ok: true };
     });
+  }
+}
+
+/**
+ * Change l'état d'un module (true ajouté, false retiré, null selon la formule) après contrôle des dépendances :
+ * on n'ouvre pas un module dont un prérequis est fermé, on ne ferme pas un prérequis encore utilisé.
+ */
+async function changeModule(trx: Trx, audit: AuditService, userId: string, id: string, key: string, enabled: boolean | null) {
+  const def = moduleDef(key)!;
+  const before = await moduleState(trx, id);
+  const label = (k: string) => moduleDef(k)!.label;
+  const will = enabled ?? before.modules.find((m) => m.key === key)!.inPlan;
+  if (will) {
+    const missing = def.requires.filter((r) => !before.modules.find((m) => m.key === r)!.enabled);
+    if (missing.length) throw conflict(`Activez d'abord : ${missing.map(label).join(', ')}.`, 'module_requires');
+  } else {
+    const users = before.modules.filter((m) => m.requires.includes(key) && m.enabled).map((m) => m.key);
+    if (users.length) throw conflict(`Retirez d'abord : ${users.map(label).join(', ')} (${users.length > 1 ? 'ils dépendent' : 'il dépend'} de ${def.label}).`, 'module_required_by');
+  }
+  if (enabled === null) await trx.deleteFrom('company_module').where('company_id', '=', id).where('module', '=', key).execute();
+  else await trx.insertInto('company_module').values({ company_id: id, module: key, enabled, changed_by: userId })
+    .onConflict((oc) => oc.columns(['company_id', 'module']).doUpdateSet({ enabled, changed_by: userId, changed_at: new Date() })).execute();
+  await audit.platform(trx, userId, { companyId: id, action: enabled === null ? 'module.reset' : enabled ? 'module.enabled' : 'module.disabled', entityType: 'company', entityId: id, data: { module: key, label: def.label } });
+}
+
+/** Modules d'une boutique (une à trois caisses) : vendre au comptoir, suivre le stock, faire le point du jour. */
+const SHOP = {
+  off: ['payroll', 'evaluations', 'leave', 'employees', 'calendar'],
+  on: ['stock', 'pos', 'reports'],
+};
+
+/** Profils types appliqués en un clic depuis la console. */
+@ApiTags('Console éditeur')
+@Controller('platform/companies/:id/profiles')
+export class ProfilesController {
+  constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly setup: SetupService) {}
+
+  /**
+   * Profil Boutique : modules d'une boutique (Achats et Comptabilité au choix), puis, pour une entreprise encore en
+   * préparation, une caisse de vente par poste avec son compte de caisse. Une entreprise déjà remise au client
+   * garde la main sur ses caisses : la console ne les crée pas pour elle.
+   */
+  @PlatformRoles('super_admin', 'sales_admin') @HttpCode(200)
+  @Post('boutique')
+  async boutique(@Auth() auth: AuthInfo, @Param('id') id: string, @Body() body: unknown, @Req() req: KoraRequest) {
+    if (!isUuid(id)) throw notFound('Entreprise');
+    const input = parse(z.object({ registers: z.number().int().min(1).max(3), purchases: z.boolean(), accounting: z.boolean() }).strict(), body);
+    const off = [...SHOP.off, ...(input.purchases ? [] : ['purchases']), ...(input.accounting ? [] : ['accounting'])];
+    const on = [...SHOP.on, ...(input.purchases ? ['purchases'] : []), ...(input.accounting ? ['accounting'] : [])];
+    const { company, modules, preparing } = await this.db.platform(async (trx) => {
+      const c = await trx.selectFrom('company').select(['id', 'name']).where('id', '=', id).executeTakeFirst();
+      if (!c) throw notFound('Entreprise');
+      const out: { key: string; label: string; result: 'removed' | 'enabled' | 'unchanged' | 'not_in_plan' }[] = [];
+      const state = async (k: string) => (await moduleState(trx, id)).modules.find((m) => m.key === k)!;
+      for (const k of off) {
+        const m = await state(k);
+        if (m.enabled) { await changeModule(trx, this.audit, auth.userId, id, k, false); out.push({ key: k, label: m.label, result: 'removed' }); }
+        else out.push({ key: k, label: m.label, result: 'unchanged' });
+      }
+      for (const k of on) {
+        const m = await state(k);
+        // Le profil ne donne pas un module que la formule n'inclut pas : cela se décide à part (facturation).
+        if (m.enabled) out.push({ key: k, label: m.label, result: 'unchanged' });
+        else if (!m.inPlan) out.push({ key: k, label: m.label, result: 'not_in_plan' });
+        else { await changeModule(trx, this.audit, auth.userId, id, k, null); out.push({ key: k, label: m.label, result: 'enabled' }); }
+      }
+      const setup = await trx.selectFrom('company_setup').select('handed_over_at').where('company_id', '=', id).executeTakeFirst();
+      await this.audit.platform(trx, auth.userId, { companyId: id, action: 'profile.applied', entityType: 'company', entityId: id, data: { profile: 'boutique', ...input } });
+      return { company: c, modules: out, preparing: !!setup && !setup.handed_over_at };
+    });
+    const registers = preparing ? await this.setup.shopRegisters(auth, id, input.registers, clientIp(req)) : null;
+    return { company, modules, registers, preparing };
   }
 }

@@ -83,4 +83,30 @@ describe('Modules activables par entreprise', () => {
     expect(await mod('payroll')).toMatchObject({ inPlan: false, enabled: true, choice: true });
     expect((await set('employees', false)).body.error.code).toBe('module_required_by');
   });
+
+  it("applique le profil Boutique à une entreprise en service, sans toucher à ses caisses", async () => {
+    await set('payroll', null); await set('employees', null);
+    expect((await support.agent.post(`/platform/companies/${client.companyId}/profiles/boutique`).send({ registers: 2, purchases: true, accounting: false })).status).toBe(403);
+    const r = (await sales.agent.post(`/platform/companies/${client.companyId}/profiles/boutique`).send({ registers: 2, purchases: true, accounting: false })).body;
+    expect(r).toMatchObject({ preparing: false, registers: null });
+    const res = Object.fromEntries(r.modules.map((m: any) => [m.key, m.result]));
+    expect(res).toMatchObject({ accounting: 'removed', calendar: 'removed', payroll: 'unchanged', employees: 'unchanged', stock: 'unchanged', pos: 'unchanged', purchases: 'unchanged' });
+    expect((await ctx()).disabledModules.sort()).toEqual(['accounting', 'calendar']);
+    expect((await client.agent.get('/company/pos/registers')).body).toHaveLength(0);
+    // Rejouable : rien ne change la deuxième fois.
+    const again = (await sales.agent.post(`/platform/companies/${client.companyId}/profiles/boutique`).send({ registers: 2, purchases: true, accounting: false })).body;
+    expect(again.modules.every((m: any) => m.result === 'unchanged')).toBe(true);
+  });
+
+  it("crée les caisses d'une boutique en préparation, sans donner un module hors formule", async () => {
+    const p = (await sales.agent.post('/platform/setup').send({ name: 'Boutique Awa', city: 'Abidjan', planCode: 'starter', billingCycle: 'monthly' })).body.id;
+    const r = (await sales.agent.post(`/platform/companies/${p}/profiles/boutique`).send({ registers: 3, purchases: true, accounting: true })).body;
+    expect(r).toMatchObject({ preparing: true, registers: { created: ['Caisse 1', 'Caisse 2', 'Caisse 3'], existing: [] } });
+    const res = Object.fromEntries(r.modules.map((m: any) => [m.key, m.result]));
+    expect(res).toMatchObject({ purchases: 'not_in_plan', accounting: 'not_in_plan', pos: 'unchanged', calendar: 'removed' });
+    const setup = (await sales.agent.get(`/platform/setup/${p}`)).body;
+    expect(setup.accounts.filter((a: any) => a.kind === 'cash').map((a: any) => a.name).sort()).toEqual(['Caisse 2', 'Caisse 3', 'Caisse principale']);
+    const again = (await sales.agent.post(`/platform/companies/${p}/profiles/boutique`).send({ registers: 3, purchases: true, accounting: true })).body;
+    expect(again.registers).toEqual({ created: [], existing: ['Caisse 1', 'Caisse 2', 'Caisse 3'] });
+  });
 });

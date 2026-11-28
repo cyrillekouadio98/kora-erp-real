@@ -12,6 +12,7 @@ import { logoDataUrl, saveLogo } from '../companies/company-logo';
 import { NewCompany, ProvisioningService } from '../companies/provisioning.service';
 import { MailService } from '../mail/mail.service';
 import { DEFAULT_ROLES } from '../rbac/permissions';
+import { PosService } from '../pos/pos.service';
 import { NewSite, SitesService } from '../sites/sites.service';
 import { TreasuryService } from '../treasury/treasury.service';
 
@@ -32,7 +33,7 @@ export type CompanyInput = Partial<Record<keyof typeof COMPANY_COLUMNS, string |
 export class SetupService {
   constructor(
     private readonly db: DatabaseService, private readonly audit: AuditService, private readonly provisioning: ProvisioningService,
-    private readonly entitlements: EntitlementService, private readonly sites: SitesService, private readonly treasury: TreasuryService, private readonly mail: MailService,
+    private readonly entitlements: EntitlementService, private readonly sites: SitesService, private readonly treasury: TreasuryService, private readonly mail: MailService, private readonly pos: PosService,
   ) {}
 
   private async setupRow(id: string) {
@@ -198,6 +199,31 @@ export class SetupService {
   async addAccount(auth: AuthInfo, id: string, input: { kind: 'cash' | 'bank' | 'mobile_money'; name: string; bankName?: string | null; accountNumber?: string | null; siteId?: string | null }, ip?: string | null) {
     await this.treasury.createAccount(await this.tenantFor(auth, id, ip), input);
     return this.get(id);
+  }
+
+  /**
+   * Profil Boutique, entreprise en préparation : une caisse de vente par poste (« Caisse 1 »…), chacune sur son propre
+   * compte de caisse (la première reprend « Caisse principale »). Ce qui existe déjà est gardé : le profil peut être rejoué.
+   */
+  async shopRegisters(auth: AuthInfo, id: string, count: number, ip?: string | null) {
+    const t = await this.tenantFor(auth, id, ip);
+    const created: string[] = [], existing: string[] = [];
+    const { registers, accounts } = await this.db.tenant(t.ctx, async (trx) => ({
+      registers: await trx.selectFrom('pos_register').select(['name', 'cash_account_id']).where('archived_at', 'is', null).execute(),
+      accounts: await trx.selectFrom('treasury_account').select(['id', 'name']).where('kind', '=', 'cash').where('archived_at', 'is', null).orderBy('created_at').execute(),
+    }));
+    const used = new Set(registers.map((r) => r.cash_account_id));
+    for (let i = 1; i <= count; i++) {
+      const name = `Caisse ${i}`;
+      if (registers.some((r) => r.name === name)) { existing.push(name); continue; }
+      let account = accounts.find((a) => a.name === name && !used.has(a.id))
+        ?? (i === 1 ? accounts.find((a) => a.name === 'Caisse principale' && !used.has(a.id)) : undefined);
+      if (!account) account = { id: (await this.treasury.createAccount(t, { kind: 'cash', name: accounts.some((a) => a.name === name) ? `${name} (point de vente)` : name })).id, name };
+      used.add(account.id);
+      await this.pos.createRegister(t, { name, cashAccountId: account.id });
+      created.push(name);
+    }
+    return { created, existing };
   }
 
   async updateAccount(auth: AuthInfo, id: string, accountId: string, input: { name?: string; bankName?: string | null; accountNumber?: string | null }, ip?: string | null) {
