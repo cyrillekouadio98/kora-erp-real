@@ -61,6 +61,11 @@ export const FEATURES: FeatureDef[] = [
     inUse: async (trx, companyId) => !!(await trx.selectFrom('expense_claim').select('id').where('company_id', '=', companyId).limit(1).executeTakeFirst()),
   },
   {
+    key: 'restaurant_tables', version: '1.4', label: 'Restaurant : plan de salle et tables',
+    description: "Plan de salle par site (salles, terrasse, tables placées sur une grille) ; une commande ouverte par table, complétée au fil du repas, transférable d'une table à l'autre, puis encaissée en ticket de caisse.",
+    inUse: async (trx, companyId) => !!(await trx.selectFrom('dining_table').select('id').where('company_id', '=', companyId).limit(1).executeTakeFirst()),
+  },
+  {
     key: 'odoo_import', version: '1.3', label: 'Reprise depuis Odoo',
     description: "Assistant de reprise des exports Excel d'Odoo, dans l'ordre : contacts, articles avec leur stock, factures non soldées, soldes des comptes ; contrôle final par le compte d'attente 471000.",
   },

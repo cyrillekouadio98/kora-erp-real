@@ -11,7 +11,7 @@ const hour = (v: string) => new Date(v).toLocaleString('fr-FR', { weekday: 'shor
 
 /** Point de vente : les caisses, leur session en cours, ouverture et paramétrage. */
 export default function PosHome() {
-  const { can, ctx, me } = useSession();
+  const { can, ctx, me, has } = useSession();
   const router = useRouter();
   const writable = !ctx?.readOnly;
   const [rows, setRows] = useState<any[] | null>(null);
@@ -78,6 +78,7 @@ export default function PosHome() {
               {!r.archivedAt && <div className="row">
                 {s ? (mine || can('pos.validate')) && can('pos.create') && <Link className="btn primary" href={`/app/pos/caisse/${r.id}`}>{mine ? 'Reprendre la vente' : 'Voir la caisse'}</Link>
                   : can('pos.create') && writable && <button className="btn primary" onClick={() => setOpening({ ...r, float: '' })}>Ouvrir la caisse</button>}
+                {has('restaurant_tables') && <Link className="btn" href="/app/pos/salle" onClick={() => { try { localStorage.setItem('kora.salle.register', r.id); } catch { /* navigation privée */ } }}>Salle</Link>}
                 {s && can('pos.read') && <Link className="btn" href={`/app/pos/sessions?id=${s.id}`}>Rapport X</Link>}
                 {can('pos.admin') && writable && <button className="btn" onClick={() => setEdit({ id: r.id, name: r.name, siteId: r.siteId, warehouseId: r.warehouseId, cashAccountId: r.cashAccountId })}>Paramétrer</button>}
                 {can('pos.admin') && writable && !s && <button className="btn danger" disabled={busy} onClick={() => archive(r, true)}>Archiver</button>}

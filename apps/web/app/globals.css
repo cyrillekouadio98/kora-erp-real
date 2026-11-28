@@ -770,3 +770,29 @@ table.import-map .req { color: var(--crit); }
 /* Version de l'application en pied de page */
 .app-version { text-align: center; padding-top: 8px; font-size: 12px; }
 @media print { .app-version { display: none; } }
+
+/* ---------- Restaurant : plan de salle ---------- */
+.floor-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.floor-grid { display: grid; grid-template-columns: repeat(var(--cols, 12), minmax(76px, 1fr)); grid-auto-rows: 84px; gap: 8px; padding: 10px;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; overflow-x: auto; min-width: 0; }
+.floor-cell { border: 1px dashed transparent; border-radius: 10px; }
+.floor-grid.editing .floor-cell { border-color: var(--line); }
+.floor-cell.over { border-color: var(--accent); background: var(--accent-soft); }
+.floor-table { display: grid; align-content: center; justify-items: center; gap: 2px; padding: 6px; border: 2px solid var(--line); border-radius: 10px;
+  background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; text-align: center; min-width: 0; }
+.floor-table.round { border-radius: 28px; }
+.floor-table b { font-size: 16px; }
+.floor-table .small { line-height: 1.2; font-size: 11.5px; }
+.floor-table:hover, .floor-table:focus-visible { border-color: var(--accent); outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
+.floor-table.busy { background: var(--accent-soft); border-color: var(--accent); }
+.floor-table.selected { box-shadow: 0 0 0 3px var(--accent); }
+.floor-table[draggable="true"] { cursor: grab; }
+.salle { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); gap: 14px; align-items: start; }
+@media (max-width: 900px) { .salle { grid-template-columns: minmax(0, 1fr); } }
+.order-panel { display: grid; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; position: sticky; top: 12px; }
+.order-lines { display: grid; gap: 6px; max-height: 40vh; overflow: auto; }
+.order-line { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.order-qty { display: flex; gap: 4px; align-items: center; }
+.order-qty b { min-width: 24px; text-align: center; }
+.order-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; max-height: 32vh; overflow: auto; }
+.order-picker .pos-tile { min-height: 64px; padding: 8px; }

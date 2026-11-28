@@ -84,6 +84,19 @@ export interface PosRegisterTable {
   company_id: string; id: Generated<string>; site_id: string; name: string; warehouse_id: string; cash_account_id: string; customer_id: string;
   archived_at: TsNullable; created_at: Generated<Date>; updated_at: Generated<Date>;
 }
+export interface DiningAreaTable { company_id: string; id: Generated<string>; site_id: string; name: string; position: Generated<number>; archived_at: TsNullable; created_at: Generated<Date>; }
+export interface DiningTableTable {
+  company_id: string; id: Generated<string>; site_id: string; area_id: string; name: string; seats: Generated<number>; shape: Generated<'square' | 'round' | 'long'>;
+  x: Generated<number>; y: Generated<number>; archived_at: TsNullable; created_at: Generated<Date>;
+}
+export interface TableOrderTable {
+  company_id: string; id: Generated<string>; site_id: string; table_id: string; status: Generated<'open' | 'paid' | 'cancelled'>; guests: Generated<number>; note: string | null;
+  opened_by: string; opened_at: Generated<Date>; ticket_id: string | null; closed_by: string | null; closed_at: TsNullable; cancel_reason: string | null;
+}
+export interface TableOrderLineTable {
+  company_id: string; id: Generated<string>; site_id: string; order_id: string; product_id: string | null; description: string; unit: string | null;
+  quantity: ColumnType<string, number, number>; unit_price: ColumnType<string, number, number>; vat_rate: ColumnType<string, number, number>; note: string | null; created_by: string; created_at: Generated<Date>;
+}
 export interface PosSessionTable {
   company_id: string; id: Generated<string>; site_id: string; register_id: string; number: string; status: Generated<'open' | 'closed'>;
   opening_float: NumDefault; opened_by: string; opened_at: Generated<Date>; expected_cash: ColumnType<string | null, number | null | undefined, number | null>;
@@ -341,7 +354,7 @@ export interface DB {
   subscription_event: SubscriptionEventTable; platform_invoice: PlatformInvoiceTable; platform_payment: PlatformPaymentTable;
   payment_webhook_event: PaymentWebhookEventTable; notification: NotificationTable; support_access_grant: SupportAccessGrantTable;
   audit_log: AuditLogTable; numbering_sequence: NumberingSequenceTable; outbox_event: OutboxEventTable; contact: ContactTable;
-  pos_register: PosRegisterTable; pos_session: PosSessionTable; company_formation: CompanyFormationTable; company_formation_step: CompanyFormationStepTable;
+  pos_register: PosRegisterTable; pos_session: PosSessionTable; dining_area: DiningAreaTable; dining_table: DiningTableTable; table_order: TableOrderTable; table_order_line: TableOrderLineTable; company_formation: CompanyFormationTable; company_formation_step: CompanyFormationStepTable;
   product: ProductTable; sales_document: SalesDocumentTable; sales_document_line: SalesDocumentLineTable; sales_payment: SalesPaymentTable; sales_reminder: SalesReminderTable;
   purchase_document: PurchaseDocumentTable; purchase_document_line: PurchaseDocumentLineTable; purchase_payment: PurchasePaymentTable;
   treasury_account: TreasuryAccountTable; treasury_movement: TreasuryMovementTable;

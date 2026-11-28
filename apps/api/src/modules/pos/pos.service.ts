@@ -246,62 +246,65 @@ export class PosService {
    * du total sont rendues au client (seules les espèces se rendent) ; mobile money et carte vont sur leurs comptes.
    */
   async sell(t: TenantInfo, sessionId: string, input: SaleInput) {
-    const id = await this.db.tenant(t.ctx, async (trx) => {
-      const s = await this.session(trx, t, sessionId);
-      if (s.status !== 'open') throw conflict(`La session ${s.number} est clôturée : ouvrez une nouvelle session pour vendre.`, 'session_closed');
-      const r = await trx.selectFrom('pos_register').selectAll().where('id', '=', s.register_id).executeTakeFirstOrThrow();
-      const contactId = input.contactId ?? r.customer_id;
-      if (!isUuid(contactId)) throw badRequest('Client introuvable.', undefined, 'unknown_contact');
-      const c = await trx.selectFrom('contact').selectAll().where('id', '=', contactId).executeTakeFirst();
-      if (!c || c.archived_at || c.kind === 'supplier') throw badRequest('Client introuvable ou archivé.', undefined, 'unknown_contact');
-
-      const productIds = [...new Set(input.lines.map((l) => l.productId).filter((x): x is string => !!x))];
-      const prices = new Map<string, string>();
-      if (productIds.length) {
-        const found = await trx.selectFrom('product').select(['id', 'archived_at', 'sale_price']).where('id', 'in', productIds).execute();
-        if (found.length !== productIds.length) throw badRequest('Un ou plusieurs articles sont introuvables.', undefined, 'unknown_product');
-        for (const p of found) prices.set(p.id, p.sale_price);
-      }
-      const totals = computeTotals(input.lines);
-      const cash = input.payments.filter((p) => p.method === 'cash').reduce((a, p) => a + p.amount, 0);
-      const other = input.payments.filter((p) => p.method !== 'cash').reduce((a, p) => a + p.amount, 0);
-      if (other > totals.ttc) throw badRequest('Le mobile money et la carte ne peuvent pas dépasser le total : seule la monnaie en espèces se rend.', undefined, 'overpaid_non_cash');
-      if (cash + other < totals.ttc) throw badRequest(`Montant reçu insuffisant : il manque ${(totals.ttc - cash - other).toLocaleString('fr-FR')} FCFA.`, undefined, 'underpaid');
-      const change = cash + other - totals.ttc;
-
-      const issue = today();
-      const number = await nextNumber(trx, t.companyId, 'pos_ticket', 'TK', Number(issue.slice(0, 4)));
-      const customer = { code: c.code, name: c.name, taxId: c.tax_id, rccm: c.rccm, address: c.address, city: c.city, email: c.email, phone: c.phone };
-      const d = await trx.insertInto('sales_document').values({
-        company_id: t.companyId, type: 'invoice', contact_id: contactId, issue_date: issue, due_date: issue, valid_until: null, notes: null, number: null,
-        source_quote_id: null, validated_by: null, created_by: t.ctx.userId, site_id: r.site_id, warehouse_id: r.warehouse_id, pos_session_id: s.id, cash_tendered: cash || null,
-        total_ht: totals.ht, total_vat: totals.vat, total_ttc: totals.ttc,
-      }).returning('id').executeTakeFirstOrThrow();
-      await trx.insertInto('sales_document_line').values(input.lines.map((l, i) => ({
-        company_id: t.companyId, document_id: d.id, position: i + 1, product_id: l.productId ?? null, description: l.description, quantity: l.quantity, unit: l.unit ?? null,
-        unit_price: l.unitPrice, discount_pct: l.discountPct ?? 0, discount_amount: l.discountAmount ?? 0, vat_rate: l.vatRate, total_ht: totals.lines[i].ht, total_vat: totals.lines[i].vat,
-        list_price: l.productId ? prices.get(l.productId) ?? null : null,
-      }))).execute();
-      await trx.updateTable('sales_document').set({ status: 'issued', number, customer: JSON.stringify(customer), validated_at: new Date(), validated_by: t.ctx.userId }).where('id', '=', d.id).execute();
-      await this.stock.applySalesDocument(trx, t, d.id);
-      await this.accounting.postSalesDocument(trx, t, d.id);
-
-      // Encaissements : espèces gardées (reçu − rendu) sur la caisse, le reste sur le compte du mode de paiement.
-      const legs: { method: PosMethod; amount: number; reference?: string | null }[] = [];
-      if (cash - change > 0) legs.push({ method: 'cash', amount: cash - change });
-      for (const p of input.payments) if (p.method !== 'cash' && p.amount > 0) legs.push(p);
-      for (const p of legs) {
-        const account = p.method === 'cash' ? { id: r.cash_account_id } : await this.treasury.resolveAccount(trx, null, p.method, r.site_id);
-        const pay = await trx.insertInto('sales_payment').values({ company_id: t.companyId, document_id: d.id, amount: p.amount, paid_on: issue, method: p.method, reference: p.reference ?? null, created_by: t.ctx.userId })
-          .returning('id').executeTakeFirstOrThrow();
-        await this.treasury.record(trx, t, { accountId: account.id, date: issue, direction: 'in', amount: p.amount, category: 'customer_payment', label: `Ticket ${number} — ${r.name}`,
-          contactId, sourceType: 'sales_payment', sourceId: pay.id, reference: p.reference ?? null });
-      }
-      await trx.updateTable('sales_document').set({ paid_amount: totals.ttc, status: 'paid' }).where('id', '=', d.id).execute();
-      await this.audit.tenant(trx, t.ctx, { action: 'pos.ticket_sold', entityType: 'sales_document', entityId: d.id, data: { number, session: s.number, totalTtc: totals.ttc, change } });
-      return d.id;
-    });
+    const id = await this.db.tenant(t.ctx, (trx) => this.sellIn(trx, t, sessionId, input));
     return this.ticket(t, id);
+  }
+
+  /** Ticket dans une transaction existante (encaissement d'une commande de table) ; renvoie l'identifiant du ticket. */
+  async sellIn(trx: TenantTrx, t: TenantInfo, sessionId: string, input: SaleInput): Promise<string> {
+    const s = await this.session(trx, t, sessionId);
+    if (s.status !== 'open') throw conflict(`La session ${s.number} est clôturée : ouvrez une nouvelle session pour vendre.`, 'session_closed');
+    const r = await trx.selectFrom('pos_register').selectAll().where('id', '=', s.register_id).executeTakeFirstOrThrow();
+    const contactId = input.contactId ?? r.customer_id;
+    if (!isUuid(contactId)) throw badRequest('Client introuvable.', undefined, 'unknown_contact');
+    const c = await trx.selectFrom('contact').selectAll().where('id', '=', contactId).executeTakeFirst();
+    if (!c || c.archived_at || c.kind === 'supplier') throw badRequest('Client introuvable ou archivé.', undefined, 'unknown_contact');
+
+    const productIds = [...new Set(input.lines.map((l) => l.productId).filter((x): x is string => !!x))];
+    const prices = new Map<string, string>();
+    if (productIds.length) {
+      const found = await trx.selectFrom('product').select(['id', 'archived_at', 'sale_price']).where('id', 'in', productIds).execute();
+      if (found.length !== productIds.length) throw badRequest('Un ou plusieurs articles sont introuvables.', undefined, 'unknown_product');
+      for (const p of found) prices.set(p.id, p.sale_price);
+    }
+    const totals = computeTotals(input.lines);
+    const cash = input.payments.filter((p) => p.method === 'cash').reduce((a, p) => a + p.amount, 0);
+    const other = input.payments.filter((p) => p.method !== 'cash').reduce((a, p) => a + p.amount, 0);
+    if (other > totals.ttc) throw badRequest('Le mobile money et la carte ne peuvent pas dépasser le total : seule la monnaie en espèces se rend.', undefined, 'overpaid_non_cash');
+    if (cash + other < totals.ttc) throw badRequest(`Montant reçu insuffisant : il manque ${(totals.ttc - cash - other).toLocaleString('fr-FR')} FCFA.`, undefined, 'underpaid');
+    const change = cash + other - totals.ttc;
+
+    const issue = today();
+    const number = await nextNumber(trx, t.companyId, 'pos_ticket', 'TK', Number(issue.slice(0, 4)));
+    const customer = { code: c.code, name: c.name, taxId: c.tax_id, rccm: c.rccm, address: c.address, city: c.city, email: c.email, phone: c.phone };
+    const d = await trx.insertInto('sales_document').values({
+      company_id: t.companyId, type: 'invoice', contact_id: contactId, issue_date: issue, due_date: issue, valid_until: null, notes: null, number: null,
+      source_quote_id: null, validated_by: null, created_by: t.ctx.userId, site_id: r.site_id, warehouse_id: r.warehouse_id, pos_session_id: s.id, cash_tendered: cash || null,
+      total_ht: totals.ht, total_vat: totals.vat, total_ttc: totals.ttc,
+    }).returning('id').executeTakeFirstOrThrow();
+    await trx.insertInto('sales_document_line').values(input.lines.map((l, i) => ({
+      company_id: t.companyId, document_id: d.id, position: i + 1, product_id: l.productId ?? null, description: l.description, quantity: l.quantity, unit: l.unit ?? null,
+      unit_price: l.unitPrice, discount_pct: l.discountPct ?? 0, discount_amount: l.discountAmount ?? 0, vat_rate: l.vatRate, total_ht: totals.lines[i].ht, total_vat: totals.lines[i].vat,
+      list_price: l.productId ? prices.get(l.productId) ?? null : null,
+    }))).execute();
+    await trx.updateTable('sales_document').set({ status: 'issued', number, customer: JSON.stringify(customer), validated_at: new Date(), validated_by: t.ctx.userId }).where('id', '=', d.id).execute();
+    await this.stock.applySalesDocument(trx, t, d.id);
+    await this.accounting.postSalesDocument(trx, t, d.id);
+
+    // Encaissements : espèces gardées (reçu − rendu) sur la caisse, le reste sur le compte du mode de paiement.
+    const legs: { method: PosMethod; amount: number; reference?: string | null }[] = [];
+    if (cash - change > 0) legs.push({ method: 'cash', amount: cash - change });
+    for (const p of input.payments) if (p.method !== 'cash' && p.amount > 0) legs.push(p);
+    for (const p of legs) {
+      const account = p.method === 'cash' ? { id: r.cash_account_id } : await this.treasury.resolveAccount(trx, null, p.method, r.site_id);
+      const pay = await trx.insertInto('sales_payment').values({ company_id: t.companyId, document_id: d.id, amount: p.amount, paid_on: issue, method: p.method, reference: p.reference ?? null, created_by: t.ctx.userId })
+        .returning('id').executeTakeFirstOrThrow();
+      await this.treasury.record(trx, t, { accountId: account.id, date: issue, direction: 'in', amount: p.amount, category: 'customer_payment', label: `Ticket ${number} — ${r.name}`,
+        contactId, sourceType: 'sales_payment', sourceId: pay.id, reference: p.reference ?? null });
+    }
+    await trx.updateTable('sales_document').set({ paid_amount: totals.ttc, status: 'paid' }).where('id', '=', d.id).execute();
+    await this.audit.tenant(trx, t.ctx, { action: 'pos.ticket_sold', entityType: 'sales_document', entityId: d.id, data: { number, session: s.number, totalTtc: totals.ttc, change } });
+    return d.id;
   }
 
   private async header(trx: TenantTrx, t: TenantInfo) {
