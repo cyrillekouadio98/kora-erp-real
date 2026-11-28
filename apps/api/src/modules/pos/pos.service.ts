@@ -374,7 +374,14 @@ export class PosService {
         .select(['p.id', 'p.code', 'p.barcode', 'p.name', 'p.kind', 'p.unit', 'p.sale_price as salePrice', 'p.vat_rate as vatRate', 'p.track_stock as trackStock', 'sl.quantity as stock'])
         .where('p.archived_at', 'is', null).where((eb) => eb.or([eb('p.site_id', 'is', null), eb('p.site_id', '=', r.site_id)]))
         .orderBy('p.name').limit(5000).execute();
-      return rows.map((p) => ({ ...p, salePrice: n(p.salePrice), vatRate: n(p.vatRate), stock: p.trackStock ? n(p.stock) : null }));
+      // Fiches techniques : un plat affiche les portions que permettent encore ses ingrédients dans l'entrepôt de la caisse.
+      const recipes = t.features?.has('recipes') ? await trx.selectFrom('product_recipe as x')
+        .leftJoin('stock_level as sl', (j) => j.onRef('sl.product_id', '=', 'x.ingredient_id').onRef('sl.company_id', '=', 'x.company_id').on('sl.warehouse_id', '=', r.warehouse_id))
+        .select(['x.product_id', 'x.quantity', 'sl.quantity as level']).execute() : [];
+      const portions = new Map<string, number>();
+      for (const x of recipes) portions.set(x.product_id, Math.min(portions.get(x.product_id) ?? Infinity, Math.floor(n(x.level) / n(x.quantity) + 1e-9)));
+      return rows.map((p) => ({ ...p, salePrice: n(p.salePrice), vatRate: n(p.vatRate),
+        stock: portions.has(p.id) ? portions.get(p.id)! : p.trackStock ? n(p.stock) : null, recipe: portions.has(p.id) }));
     });
   }
 }

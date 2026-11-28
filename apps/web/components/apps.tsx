@@ -169,7 +169,9 @@ export const APPS: App[] = [
     { href: '/app/stocks/valorisation', label: 'Valorisation' }, { href: '/app/stocks/peremptions', label: 'Péremptions', feature: 'stock_lots' }, { href: '/app/stocks/reapprovisionnement', label: 'Réapprovisionnement', feature: 'restock' }, { href: '/app/stocks/entrepots', label: 'Entrepôts' },
   ] },
   { key: 'calendar', label: 'Calendrier', href: '/app/calendrier', perm: 'calendar.read' },
-  { key: 'products', label: 'Articles', href: '/app/articles', perm: 'products.read' },
+  { key: 'products', label: 'Articles', href: '/app/articles', perm: 'products.read', base: '/app/articles', pages: [
+    { href: '/app/articles', label: 'Articles' }, { href: '/app/articles/fiches', label: 'Fiches techniques', feature: 'recipes' },
+  ] },
   { key: 'contacts', label: 'Contacts', href: '/app/contacts', perm: 'contacts.read' },
   { key: 'employees', label: 'Employés', href: '/app/employes', perm: 'employees.read', module: 'hr' },
   { key: 'leave', label: 'Congés', href: '/app/conges', perm: 'leave.read', module: 'hr' },

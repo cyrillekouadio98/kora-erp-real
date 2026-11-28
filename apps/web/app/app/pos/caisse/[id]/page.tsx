@@ -157,7 +157,7 @@ export default function PosScreen() {
             <button key={p.id} type="button" className="pos-tile" onClick={() => add(p, parsed.qty)}>
               <span className="pos-tile-name">{p.name}</span>
               <b>{money(ttc(p.salePrice, p.vatRate))}</b>
-              <span className="small muted">{p.stock == null ? (p.kind === 'service' ? 'Service' : '') : <span style={p.stock <= 0 ? { color: 'var(--crit)' } : undefined}>Stock {p.stock.toLocaleString('fr-FR')} {p.unit}</span>}</span>
+              <span className="small muted">{p.stock == null ? (p.kind === 'service' ? 'Service' : '') : <span style={p.stock <= 0 ? { color: 'var(--crit)' } : undefined}>{p.recipe ? (p.stock <= 0 ? 'Ingrédients épuisés' : `${p.stock.toLocaleString('fr-FR')} portion${p.stock > 1 ? 's' : ''}`) : `Stock ${p.stock.toLocaleString('fr-FR')} ${p.unit}`}</span>}</span>
             </button>
           ))}
           {!matches.length && <p className="muted">Aucun article. {can('products.create') && <Link href="/app/articles">Créer des articles</Link>}</p>}

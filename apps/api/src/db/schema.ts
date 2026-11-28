@@ -98,6 +98,7 @@ export interface TableOrderLineTable {
   quantity: ColumnType<string, number, number>; unit_price: ColumnType<string, number, number>; vat_rate: ColumnType<string, number, number>; note: string | null; created_by: string; created_at: Generated<Date>;
   sent_at: TsNullable; kitchen_ticket_id: string | null;
 }
+export interface ProductRecipeTable { company_id: string; product_id: string; ingredient_id: string; quantity: ColumnType<string, number, number>; position: Generated<number>; }
 export interface KitchenTicketTable {
   company_id: string; id: Generated<string>; site_id: string; order_id: string; station: 'kitchen' | 'bar'; number: number; status: Generated<'pending' | 'ready' | 'served' | 'cancelled'>;
   created_by: string; created_at: Generated<Date>; ready_at: TsNullable; ready_by: string | null; served_at: TsNullable;
@@ -361,7 +362,7 @@ export interface DB {
   subscription_event: SubscriptionEventTable; platform_invoice: PlatformInvoiceTable; platform_payment: PlatformPaymentTable;
   payment_webhook_event: PaymentWebhookEventTable; notification: NotificationTable; support_access_grant: SupportAccessGrantTable;
   audit_log: AuditLogTable; numbering_sequence: NumberingSequenceTable; outbox_event: OutboxEventTable; contact: ContactTable;
-  pos_register: PosRegisterTable; pos_session: PosSessionTable; dining_area: DiningAreaTable; dining_table: DiningTableTable; table_order: TableOrderTable; table_order_line: TableOrderLineTable; kitchen_ticket: KitchenTicketTable; company_formation: CompanyFormationTable; company_formation_step: CompanyFormationStepTable;
+  pos_register: PosRegisterTable; pos_session: PosSessionTable; dining_area: DiningAreaTable; dining_table: DiningTableTable; table_order: TableOrderTable; table_order_line: TableOrderLineTable; kitchen_ticket: KitchenTicketTable; product_recipe: ProductRecipeTable; company_formation: CompanyFormationTable; company_formation_step: CompanyFormationStepTable;
   product: ProductTable; sales_document: SalesDocumentTable; sales_document_line: SalesDocumentLineTable; sales_payment: SalesPaymentTable; sales_reminder: SalesReminderTable;
   purchase_document: PurchaseDocumentTable; purchase_document_line: PurchaseDocumentLineTable; purchase_payment: PurchasePaymentTable;
   treasury_account: TreasuryAccountTable; treasury_movement: TreasuryMovementTable;

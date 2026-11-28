@@ -250,13 +250,21 @@ export class StockService {
     }
     const w = await this.warehouseFor(trx, t, warehouseId, d.site_id);
     const lines = await trx.selectFrom('sales_document_line as l').innerJoin('product as p', (j) => j.onRef('p.id', '=', 'l.product_id').onRef('p.company_id', '=', 'l.company_id'))
-      .select(['l.product_id', 'l.quantity', 'l.unit_factor', 'p.name']).where('l.document_id', '=', documentId).where('p.track_stock', '=', true).execute();
+      .select(['l.product_id', 'l.quantity', 'l.unit_factor', 'p.name', 'p.track_stock']).where('l.document_id', '=', documentId).execute();
+    // Fiches techniques : un plat vendu sort ses ingrédients (le plat lui-même n'a pas de stock propre).
+    const recipes = t.features?.has('recipes') && lines.length ? await trx.selectFrom('product_recipe as r')
+      .innerJoin('product as i', (j) => j.onRef('i.id', '=', 'r.ingredient_id').onRef('i.company_id', '=', 'r.company_id'))
+      .select(['r.product_id', 'r.ingredient_id', 'r.quantity', 'i.name']).where('r.product_id', 'in', [...new Set(lines.map((l) => l.product_id!))]).execute() : [];
     const byProduct = new Map<string, { name: string; qty: number }>();
+    const add = (id: string, name: string, qty: number) => { const cur = byProduct.get(id) ?? { name, qty: 0 }; cur.qty = round3(cur.qty + qty); byProduct.set(id, cur); };
     for (const l of lines) {
-      const cur = byProduct.get(l.product_id!) ?? { name: l.name, qty: 0 };
       // Quantité dans l'unité de stock de l'article (sac de 50 kg vendu : 50 kg sortent).
-      cur.qty = round3(cur.qty + Number(l.quantity) * Number(l.unit_factor));
-      byProduct.set(l.product_id!, cur);
+      const qty = Number(l.quantity) * Number(l.unit_factor);
+      const recipe = recipes.filter((r) => r.product_id === l.product_id);
+      if (recipe.length) {
+        // Un plat repris en avoir ne rend pas ses ingrédients : ils ont été cuisinés.
+        if (d.type === 'invoice') for (const r of recipe) add(r.ingredient_id, r.name, qty * Number(r.quantity));
+      } else if (l.track_stock) add(l.product_id!, l.name, qty);
     }
     if (d.type === 'invoice') await this.assertAvailable(trx, w.id, byProduct, ` Enregistrez d'abord l'achat, le stock initial ou un transfert vers « ${w.name} ».`);
     for (const [productId, x] of byProduct) {

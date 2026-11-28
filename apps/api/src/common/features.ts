@@ -66,6 +66,11 @@ export const FEATURES: FeatureDef[] = [
     inUse: async (trx, companyId) => !!(await trx.selectFrom('dining_table').select('id').where('company_id', '=', companyId).limit(1).executeTakeFirst()),
   },
   {
+    key: 'recipes', version: '1.4', label: 'Fiches techniques',
+    description: "Ingrédients d'un plat pour une portion : chaque plat vendu (caisse, table ou facture) sort ses ingrédients du stock, la caisse affiche les portions encore possibles et la fiche donne le coût de revient et la marge.",
+    inUse: async (trx, companyId) => !!(await trx.selectFrom('product_recipe').select('product_id').where('company_id', '=', companyId).limit(1).executeTakeFirst()),
+  },
+  {
     key: 'odoo_import', version: '1.3', label: 'Reprise depuis Odoo',
     description: "Assistant de reprise des exports Excel d'Odoo, dans l'ordre : contacts, articles avec leur stock, factures non soldées, soldes des comptes ; contrôle final par le compte d'attente 471000.",
   },

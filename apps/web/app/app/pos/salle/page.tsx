@@ -199,7 +199,7 @@ export default function SallePage() {
               <div className="order-picker">
                 {matches.map((p) => <button key={p.id} type="button" className="pos-tile" disabled={busy} onClick={() => add(p)}>
                   <span className="pos-tile-name small">{p.name}</span><b>{money(ttc(p.salePrice, p.vatRate))}</b>
-                  {p.stock != null && <span className="small" style={{ color: p.stock <= 0 ? 'var(--crit)' : 'var(--muted)' }}>{p.stock <= 0 ? 'Rupture' : `Stock ${p.stock.toLocaleString('fr-FR')}`}</span>}</button>)}
+                  {p.stock != null && <span className="small" style={{ color: p.stock <= 0 ? 'var(--crit)' : 'var(--muted)' }}>{p.stock <= 0 ? 'Rupture' : p.recipe ? `${p.stock.toLocaleString('fr-FR')} portion${p.stock > 1 ? 's' : ''}` : `Stock ${p.stock.toLocaleString('fr-FR')}`}</span>}</button>)}
                 {!matches.length && <p className="small muted">Aucun article.</p>}
               </div>
               <div className="row">

@@ -16,6 +16,7 @@ import { EntitlementService } from './modules/billing/entitlement.service';
 import { QuotaService } from './modules/billing/quota.service';
 import { ProductsController } from './modules/sales/products.controller';
 import { PriceListsController } from './modules/sales/price-lists.controller';
+import { RecipesController } from './modules/sales/recipes.controller';
 import { DunningController } from './modules/sales/dunning.controller';
 import { DunningService } from './modules/sales/dunning.service';
 import { SalesController } from './modules/sales/sales.controller';
@@ -81,7 +82,7 @@ import { PlatformSupportController, SupportAccessController } from './modules/su
   controllers: [
     HealthController, AuthController, CompaniesController, MembersController, RolesController, BillingController, WebhooksController,
     DevController, AuditController, SupportAccessController, PlatformSupportController, PlatformController, MailSettingsController, FeaturesController, FeaturesOverviewController, ModulesController, ProfilesController, SetupController, ExportController,
-    ContactsController, ProductsController, PriceListsController, DunningController, SalesController, PurchasesController, TreasuryController, ReconciliationController, ExpensesController, AssetsController, OpportunitiesController, AccountingController, RestockController, StockController, PayrollController, DeclarationsController, PublicDocumentsController, EmailsController, LeaveController, DashboardController, JobsController, ReportsController, SitesController, CalendarController, EvaluationsController, PosController, RestaurantController,
+    ContactsController, ProductsController, PriceListsController, RecipesController, DunningController, SalesController, PurchasesController, TreasuryController, ReconciliationController, ExpensesController, AssetsController, OpportunitiesController, AccountingController, RestockController, StockController, PayrollController, DeclarationsController, PublicDocumentsController, EmailsController, LeaveController, DashboardController, JobsController, ReportsController, SitesController, CalendarController, EvaluationsController, PosController, RestaurantController,
   ],
   providers: [
     AuditService, SessionService, AuthService, ProvisioningService, EntitlementService, QuotaService, BillingService, BillingScheduler, SalesService, PurchasesService, TreasuryService, AccountingService, FinancialService, FormationService, BalancesService, StockService, PayrollService, PayrollInsightsService, MailService, DunningService, LeaveService, DashboardService, ReportsService, CalendarService, EvaluationsService, SitesService, SetupService, PosService,
