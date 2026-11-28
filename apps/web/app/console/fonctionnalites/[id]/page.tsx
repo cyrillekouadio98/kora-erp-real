@@ -12,15 +12,17 @@ export default function CompanyFeatures() {
   const [data, setData] = useState<any>(null);
   const [mods, setMods] = useState<any>(null);
   const [modConfirm, setModConfirm] = useState<{ m: any; enabled: boolean | null } | null>(null);
-  const [shop, setShop] = useState({ registers: 1, purchases: true, accounting: false });
-  const [shopAsk, setShopAsk] = useState(false);
-  const [shopResult, setShopResult] = useState<any>(null);
+  const [profiles, setProfiles] = useState<any[]>([]);
+  const [choice, setChoice] = useState<Record<string, any>>({});
+  const [ask, setAsk] = useState('');
+  const [result, setResult] = useState<{ key: string; r: any } | null>(null);
   const [confirm, setConfirm] = useState<any>(null);
   const [notice, setNotice] = useState('');
   const { busy, error, run } = useAction();
   const load = useCallback(async () => {
-    const [f, m] = await Promise.all([api(`/platform/companies/${id}/features`), api(`/platform/companies/${id}/modules`)]);
-    setData(f); setMods(m);
+    const [f, m, p] = await Promise.all([api(`/platform/companies/${id}/features`), api(`/platform/companies/${id}/modules`), api<any[]>(`/platform/companies/${id}/profiles`)]);
+    setData(f); setMods(m); setProfiles(p);
+    setChoice((c) => Object.keys(c).length ? c : Object.fromEntries(p.map((x) => [x.key, { registers: 1, ...Object.fromEntries(x.options.map((o: any) => [o.key, o.default])) }])));
   }, [id]);
   const label = (k: string) => mods?.modules.find((m: any) => m.key === k)?.label ?? k;
   const applyModule = () => run(async () => {
@@ -29,9 +31,9 @@ export default function CompanyFeatures() {
     setModConfirm(null);
     setNotice(`Module « ${m.label} » ${enabled === null ? 'rendu à la formule' : enabled ? 'activé' : 'retiré'} pour ${mods.company.name}.`); await load();
   });
-  const applyShop = () => run(async () => {
-    const r = await api(`/platform/companies/${id}/profiles/boutique`, { body: shop });
-    setShopAsk(false); setNotice(''); setShopResult(r); await load();
+  const applyProfile = (key: string) => run(async () => {
+    const r = await api(`/platform/companies/${id}/profiles/${key}`, { body: choice[key] });
+    setAsk(''); setNotice(''); setResult({ key, r }); await load();
   });
   const RESULT: Record<string, string> = { removed: 'retiré', enabled: 'réactivé', unchanged: 'inchangé', not_in_plan: 'non inclus dans la formule' };
   /** Origine de l'état affiché : formule, ou choix fait dans la console. */
@@ -46,28 +48,29 @@ export default function CompanyFeatures() {
       <div className="page-head"><h1>Modules et fonctionnalités{data && <> · {data.company.name}</>}</h1><Link className="btn sm" href="/console/fonctionnalites">Toutes les entreprises</Link></div>
       <Alert>{error}</Alert>
       {notice && <Alert kind="ok">{notice}</Alert>}
-      {mods && <section className="card" style={{ display: 'grid', gap: 10 }}>
-        <header><h2>Profil Boutique</h2><span className="small muted">1 à 3 caisses</span></header>
-        <p className="small" style={{ margin: 0 }}>Garde ce dont une boutique se sert chaque jour (point de vente, stocks, rapports et point journalier) et retire Employés, Congés, Évaluations, Paie et Calendrier.
-          Pour une entreprise <b>en préparation</b>, crée aussi une caisse de vente par poste (« Caisse 1 »…), chacune avec son compte de caisse. Le profil peut être rejoué : ce qui existe déjà est gardé.</p>
+      {mods && profiles.map((p) => { const c = choice[p.key]; if (!c) return null; const res = result && result.key === p.key ? result.r : null; return (
+      <section key={p.key} className="card" style={{ display: 'grid', gap: 10 }}>
+        <header><h2>{p.label}</h2><span className="small muted">1 à 3 caisses</span></header>
+        <p className="small" style={{ margin: 0 }}>{p.description} Pour une entreprise <b>en préparation</b>, le profil crée aussi une caisse de vente par poste (« Caisse 1 »…), chacune avec son compte de caisse. Il peut être rejoué : ce qui existe déjà est gardé.</p>
         <div className="row" style={{ alignItems: 'end', gap: 16 }}>
-          <label className="field" style={{ width: 160 }}>Nombre de caisses<select className="input" value={shop.registers} onChange={(e) => setShop({ ...shop, registers: Number(e.target.value) })}>{[1, 2, 3].map((n) => <option key={n} value={n}>{n}</option>)}</select></label>
-          <label className="small row" style={{ gap: 6 }}><input type="checkbox" checked={shop.purchases} onChange={(e) => setShop({ ...shop, purchases: e.target.checked })} />Garder les Achats (fournisseurs avec factures)</label>
-          <label className="small row" style={{ gap: 6 }}><input type="checkbox" checked={shop.accounting} onChange={(e) => setShop({ ...shop, accounting: e.target.checked })} />Garder la Comptabilité (un comptable s&apos;en sert)</label>
+          <label className="field" style={{ width: 160 }}>Nombre de caisses<select className="input" value={c.registers} onChange={(e) => setChoice({ ...choice, [p.key]: { ...c, registers: Number(e.target.value) } })}>{[1, 2, 3].map((n) => <option key={n} value={n}>{n}</option>)}</select></label>
+          {p.options.map((o: any) => <label key={o.key} className="small row" style={{ gap: 6 }}><input type="checkbox" checked={!!c[o.key]} onChange={(e) => setChoice({ ...choice, [p.key]: { ...c, [o.key]: e.target.checked } })} />{o.label}</label>)}
         </div>
-        {shopAsk ? <div className="row" style={{ alignItems: 'center' }}>
-          <span className="small"><b>Appliquer le profil Boutique à {mods.company.name} ?</b> Les modules retirés disparaîtront des menus de ses utilisateurs (données conservées).</span>
-          <button className="btn sm primary" disabled={busy} onClick={applyShop}>Confirmer</button>
-          <button className="btn sm" disabled={busy} onClick={() => setShopAsk(false)}>Annuler</button>
-        </div> : <div><button className="btn primary" disabled={busy} onClick={() => { setShopResult(null); setShopAsk(true); }}>Appliquer le profil Boutique</button></div>}
-        {shopResult && <Alert kind="ok"><div style={{ display: 'grid', gap: 6 }}>
-          <div><b>Profil appliqué.</b> {shopResult.modules.filter((m: any) => m.result !== 'unchanged').map((m: any) => `${m.label} : ${RESULT[m.result]}`).join(' · ') || 'Les modules étaient déjà réglés.'}</div>
-          {shopResult.registers
-            ? <div>Caisses : {shopResult.registers.created.length ? <>créées {shopResult.registers.created.join(', ')}</> : 'aucune à créer'}{shopResult.registers.existing.length > 0 && <> · déjà présentes {shopResult.registers.existing.join(', ')}</>}.</div>
+        {ask === p.key ? <div className="row" style={{ alignItems: 'center' }}>
+          <span className="small"><b>Appliquer le {p.label.toLowerCase()} à {mods.company.name} ?</b> Les modules retirés disparaîtront des menus de ses utilisateurs (données conservées).</span>
+          <button className="btn sm primary" disabled={busy} onClick={() => applyProfile(p.key)}>Confirmer</button>
+          <button className="btn sm" disabled={busy} onClick={() => setAsk('')}>Annuler</button>
+        </div> : <div><button className="btn primary" disabled={busy} onClick={() => { setResult(null); setAsk(p.key); }}>Appliquer le {p.label.toLowerCase()}</button></div>}
+        {res && <Alert kind="ok"><div style={{ display: 'grid', gap: 6 }}>
+          <div><b>Profil appliqué.</b> {res.modules.filter((m: any) => m.result !== 'unchanged').map((m: any) => `${m.label} : ${RESULT[m.result]}`).join(' · ') || 'Les modules étaient déjà réglés.'}</div>
+          {res.registers
+            ? <div>Caisses : {res.registers.created.length ? <>créées {res.registers.created.join(', ')}</> : 'aucune à créer'}{res.registers.existing.length > 0 && <> · déjà présentes {res.registers.existing.join(', ')}</>}.</div>
             : <div>Entreprise en service : ses caisses restent à la main du client. À lui faire faire : <b>Point de vente → Caisses</b>, une caisse par poste, chacune sur son compte de caisse (<b>Trésorerie</b> → nouveau compte « Caisse 2 »…), puis inviter chaque caissier avec le rôle <b>Caissier</b>.</div>}
           <div className="small">Rôles déjà prêts dans l&apos;entreprise : Caissier (encaisse, ne voit ni marges ni achats), Directeur / gérant (contrôle et clôture les caisses), Magasinier (réceptions, inventaires).</div>
+          {res.note && <div className="small"><b>À savoir :</b> {res.note}</div>}
         </div></Alert>}
-      </section>}
+        {!res && p.note && <p className="small muted" style={{ margin: 0 }}><b>À savoir :</b> {p.note}</p>}
+      </section>); })}
       {mods && <section className="card" style={{ display: 'grid', gap: 10 }}>
         <header><h2>Modules</h2>{mods.plan && <span className="small muted">Formule {mods.plan}</span>}</header>
         <p className="small muted" style={{ margin: 0 }}>Un module retiré disparaît des menus de tous les utilisateurs et son accès est refusé ; ses données sont conservées et reviennent dès qu&apos;on le réactive. Un module peut aussi être ajouté hors formule.</p>

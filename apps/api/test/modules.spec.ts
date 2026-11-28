@@ -109,4 +109,23 @@ describe('Modules activables par entreprise', () => {
     const again = (await sales.agent.post(`/platform/companies/${p}/profiles/boutique`).send({ registers: 3, purchases: true, accounting: true })).body;
     expect(again.registers).toEqual({ created: [], existing: ['Caisse 1', 'Caisse 2', 'Caisse 3'] });
   });
+
+  it('applique le profil Restaurant : personnel gardé si la formule l’inclut, notes sur ce qui manque', async () => {
+    const list = (await support.agent.get(`/platform/companies/${client.companyId}/profiles`)).body;
+    expect(list.map((p: any) => p.key)).toEqual(['boutique', 'restaurant']);
+    expect(list[1].options.map((o: any) => [o.key, o.default])).toEqual([['purchases', true], ['staff', true], ['accounting', false]]);
+    expect((await sales.agent.post(`/platform/companies/${client.companyId}/profiles/restaurant`).send({ registers: 1, purchases: true })).body.error.code).toBe('invalid_request');
+    // Formule Premium : le personnel est inclus, il est gardé.
+    const p = (await sales.agent.post('/platform/setup').send({ name: 'Maquis Le Palmier', city: 'Abidjan', planCode: 'premium', billingCycle: 'monthly' })).body.id;
+    await set('payroll', false, sales, p); await set('evaluations', false, sales, p); await set('leave', false, sales, p);
+    const r = (await sales.agent.post(`/platform/companies/${p}/profiles/restaurant`).send({ registers: 2, purchases: true, staff: true, accounting: false })).body;
+    const res = Object.fromEntries(r.modules.map((m: any) => [m.key, m.result]));
+    expect(res).toMatchObject({ leave: 'enabled', payroll: 'enabled', employees: 'unchanged', evaluations: 'unchanged', calendar: 'removed', accounting: 'removed', pos: 'unchanged' });
+    expect(r.registers.created).toEqual(['Caisse 1', 'Caisse 2']);
+    expect(r.note).toMatch(/fiches techniques/);
+    // Sans personnel : la paie part avant les employés (dépendances respectées).
+    const r2 = (await sales.agent.post(`/platform/companies/${p}/profiles/restaurant`).send({ registers: 2, purchases: true, staff: false, accounting: false })).body;
+    expect(Object.fromEntries(r2.modules.map((m: any) => [m.key, m.result]))).toMatchObject({ payroll: 'removed', leave: 'removed', employees: 'removed' });
+    expect((await sales.agent.post(`/platform/companies/${p}/profiles/cantine`).send({ registers: 1 })).status).toBe(404);
+  });
 });

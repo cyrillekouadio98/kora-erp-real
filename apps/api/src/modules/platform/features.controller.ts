@@ -160,11 +160,36 @@ async function changeModule(trx: Trx, audit: AuditService, userId: string, id: s
   await audit.platform(trx, userId, { companyId: id, action: enabled === null ? 'module.reset' : enabled ? 'module.enabled' : 'module.disabled', entityType: 'company', entityId: id, data: { module: key, label: def.label } });
 }
 
-/** Modules d'une boutique (une à trois caisses) : vendre au comptoir, suivre le stock, faire le point du jour. */
-const SHOP = {
-  off: ['payroll', 'evaluations', 'leave', 'employees', 'calendar'],
-  on: ['stock', 'pos', 'reports'],
-};
+/**
+ * Profils types : modules gardés et retirés pour un métier, options cochées dans la console
+ * (chaque option garde ses modules si elle est cochée, les retire sinon), caisses de vente à créer.
+ */
+interface ProfileDef { key: string; label: string; description: string; note?: string; off: string[]; on: string[]; options: { key: string; label: string; modules: string[]; default: boolean }[] }
+export const PROFILES: ProfileDef[] = [
+  {
+    key: 'boutique', label: 'Profil Boutique',
+    description: 'Ce dont une boutique se sert chaque jour : point de vente, stocks, rapports et point journalier. Employés, Congés, Évaluations, Paie et Calendrier sont retirés.',
+    off: ['employees', 'leave', 'evaluations', 'payroll', 'calendar'], on: ['stock', 'pos', 'reports'],
+    options: [
+      { key: 'purchases', label: 'Garder les Achats (fournisseurs avec factures)', modules: ['purchases'], default: true },
+      { key: 'accounting', label: 'Garder la Comptabilité (un comptable s’en sert)', modules: ['accounting'], default: false },
+    ],
+  },
+  {
+    key: 'restaurant', label: 'Profil Restaurant',
+    description: 'Point de vente pour encaisser en salle et à emporter, stocks des boissons et des denrées, achats aux fournisseurs, rapports et point journalier ; le personnel (employés, congés, paie) au choix. Évaluations et Calendrier sont retirés.',
+    note: 'Pensez à activer les nouveautés « Lots et dates de péremption » (denrées) et « Unités de mesure » (casier, carton, kg) si le client en a besoin. Kora ne gère pas encore les tables, l’envoi en cuisine ni les fiches techniques (un plat vendu ne déduit pas ses ingrédients) : les denrées utilisées se sortent par un bon de sortie « Consommation interne ».',
+    off: ['evaluations', 'calendar'], on: ['stock', 'pos', 'reports'],
+    options: [
+      { key: 'purchases', label: 'Garder les Achats (fournisseurs avec factures)', modules: ['purchases'], default: true },
+      { key: 'staff', label: 'Garder le personnel : Employés, Congés et Paie (serveurs et cuisiniers déclarés)', modules: ['employees', 'leave', 'payroll'], default: true },
+      { key: 'accounting', label: 'Garder la Comptabilité (un comptable s’en sert)', modules: ['accounting'], default: false },
+    ],
+  },
+];
+/** Ordre des changements : on retire un module avant ses prérequis, on ouvre un prérequis avant ce qui en dépend. */
+const OFF_ORDER = ['payroll', 'evaluations', 'leave', 'employees', 'calendar', 'pos', 'stock', 'purchases', 'accounting', 'reports', 'bank'];
+const byOrder = (keys: string[], order: string[]) => [...new Set(keys)].sort((a, b) => order.indexOf(a) - order.indexOf(b));
 
 /** Profils types appliqués en un clic depuis la console. */
 @ApiTags('Console éditeur')
@@ -172,18 +197,28 @@ const SHOP = {
 export class ProfilesController {
   constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly setup: SetupService) {}
 
+  @PlatformRoles('super_admin', 'sales_admin', 'support')
+  @Get()
+  list() {
+    return PROFILES.map(({ key, label, description, note, options }) => ({ key, label, description, note: note ?? null, options: options.map(({ key: k, label: l, default: d }) => ({ key: k, label: l, default: d })) }));
+  }
+
   /**
-   * Profil Boutique : modules d'une boutique (Achats et Comptabilité au choix), puis, pour une entreprise encore en
-   * préparation, une caisse de vente par poste avec son compte de caisse. Une entreprise déjà remise au client
-   * garde la main sur ses caisses : la console ne les crée pas pour elle.
+   * Applique un profil : modules du métier (options au choix), puis, pour une entreprise encore en préparation,
+   * une caisse de vente par poste avec son compte de caisse. Une entreprise en service garde la main sur ses caisses :
+   * la console ne les crée pas pour elle. Un module absent de la formule n'est jamais donné par un profil.
    */
   @PlatformRoles('super_admin', 'sales_admin') @HttpCode(200)
-  @Post('boutique')
-  async boutique(@Auth() auth: AuthInfo, @Param('id') id: string, @Body() body: unknown, @Req() req: KoraRequest) {
+  @Post(':profile')
+  async apply(@Auth() auth: AuthInfo, @Param('id') id: string, @Param('profile') key: string, @Body() body: unknown, @Req() req: KoraRequest) {
     if (!isUuid(id)) throw notFound('Entreprise');
-    const input = parse(z.object({ registers: z.number().int().min(1).max(3), purchases: z.boolean(), accounting: z.boolean() }).strict(), body);
-    const off = [...SHOP.off, ...(input.purchases ? [] : ['purchases']), ...(input.accounting ? [] : ['accounting'])];
-    const on = [...SHOP.on, ...(input.purchases ? ['purchases'] : []), ...(input.accounting ? ['accounting'] : [])];
+    const def = PROFILES.find((p) => p.key === key);
+    if (!def) throw notFound('Profil');
+    const input = parse(z.object({ registers: z.number().int().min(1).max(3), ...Object.fromEntries(def.options.map((o) => [o.key, z.boolean()])) }).strict(), body) as { registers: number } & Record<string, boolean>;
+    const chosen = def.options.filter((o) => input[o.key]).flatMap((o) => o.modules);
+    const dropped = def.options.filter((o) => !input[o.key]).flatMap((o) => o.modules);
+    const off = byOrder([...def.off, ...dropped].filter((k) => !chosen.includes(k)), OFF_ORDER);
+    const on = byOrder([...def.on, ...chosen], [...OFF_ORDER].reverse());
     const { company, modules, preparing } = await this.db.platform(async (trx) => {
       const c = await trx.selectFrom('company').select(['id', 'name']).where('id', '=', id).executeTakeFirst();
       if (!c) throw notFound('Entreprise');
@@ -199,13 +234,14 @@ export class ProfilesController {
         // Le profil ne donne pas un module que la formule n'inclut pas : cela se décide à part (facturation).
         if (m.enabled) out.push({ key: k, label: m.label, result: 'unchanged' });
         else if (!m.inPlan) out.push({ key: k, label: m.label, result: 'not_in_plan' });
+        else if (m.requires.some((r) => out.find((o) => o.key === r)?.result === 'not_in_plan')) out.push({ key: k, label: m.label, result: 'not_in_plan' });
         else { await changeModule(trx, this.audit, auth.userId, id, k, null); out.push({ key: k, label: m.label, result: 'enabled' }); }
       }
       const setup = await trx.selectFrom('company_setup').select('handed_over_at').where('company_id', '=', id).executeTakeFirst();
-      await this.audit.platform(trx, auth.userId, { companyId: id, action: 'profile.applied', entityType: 'company', entityId: id, data: { profile: 'boutique', ...input } });
+      await this.audit.platform(trx, auth.userId, { companyId: id, action: 'profile.applied', entityType: 'company', entityId: id, data: { profile: def.key, ...input } });
       return { company: c, modules: out, preparing: !!setup && !setup.handed_over_at };
     });
     const registers = preparing ? await this.setup.shopRegisters(auth, id, input.registers, clientIp(req)) : null;
-    return { company, modules, registers, preparing };
+    return { company, modules, registers, preparing, note: def.note ?? null };
   }
 }
